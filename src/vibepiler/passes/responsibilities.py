@@ -7,10 +7,12 @@ from vibepiler.ir.program import Program
 from vibepiler.passes.base import Pass
 from vibepiler.passes.diagnostic import Diagnostic, Severity
 from vibepiler.passes.semantic_duplicates import SKIP_HINT
-from vibepiler.semantic.embed import symbol_vectors
+from vibepiler.semantic.embed import default_thresholds, symbol_vectors
 
 MIN_SYMBOLS = 6
 MIN_CLUSTER = 3
+MAX_GROUPS = 5  # more groups than this is a big module, not a mixed one
+MIN_COVERAGE = 0.6  # the groups must account for most of the module
 MAX_REPORTED = 25
 
 
@@ -28,6 +30,7 @@ class ResponsibilitiesPass(Pass):
             return []
         import numpy as np
 
+        threshold = th.responsibility_similarity if th.responsibility_similarity is not None else default_thresholds(program.config.embedding_model)[1]
         by_module: dict[str, list[int]] = {}
         for i, n in enumerate(nodes):
             if n.module:
@@ -36,9 +39,9 @@ class ResponsibilitiesPass(Pass):
         for mid, idxs in by_module.items():
             if len(idxs) < MIN_SYMBOLS:
                 continue
-            clusters = self._cluster(vectors[idxs], th.responsibility_similarity)
+            clusters = self._cluster(vectors[idxs], threshold)
             big = [c for c in clusters if len(c) >= MIN_CLUSTER]
-            if len(big) < 2:
+            if not (2 <= len(big) <= MAX_GROUPS) or sum(len(c) for c in big) < MIN_COVERAGE * len(idxs):
                 continue
             mod = program.graph.node(mid)
             groups = []

@@ -124,6 +124,20 @@ def test_missing_backend_skips_gracefully(program, monkeypatch):
     assert "skipped" in program.metrics["semantic_duplicates"]
 
 
+def test_backend_and_threshold_selection():
+    assert embed.backend_for("minishlab/potion-code-16M-v2") == "model2vec"
+    assert embed.backend_for("jinaai/jina-embeddings-v2-base-code") == "fastembed"
+    assert embed.default_thresholds("jinaai/jina-embeddings-v2-base-code") == (0.82, 0.40)
+    assert embed.default_thresholds("some/unknown-model") == (0.88, 0.70)
+
+
+def test_config_thresholds_default_to_per_model_values(program):
+    assert program.config.embedding_model == embed.DEFAULT_MODEL
+    program.config.thresholds.semantic_similarity = None
+    run_pass("semantic-duplicates", program)
+    assert program.metrics["semantic_duplicates"]["threshold"] == embed.default_thresholds(embed.DEFAULT_MODEL)[0]
+
+
 def test_similar_symbols_query(program):
     from vibepiler.semantic.similar import similar_symbols
 

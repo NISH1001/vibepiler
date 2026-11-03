@@ -1,7 +1,12 @@
 """Embeddings for symbols, with a content-addressed on-disk cache.
 
-Backend: fastembed (ONNX runtime, no PyTorch). Default model BAAI/bge-small-en-v1.5:
-33M parameters, 384 dimensions, hundreds of functions per second on a laptop CPU.
+Backends (no PyTorch in either):
+- fastembed (ONNX runtime) for transformer models. Default: jinaai/jina-embeddings-v2-base-code,
+  a 161M-parameter encoder trained on code (30 languages), run as int8 ONNX. Measured on an
+  Apple-silicon laptop: ~23 functions/s with 800-char inputs, same speed as bge-small but a
+  cleaner separation of true twins.
+- model2vec (pure numpy static embeddings) for minishlab/potion-* models. potion-code-16M-v2
+  embeds ~17,000 functions/s; weaker on "same job, different code" but fine as a fast mode.
 """
 
 from __future__ import annotations
@@ -15,7 +20,25 @@ from typing import Callable, Protocol, Sequence
 from vibepiler.ir.model import CALLABLE_KINDS, Node
 from vibepiler.ir.program import Program
 
-DEFAULT_MODEL = "BAAI/bge-small-en-v1.5"
+DEFAULT_MODEL = "jinaai/jina-embeddings-v2-base-code"
+FAST_MODEL = "minishlab/potion-code-16M-v2"
+#: characters of source embedded per symbol; beyond this, speed drops faster than quality rises
+MAX_CHARS = 800
+
+#: models with an int8 ONNX file in their HF repo that fastembed does not pick by itself: name -> (file, dim)
+QUANTIZED_VARIANTS: dict[str, tuple[str, int]] = {
+    "jinaai/jina-embeddings-v2-base-code": ("onnx/model_quantized.onnx", 768),
+}
+
+#: per-model defaults for the similarity thresholds (cosine distributions differ a lot between models)
+MODEL_THRESHOLDS: dict[str, tuple[float, float]] = {
+    # model prefix: (semantic_similarity, responsibility_similarity)
+    "jinaai/jina-embeddings-v2-base-code": (0.82, 0.40),
+    "BAAI/bge-small-en-v1.5": (0.88, 0.70),
+    "minishlab/potion-code": (0.90, 0.60),
+}
+_FALLBACK_THRESHOLDS = (0.88, 0.70)
+
 CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "vibepiler" / "embeddings"
 
 
@@ -26,18 +49,56 @@ class Embedder(Protocol):
 
 
 class FastEmbedEmbedder:
-    def __init__(self, model: str) -> None:
+    def __init__(self, model: str, quantized: bool = True) -> None:
         from fastembed import TextEmbedding  # type: ignore[import-not-found]
 
         self.name = model
-        self._model = TextEmbedding(model_name=model)
+        name = model
+        if quantized and model in QUANTIZED_VARIANTS:
+            from fastembed.common.model_description import ModelSource, PoolingType  # type: ignore[import-not-found]
+
+            file, dim = QUANTIZED_VARIANTS[model]
+            name = f"{model}:int8"
+            if name not in {m["model"] for m in TextEmbedding.list_supported_models()}:
+                TextEmbedding.add_custom_model(
+                    model=name, pooling=PoolingType.MEAN, normalization=True, sources=ModelSource(hf=model), dim=dim, model_file=file
+                )
+            self.name = name
+        self._model = TextEmbedding(model_name=name)
 
     def embed(self, texts: Sequence[str]) -> Sequence[Sequence[float]]:
-        return [list(map(float, v)) for v in self._model.embed(list(texts), batch_size=64)]
+        return [list(map(float, v)) for v in self._model.embed(list(texts), batch_size=32)]
+
+
+class Model2VecEmbedder:
+    """Static embeddings (minishlab/potion-*): pure numpy, thousands of functions per second."""
+
+    def __init__(self, model: str) -> None:
+        from model2vec import StaticModel  # type: ignore[import-not-found]
+
+        self.name = model
+        self._model = StaticModel.from_pretrained(model)
+
+    def embed(self, texts: Sequence[str]) -> Sequence[Sequence[float]]:
+        return self._model.encode(list(texts)).tolist()
+
+
+def backend_for(model: str) -> str:
+    return "model2vec" if model.startswith("minishlab/") or "potion" in model else "fastembed"
+
+
+def default_thresholds(model: str) -> tuple[float, float]:
+    """(semantic_similarity, responsibility_similarity) defaults for a model."""
+    for prefix, th in MODEL_THRESHOLDS.items():
+        if model.startswith(prefix):
+            return th
+    return _FALLBACK_THRESHOLDS
 
 
 def default_factory(model: str) -> Embedder | None:
     try:
+        if backend_for(model) == "model2vec":
+            return Model2VecEmbedder(model)
         return FastEmbedEmbedder(model)
     except ImportError:
         return None
@@ -52,7 +113,7 @@ def get_embedder(model: str = DEFAULT_MODEL) -> Embedder | None:
 
 
 # --------------------------------------------------------------------------- text
-def symbol_text(program: Program, node: Node, max_chars: int = 2000) -> str:
+def symbol_text(program: Program, node: Node, max_chars: int = MAX_CHARS) -> str:
     """What gets embedded: the symbol's source (signature + body), lightly normalized."""
     d = program.symbol_def(node)
     if d is None or d.node is None:

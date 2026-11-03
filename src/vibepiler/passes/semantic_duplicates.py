@@ -5,7 +5,7 @@ from __future__ import annotations
 from vibepiler.ir.program import Program
 from vibepiler.passes.base import Pass
 from vibepiler.passes.diagnostic import Diagnostic, Severity
-from vibepiler.semantic.embed import symbol_vectors
+from vibepiler.semantic.embed import default_thresholds, symbol_vectors
 
 SKIP_HINT = "semantic tier needs the embedding backend: pip install 'vibepiler[semantic]' (or: uv tool install 'vibepiler[semantic]')"
 MAX_SYMBOLS = 6000
@@ -24,6 +24,7 @@ class SemanticDuplicatesPass(Pass):
         if nodes is None:
             program.metrics["semantic_duplicates"] = {"skipped": SKIP_HINT, "model": model}
             return []
+        threshold = th.semantic_similarity if th.semantic_similarity is not None else default_thresholds(program.config.embedding_model)[0]
         if len(nodes) > MAX_SYMBOLS:
             nodes, vectors = nodes[:MAX_SYMBOLS], vectors[:MAX_SYMBOLS]
         diags: list[Diagnostic] = []
@@ -40,7 +41,7 @@ class SemanticDuplicatesPass(Pass):
                 if j <= i or int(nearest[j]) != i:
                     continue
                 s = float(sims[i, j])
-                if s < th.semantic_similarity:
+                if s < threshold:
                     continue
                 a, b = nodes[i], nodes[j]
                 if not self._worth_reporting(a, b):
@@ -53,7 +54,7 @@ class SemanticDuplicatesPass(Pass):
                 diags.append(
                     self.diag(
                         "semantic-duplicate",
-                        Severity.WARNING if s >= th.semantic_similarity + 0.05 else Severity.INFO,
+                        Severity.WARNING if s >= threshold + 0.05 else Severity.INFO,
                         f"`{a.qualname}` and `{b.qualname}` are copies of each other" if identical else f"`{a.qualname}` and `{b.qualname}` do the same thing with different code ({s:.0%} similar)",
                         node=a,
                         suggestion=f"Keep one. `{a.qualname}` ({a.loc} lines) vs `{b.qualname}` ({b.loc} lines): pick the clearer one and delete the other.",
@@ -65,7 +66,7 @@ class SemanticDuplicatesPass(Pass):
                 )
         diags.sort(key=lambda d: -d.data["similarity"])
         diags = diags[:MAX_REPORTED]
-        program.metrics["semantic_duplicates"] = {"pairs": len(diags), "symbols": len(nodes), "model": model, "threshold": th.semantic_similarity}
+        program.metrics["semantic_duplicates"] = {"pairs": len(diags), "symbols": len(nodes), "model": model, "threshold": threshold}
         return diags
 
     @staticmethod

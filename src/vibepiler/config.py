@@ -19,8 +19,8 @@ class Thresholds:
     god_module_fan: int = 10  # fan-in AND fan-out above this => god module
     hotspot_top_n: int = 10
     single_use_helper_max_loc: int = 8
-    semantic_similarity: float = 0.88  # -O3: cosine similarity for semantic duplicates
-    responsibility_similarity: float = 0.70  # -O3: symbols closer than this belong to the same concern
+    semantic_similarity: float | None = None  # -O3: cosine threshold for semantic duplicates; None = per-model default
+    responsibility_similarity: float | None = None  # -O3: clustering threshold; None = per-model default
 
 
 @dataclass
@@ -32,7 +32,7 @@ class Config:
     entry_patterns: list[str] = field(default_factory=list)  # extra glob/regex of entry qualnames
     thresholds: Thresholds = field(default_factory=Thresholds)
     use_gitignore: bool = True
-    embedding_model: str = "BAAI/bge-small-en-v1.5"  # -O3 backend model (fastembed)
+    embedding_model: str = "jinaai/jina-embeddings-v2-base-code"  # -O3 model; "minishlab/potion-code-16M-v2" for the fast static mode
 
     @classmethod
     def load(cls, root: Path, **overrides: Any) -> Config:
