@@ -7,12 +7,12 @@ from typing import Optional
 
 import networkx as nx
 import typer
-from rich.console import Console
 from rich.table import Table
 from rich.tree import Tree
 
 from vibepiler import __version__
 from vibepiler.backend import emit_dot, emit_json, emit_mermaid
+from vibepiler.backend.terminal import console, err_console, print_baseline, print_findings, print_phase, print_remarks, print_skipped, print_summary, size_line
 from vibepiler.compiler import EMITTERS, Compiler
 from vibepiler.config import Config
 from vibepiler.frontend.languages import available
@@ -30,10 +30,6 @@ app = typer.Typer(
     add_completion=False,
     rich_markup_mode="rich",
 )
-console = Console()
-err_console = Console(stderr=True)
-
-SEV_STYLE = {Severity.ERROR: "bold red", Severity.WARNING: "yellow", Severity.INFO: "cyan"}
 
 
 def _version(value: bool) -> None:
@@ -78,10 +74,6 @@ def _resolve_source(path: str, cache: Path | None, refresh: bool = False) -> tup
     return root, repo_name(url)
 
 
-def _print_phase(n: int, name: str, msg: str) -> None:
-    console.print(f"[dim][{n}/4][/dim] [bold]{name:9}[/bold] {msg}")
-
-
 @app.command()
 def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
     path: str = typer.Argument(".", help="Project root, or a remote repo: owner/repo[@ref], a GitHub URL, or any git URL."),
@@ -124,7 +116,7 @@ def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
             n = len(diags)
             console.print(f"      [dim]pass[/dim] {p.name:19} {n:4} finding{'s' if n != 1 else ''}  [dim]{secs * 1000:.0f} ms[/dim]")
 
-    result = Compiler(root, cfg, on_phase=_print_phase).run(
+    result = Compiler(root, cfg, on_phase=print_phase).run(
         opt_level=opt,
         emit=emits,
         out_dir=out,
@@ -133,111 +125,28 @@ def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
         on_pass=on_pass,
     )
     program = result.program
-    for key, m in program.metrics.items():
-        if isinstance(m, dict) and m.get("skipped"):
-            console.print(f"      [yellow]skipped[/yellow] {key.replace('_', '-')}: {m['skipped']}")
-    shown = [d for d in program.diagnostics if d.severity >= min_sev]
-    if not quiet and shown:
-        console.print()
-        for d in shown[:max_print]:
-            style = SEV_STYLE[d.severity]
-            console.print(f"[{style}]{d.severity.label:7}[/{style}] [dim]{d.pass_name}[/dim]/{d.code}  [cyan]{d.location}[/cyan]: {d.message}")
-            if d.suggestion:
-                console.print(f"        [dim italic]{d.suggestion}[/dim italic]")
-        if len(shown) > max_print:
-            console.print(f"[dim]... {len(shown) - max_print} more; see {out / 'report.md'} or ir.json[/dim]")
-    _print_summary(program)
+    print_skipped(program)
+    if not quiet:
+        print_findings(program, min_sev, max_print, out / "report.md")
+    print_summary(program)
     if remarks:
-        _print_remarks(program, max_print)
+        print_remarks(program, max_print)
     if baseline:
-        _print_baseline(program, baseline)
+        print_baseline(program, baseline)
     if fail_on:
-        if fail_on.startswith("bloat>"):
-            limit = float(fail_on[6:])
-            b = program.metrics.get("bloat_score", {})
-            if b and b["score"] > limit:
-                console.print(f"[red]bloat {b['score']:.0%} exceeds the limit {limit:.0%}[/red]")
-                raise typer.Exit(1)
-        else:
-            threshold = _parse_warn(fail_on)
-            if any(d.severity >= threshold for d in program.diagnostics):
-                raise typer.Exit(1)
+        _gate(program, fail_on)
 
 
-def _size_line(b: dict) -> str:
-    conf = ", ".join(f"{k} {v:.0f}" for k, v in b.get("waste_by_confidence", {}).items() if k != "model")
-    reasons = ", ".join(f"{r['code']} ×{r['count']}" for r in b.get("tangle_reasons", [])[:3])
-    c = b.get("conditions", {})
-    stamp = ", ".join(x for x in [f"-O{c.get('opt_level')}" if c.get("opt_level") is not None else "", f"{c['linked']:.0%} linked" if c.get("linked") is not None else "", c.get("model") or ""] if x)
-    return (
-        f"[bold]waste[/bold] {b['waste']:.0%} [dim]({b['removable_loc']:.0f} of {b['loc']} lines" + (f"; {conf}" if conf else "") + (f"; +{b['model_loc']:.0f} if the semantic pairs merge" if b.get("model_loc") else "") + (f"; {b['unverified_loc']:.0f} alive only by name" if b.get("unverified_loc") else "") + ")[/dim]   "
-        f"[bold]tangle[/bold] {b['tangle']:.2f}" + (f" [dim]({reasons})[/dim]" if reasons else "") + "   "
-        f"[bold]bloat[/bold] {b['score']:.0%}" + (f"   [dim]\\[{stamp}][/dim]" if stamp else "")
-    )
-
-
-def _print_remarks(program: Program, limit: int = 60) -> None:
-    b = program.metrics.get("bloat_score", {})
-    plan = b.get("plan", [])
-    console.print()
-    console.print(f"[bold]missed-optimization remarks[/bold] [dim]({len(plan)} edits; {b.get('removable_loc', 0):.0f} lines shown by analysis" + (f", {b['model_loc']:.0f} more if the semantic pairs merge" if b.get("model_loc") else "") + "; apply the top one, re-run, repeat)[/dim]")
-    for p in plan[:limit]:
-        where = f"{p['file']}:{p['line']}" if p.get("line") else (p.get("file") or "")
-        console.print(f"  [dim]remark:[/dim] [bold]{p['action']:8}[/bold] {p['code']:24} [cyan]{p['qualname'] or ''}[/cyan] [dim]({where})[/dim]  {p['lines']:.0f} lines [dim]{p['confidence']}[/dim]")
-    if len(plan) > limit:
-        console.print(f"  [dim]... {len(plan) - limit} more in report.md[/dim]")
-
-
-def _print_baseline(program: Program, path: Path) -> None:
-    import json
-
-    try:
-        prev = json.loads(Path(path).read_text(encoding="utf-8"))["metrics"]["bloat_score"]
-    except (OSError, ValueError, KeyError) as exc:
-        console.print(f"[yellow]baseline {path}: no bloat score in it ({type(exc).__name__})[/yellow]")
-        return
-    cur = program.metrics.get("bloat_score")
-    if not cur:
-        return
-    dl = cur["removable_loc"] - prev["removable_loc"]
-    db = cur["score"] - prev["score"]
-    if abs(dl) < 0.5 and abs(db) < 0.005 and abs(cur["tangle"] - prev["tangle"]) < 0.005:
-        console.print("[bold]since baseline[/bold]: no change")
-        return
-    console.print(
-        f"[bold]since baseline[/bold]: waste {prev['removable_loc']:.0f} → {cur['removable_loc']:.0f} lines ({dl:+.0f}), "
-        f"tangle {prev['tangle']:.2f} → {cur['tangle']:.2f}, bloat {prev['score']:.0%} → {cur['score']:.0%} ({db * 100:+.0f} pts)"
-    )
-
-
-def _print_summary(program: Program) -> None:
-    m = program.metrics
-    if "bloat_score" in m:
-        console.print()
-        console.print(_size_line(m["bloat_score"]))
-    table = Table(title="what can go", show_lines=False, title_style="bold", header_style="dim")
-    table.add_column("category")
-    table.add_column("found")
-    table.add_column("action", style="dim")
-    if "dead_code" in m:
-        table.add_row("dead code", f"{m['dead_code']['symbols']} symbols, {m['dead_code']['loc']} lines", "delete")
-    if "duplicates" in m:
-        table.add_row("duplicate functions", f"{m['duplicates']['exact_groups']} groups ({m['duplicates']['removable_loc']} lines), {m['duplicates']['near_pairs']} near pairs", "merge")
-    if "wrappers" in m:
-        table.add_row("pass-through wrappers", f"{m['wrappers']['count']} ({m['wrappers']['chains']} chains)", "inline")
-    if "abstraction" in m:
-        table.add_row("needless abstraction", str(m["abstraction"]["count"]), "flatten")
-    if "bloat" in m:
-        b = m["bloat"]
-        table.add_row("dependency bloat", f"{b['unused_dependencies']} unused, {b['undeclared_dependencies']} undeclared", "prune")
-        table.add_row("defensive boilerplate", f"{b['swallowed_exceptions']} swallowed, {b['redundant_try']} redundant try, {b['stubs']} stubs", "remove")
-    if "unused_imports" in m:
-        table.add_row("unused imports", str(m["unused_imports"]["count"]), "remove")
-    if "cycles" in m:
-        table.add_row("import cycles", str(m["cycles"]["count"]), "break")
-    if table.row_count:
-        console.print()
-        console.print(table)
+def _gate(program: Program, fail_on: str) -> None:
+    """Exit 1 when the run crosses the line the user drew: a severity, or `bloat>0.25`."""
+    if fail_on.startswith("bloat>"):
+        limit = float(fail_on[6:])
+        b = program.metrics.get("bloat_score", {})
+        if b and b["score"] > limit:
+            console.print(f"[red]bloat {b['score']:.0%} exceeds the limit {limit:.0%}[/red]")
+            raise typer.Exit(1)
+    elif any(d.severity >= _parse_warn(fail_on) for d in program.diagnostics):
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -256,7 +165,7 @@ def size(
         console.print("[yellow]no passes ran, nothing to size[/yellow]")
         raise typer.Exit(1)
     console.print(f"[bold]vibepiler size[/bold] [cyan]{root}[/cyan]")
-    console.print(_size_line(b))
+    console.print(size_line(b))
     table = Table(header_style="dim", show_lines=False)
     for col, just in (("folder", "left"), ("modules", "right"), ("lines", "right"), ("removable", "right"), ("waste", "right"), ("tangle", "right"), ("bloat", "right")):
         table.add_column(col, justify=just)  # type: ignore[arg-type]
@@ -266,7 +175,7 @@ def size(
     if t.get("loc"):
         table.add_row("[dim]tests (not in the totals)[/dim]", str(t["modules"]), str(t["loc"]), f"{t['removable_loc']:.0f}", f"{t['waste']:.0%}", f"{t['tangle']:.2f}", f"{t['score']:.0%}")
     console.print(table)
-    _print_remarks(program, top)
+    print_remarks(program, top)
 
 
 @app.command()

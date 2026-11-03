@@ -20,10 +20,6 @@ from vibepiler.passes.registry import all_passes
 CYTOSCAPE = "https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.4/cytoscape.min.js"
 
 
-def _template() -> str:
-    return resources.files("vibepiler.backend").joinpath("viewer.html").read_text(encoding="utf-8")
-
-
 def emit_html(program: Program) -> str:
     s = summarize(program)
     data = json.dumps(emit_json(program), separators=(",", ":")).replace("</", "<\\/")
@@ -33,7 +29,7 @@ def emit_html(program: Program) -> str:
     linked = res.get("calls_resolved", 0) + res.get("calls_external", 0) + res.get("calls_builtin", 0)
     pct = f"{linked / total:.0%}" if total else "n/a"
     return (
-        _template()
+        resources.files("vibepiler.backend").joinpath("viewer.html").read_text(encoding="utf-8")
         .replace("__CYTOSCAPE__", CYTOSCAPE)
         .replace("__NAME__", program.root.name)
         .replace("__FILES__", str(s["files"]))

@@ -69,12 +69,14 @@ class ProgramGraph:
         return [d["obj"] for _, _, k, d in self._g.edges(keys=True, data=True) if kinds is None or k in kinds]
 
     def out_edges(self, node_id: str, kind: EdgeKind | Iterable[EdgeKind] | None = None) -> list[Edge]:
-        kinds = self._kinds(kind)
-        return [d["obj"] for _, _, k, d in self._g.out_edges(node_id, keys=True, data=True) if kinds is None or k in kinds]
+        return self._pick(self._g.out_edges(node_id, keys=True, data=True), kind)
 
     def in_edges(self, node_id: str, kind: EdgeKind | Iterable[EdgeKind] | None = None) -> list[Edge]:
+        return self._pick(self._g.in_edges(node_id, keys=True, data=True), kind)
+
+    def _pick(self, edge_view, kind: EdgeKind | Iterable[EdgeKind] | None) -> list[Edge]:  # noqa: ANN001
         kinds = self._kinds(kind)
-        return [d["obj"] for _, _, k, d in self._g.in_edges(node_id, keys=True, data=True) if kinds is None or k in kinds]
+        return [d["obj"] for _, _, k, d in edge_view if kinds is None or k in kinds]
 
     def children(self, node_id: str) -> list[Node]:
         return [self.node(e.dst) for e in self.out_edges(node_id, EdgeKind.CONTAINS)]
