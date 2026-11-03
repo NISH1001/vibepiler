@@ -27,9 +27,25 @@ structure can be recovered mechanically and analyzed like a program.
 
 Languages: **Python**, **JavaScript/TypeScript** (incl. JSX/TSX). Adding a language means adding one adapter file.
 
-## Install & run
+## Run it on any repo, no clone needed
 
 ```bash
+# one-off, straight from GitHub (needs uv: https://docs.astral.sh/uv/)
+uvx --from git+https://github.com/NISH1001/vibepiler vibepiler compile path/to/project
+open vibepiler-out/report.html
+
+# or install the command once
+uv tool install git+https://github.com/NISH1001/vibepiler
+vibepiler compile path/to/project -Wall
+
+# pipx works the same way
+pipx run --spec git+https://github.com/NISH1001/vibepiler vibepiler compile path/to/project
+```
+
+## Develop on it
+
+```bash
+git clone https://github.com/NISH1001/vibepiler && cd vibepiler
 uv sync                                    # or: pip install -e .
 uv run vibepiler compile path/to/project   # full pipeline, writes ./vibepiler-out/
 open vibepiler-out/report.html             # interactive graph + findings
