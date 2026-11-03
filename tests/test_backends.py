@@ -60,3 +60,10 @@ def test_html_viewer_embeds_graph(program):
     html = emit_html(program)
     assert "<html" in html and "cytoscape" in html
     assert "sym:src/app/core.py::process" in html
+
+
+def test_html_viewer_has_a_living_graph_layer(program):
+    html = emit_html(program)
+    assert '<canvas id="flow"' in html  # traffic overlay: particles travel along import/call edges
+    assert "underlay-color" in html  # glow halos on live nodes
+    assert "node.dead" in html and "prefers-reduced-motion" in html  # dead code is a ghost; motion is optional

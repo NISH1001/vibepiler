@@ -64,19 +64,28 @@
   .view { display: none; flex: 1; min-width: 0; min-height: 0; }
   .view[data-active="true"] { display: flex; }
   #view-graph { position: relative; }
-  #cy { flex: 1; min-width: 0; background: var(--surface); }
+  #cy { flex: 1; min-width: 0; }
+  /* The graph is a lit object: a deep field independent of the page theme, so glow and traffic read. */
+  .field { --field: #0d1426; --field-2: #182440; --field-ink: #eef1f8; --field-ink-2: #b3bdd1; --field-line: rgba(255,255,255,0.14);
+    --module: #4f9cff; --class: #ff8a5c; --function: #3fd79a; --method: #a596ff; --variable: #ff8fb8; --package: #8e9bb3;
+    --warning: #ffb020; --error: #ff6b6b; --trace: #ffc53d; }
+  #cy.field { background: radial-gradient(ellipse 85% 75% at 50% 32%, var(--field-2) 0%, var(--field) 55%, #070b16 100%); }
+  #flow { position: absolute; left: 0; top: 0; z-index: 1; pointer-events: none; }
   .toolbar { position: absolute; top: 10px; left: 10px; z-index: 2; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; max-width: calc(100% - 420px); }
   .toolbar .group { display: flex; gap: 0; background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
   .toolbar .group button { border: 0; border-radius: 0; background: transparent; }
   .toolbar .group button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
   .toolbar input[type=text] { width: 200px; }
-  .legend { position: absolute; left: 10px; bottom: 10px; z-index: 2; display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--ink-2); font-size: 11px; background: color-mix(in srgb, var(--surface) 85%, transparent); padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line); }
+  .legend { position: absolute; left: 10px; bottom: 10px; z-index: 2; display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--field-ink-2); font-size: 11px; background: rgba(13, 20, 38, 0.8); padding: 6px 10px; border-radius: 6px; border: 1px solid var(--field-line); backdrop-filter: blur(4px); }
+  .legend .k.orb::before { border-radius: 50%; box-shadow: 0 0 6px var(--c); }
+  .legend .k.dot::before { width: 5px; height: 5px; border-radius: 50%; box-shadow: 0 0 5px var(--c); vertical-align: 1px; }
+  .legend .k.ghost::before { background: #5b6479; border: 1px dashed #8e9bb3; opacity: 0.8; }
   .legend .k::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; background: var(--c); vertical-align: -1px; }
   .legend .k.edge::before { height: 2px; width: 14px; border-radius: 0; vertical-align: 3px; }
   .legend .k.dashed::before { background: none; border-top: 2px dashed var(--c); height: 0; }
   .zoom { position: absolute; right: 10px; bottom: 10px; z-index: 2; display: flex; flex-direction: column; gap: 4px; }
   .zoom button { width: 32px; padding: 4px 0; }
-  .hint { position: absolute; top: 52px; left: 10px; z-index: 2; color: var(--ink-3); font-size: 11px; }
+  .hint { position: absolute; top: 52px; left: 10px; z-index: 2; color: #b3bdd1; opacity: 0.9; font-size: 11px; text-shadow: 0 1px 3px rgba(0,0,0,0.7); }
 
   aside { width: 400px; max-width: 48vw; border-left: 1px solid var(--line); background: var(--surface-2); display: flex; flex-direction: column; min-height: 0; }
   .tabs { display: flex; border-bottom: 1px solid var(--line); }
@@ -201,12 +210,13 @@
       <button id="collapse-all">Collapse all</button>
       <input type="text" id="search" placeholder="Find a symbol  (/)" aria-label="Find a symbol">
     </div>
-    <div class="hint">Double-click a module to open its symbols. Click a node, then Trace to watch execution flow from it. Layout is fixed: toggles never move nodes.</div>
-    <div id="cy" role="img" aria-label="Program graph"></div>
-    <div class="legend">
-      <span class="k" style="--c:var(--module)">module</span><span class="k" style="--c:var(--class)">class</span><span class="k" style="--c:var(--function)">function</span><span class="k" style="--c:var(--method)">method</span><span class="k" style="--c:var(--package)">package</span>
+    <div class="hint">Live code glows and carries traffic; dead code is grey and still. Double-click a module to open it. Click a node, then Trace to follow execution. Layout is fixed: toggles never move nodes.</div>
+    <div id="cy" class="field" role="img" aria-label="Program graph"></div>
+    <canvas id="flow" aria-hidden="true"></canvas>
+    <div class="legend field">
+      <span class="k orb" style="--c:var(--module)">module, sized by lines</span><span class="k" style="--c:var(--class)">class</span><span class="k" style="--c:var(--function)">function</span><span class="k" style="--c:var(--method)">method</span><span class="k" style="--c:var(--package)">package</span>
       <span class="k edge" style="--c:var(--module)">imports</span><span class="k edge" style="--c:var(--function)">calls</span><span class="k edge dashed" style="--c:var(--method)">references</span><span class="k edge" style="--c:var(--class)">inherits</span>
-      <span class="k" style="--c:var(--warning)">warning border</span><span class="k" style="--c:var(--error)">error border</span><span>▶ entry point</span><span>dashed = unreachable</span>
+      <span class="k dot" style="--c:var(--function)">moving dots = traffic</span><span class="k" style="--c:var(--warning)">warning border</span><span class="k" style="--c:var(--error)">error border</span><span>▶ entry point, breathing</span><span class="k ghost">grey and still = unreachable</span>
     </div>
     <div class="zoom"><button id="z-in" aria-label="Zoom in">+</button><button id="z-out" aria-label="Zoom out">−</button><button id="z-fit" aria-label="Fit everything">⤢</button><button id="z-top" aria-label="Back to the top">⇱</button></div>
     <aside>
@@ -251,8 +261,9 @@ const DATA = __DATA__;
 const PASSES = __PASSES__;
 const SEV = { error: 30, warning: 20, info: 10 };
 const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-const KIND = () => ({ module: css('--module'), class: css('--class'), function: css('--function'), method: css('--method'), variable: css('--variable'), package: css('--package') });
-const EDGE = () => ({ imports: css('--module'), calls: css('--function'), references: css('--method'), inherits: css('--class') });
+const fcss = name => getComputedStyle(document.getElementById('cy')).getPropertyValue(name).trim();
+const KIND = () => ({ module: fcss('--module'), class: fcss('--class'), function: fcss('--function'), method: fcss('--method'), variable: fcss('--variable'), package: fcss('--package') });
+const EDGE = () => ({ imports: fcss('--module'), calls: fcss('--function'), references: fcss('--method'), inherits: fcss('--class') });
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -280,7 +291,7 @@ document.querySelectorAll('[data-count]').forEach(el => {
 function showView(name) {
   document.querySelectorAll('.view').forEach(v => v.dataset.active = v.id === 'view-' + name);
   document.querySelectorAll('.phase').forEach(b => b.setAttribute('aria-selected', b.dataset.view === name));
-  if (name === 'graph' && cy) cy.resize();
+  if (name === 'graph' && cy) { cy.resize(); sizeFlow(); }
 }
 document.querySelectorAll('.phase').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
 function showPanel(name) {
@@ -311,24 +322,26 @@ function moduleLayers() {
   const rank = {}; order.forEach((id, i) => rank[id] = i);
   const depth = {}; for (const id of order) depth[id] = Math.max(0, ...pred[id].filter(u => rank[u] < rank[id]).map(u => depth[u] + 1));
   const layers = []; for (const id of order) (layers[depth[id]] ||= []).push(nodeById[id]);
-  const PER_ROW = 8, pos = {};
+  const PER_ROW = 8, pos = {}, rowsOut = [];
   let y = 0;
   layers.forEach(layer => {
     const key = m => { const ps = pred[m.id].filter(u => pos[u]).map(u => pos[u].x); return ps.length ? ps.reduce((a, b) => a + b, 0) / ps.length : 0; };
     layer.sort((a, b) => key(a) - key(b) || a.name.localeCompare(b.name));
     const rows = Math.ceil(layer.length / PER_ROW);
     for (let r = 0; r < rows; r++) {
-      let x = 0, h = ROW;
+      let x = 0, h = ROW; const ids = [];
       for (const m of layer.slice(r * PER_ROW, (r + 1) * PER_ROW)) {
         const box = expanded.has(m.id) ? symbolBox(m) : null;
-        pos[m.id] = { x, y, w: box ? box.w : COL }; x += pos[m.id].w + (box ? 50 : 0);
+        pos[m.id] = { x, y, w: box ? box.w : COL }; x += pos[m.id].w + (box ? 50 : 0); ids.push(m.id);
         if (box) h = Math.max(h, 50 + box.rows * SYM_H + 20);
       }
+      rowsOut.push({ ids, w: pos[ids[ids.length - 1]].x + pos[ids[ids.length - 1]].w });
       y += h;
     }
     y += ROW * 0.25;
   });
-  const width = Math.max(0, ...Object.values(pos).map(p => p.x + p.w));
+  const width = Math.max(0, ...rowsOut.map(r => r.w));
+  for (const r of rowsOut) { const shift = (width - r.w) / 2; for (const id of r.ids) pos[id].x += shift; }
   dead.sort((a, b) => a.name.localeCompare(b.name));
   let dx = width + 160, dy = 0, col = 0;
   for (const m of dead) {
@@ -373,11 +386,11 @@ function elements() {
     const v = visibleNode(n); if (v) vis.add(n.id);
     const w = worst(n.id); const kc = KIND();
     const isParent = n.kind === 'module' && expanded.has(n.id);
-    els.push({ group: 'nodes', classes: (v ? '' : 'hidden') + (isParent ? ' parent' : '') + (n.attrs.reachable === false && n.kind !== 'package' ? ' dead' : ''),
+    els.push({ group: 'nodes', classes: (v ? '' : 'hidden') + (isParent ? ' parent' : '') + (n.attrs.reachable === false && n.kind !== 'package' ? ' dead' : '') + (n.kind === 'module' && n.attrs.is_root && n.attrs.reachable !== false ? ' root' : ''),
       position: { x: pos[n.id].x, y: pos[n.id].y },
       data: { id: n.id, label: displayName(n), kind: n.kind, parent: (n.kind !== 'module' && n.kind !== 'package' && expanded.has(n.module)) ? n.module : undefined,
         color: kc[n.kind], border: w >= 30 ? css('--error') : w >= 20 ? css('--warning') : kc[n.kind], bw: w >= 20 ? 3 : 1.5,
-        size: n.kind === 'module' ? Math.min(34, 18 + Math.sqrt(n.attrs.loc || 0) / 2) : 20 } });
+        size: n.kind === 'module' ? Math.min(64, 22 + Math.sqrt(n.attrs.loc || 0) * 1.4) : 20, hot: n.attrs.fan_in || 0 } });
   }
   for (const e of DATA.edges) {
     if (e.kind === 'contains' || (e.attrs && e.attrs.implicit)) continue;
@@ -394,25 +407,29 @@ function elements() {
 // ---------- cytoscape ----------
 let cy;
 function style() {
-  const ec = EDGE(); const ink = css('--ink');
+  const ec = EDGE(); const ink = fcss('--field-ink'), ink2 = fcss('--field-ink-2'), field = fcss('--field');
   return [
-    { selector: 'node', style: { label: 'data(label)', 'font-family': 'IBM Plex Sans, sans-serif', 'font-size': 10, color: ink, 'text-valign': 'center', 'text-halign': 'center', 'background-color': 'data(color)', 'background-opacity': 0.9, 'border-color': 'data(border)', 'border-width': 'data(bw)', shape: 'round-rectangle', width: 'label', height: 'data(size)', padding: '6px', 'text-wrap': 'ellipsis', 'text-max-width': 170, 'min-zoomed-font-size': 4, 'transition-property': 'background-opacity, opacity, border-color', 'transition-duration': 150 } },
-    { selector: 'node[kind = "module"]', style: { 'font-weight': 600, color: '#ffffff' } },
-    { selector: 'node[kind = "package"]', style: { shape: 'hexagon', color: ink, 'background-opacity': 0.35 } },
-    { selector: 'node[kind = "function"], node[kind = "method"], node[kind = "class"]', style: { 'font-size': 9, 'background-opacity': 0.7, shape: 'round-rectangle' } },
-    { selector: 'node.parent', style: { 'background-opacity': 0.08, 'border-width': 1.5, 'text-valign': 'top', 'text-halign': 'center', color: ink, padding: '12px', 'font-size': 11 } },
-    { selector: 'node.dead', style: { 'background-opacity': 0.2, 'border-style': 'dashed', color: css('--ink-3') } },
-    { selector: 'edge', style: { width: 1.2, 'curve-style': 'bezier', 'target-arrow-shape': 'triangle', 'arrow-scale': 0.7, 'line-color': e => ec[e.data('kind')], 'target-arrow-color': e => ec[e.data('kind')], opacity: 0.32, 'transition-property': 'opacity, width', 'transition-duration': 150 } },
+    { selector: 'node', style: { label: 'data(label)', 'font-family': 'IBM Plex Sans, sans-serif', 'font-size': 10, color: ink, 'text-outline-color': field, 'text-outline-width': 2, 'text-outline-opacity': 0.85, 'text-valign': 'center', 'text-halign': 'center', 'background-color': 'data(color)', 'background-opacity': 0.92, 'border-color': 'data(border)', 'border-width': 'data(bw)', shape: 'round-rectangle', width: 'label', height: 'data(size)', padding: '6px', 'text-wrap': 'ellipsis', 'text-max-width': 170, 'min-zoomed-font-size': 4, 'underlay-color': 'data(color)', 'underlay-opacity': 0.16, 'underlay-padding': 5, 'underlay-shape': 'round-rectangle', 'transition-property': 'background-opacity, opacity, border-color, underlay-opacity', 'transition-duration': 150 } },
+    { selector: 'node[kind = "module"]', style: { shape: 'ellipse', width: 'data(size)', height: 'data(size)', padding: 0, 'font-weight': 600, 'text-valign': 'bottom', 'text-margin-y': 7, 'underlay-shape': 'ellipse', 'underlay-padding': 9, 'underlay-opacity': 0.22, 'background-opacity': 1 } },
+    { selector: 'node.root', style: { 'border-width': 2, 'border-color': '#ffffff', 'underlay-padding': 14, 'underlay-opacity': 0.35 } },
+    { selector: 'node[kind = "package"]', style: { shape: 'hexagon', color: ink2, 'background-opacity': 0.3, 'underlay-opacity': 0 } },
+    { selector: 'node[kind = "function"], node[kind = "method"], node[kind = "class"]', style: { 'font-size': 9, color: '#0b1020', 'text-outline-width': 0, 'background-opacity': 0.9, shape: 'round-rectangle', 'underlay-opacity': 0.12 } },
+    { selector: 'node[kind = "module"].parent', style: { shape: 'round-rectangle', 'corner-radius': 18, 'background-color': 'data(color)', 'background-opacity': 0.07, 'border-width': 1, 'border-color': 'data(color)', 'border-opacity': 0.55, 'text-valign': 'top', 'text-halign': 'center', 'text-margin-y': 0, color: ink, padding: '14px', 'font-size': 11, 'underlay-opacity': 0, width: 'label', height: 'label' } },
+    { selector: 'node.dead', style: { 'background-color': '#5b6479', 'background-opacity': 0.3, 'border-style': 'dashed', 'border-color': '#8e9bb3', 'border-width': 1, color: ink2, 'text-opacity': 0.75, 'underlay-opacity': 0 } },
+    { selector: 'edge', style: { width: 1.2, 'curve-style': 'bezier', 'target-arrow-shape': 'triangle', 'arrow-scale': 0.6, 'line-cap': 'round', 'line-color': e => ec[e.data('kind')], 'target-arrow-color': e => ec[e.data('kind')], opacity: 0.3, 'transition-property': 'opacity, width', 'transition-duration': 150 } },
     { selector: 'edge[kind = "references"]', style: { 'line-style': 'dashed', 'line-dash-pattern': [4, 3] } },
     { selector: 'edge[kind = "inherits"]', style: { width: 2, 'target-arrow-shape': 'triangle-backcurve' } },
     { selector: '.hidden', style: { display: 'none' } },
-    { selector: '.faded', style: { opacity: 0.12 } },
-    { selector: 'node.focus', style: { 'border-color': ink, 'border-width': 3, 'background-opacity': 1 } },
-    { selector: 'node.near', style: { 'background-opacity': 1 } },
-    { selector: 'edge.near', style: { opacity: 0.95, width: 2 } },
+    { selector: '.faded', style: { opacity: 0.14 } },
+    { selector: 'node.focus', style: { 'border-color': '#ffffff', 'border-width': 3, 'background-opacity': 1, 'underlay-opacity': 0.5, 'underlay-padding': 14 } },
+    { selector: 'node.near', style: { 'background-opacity': 1, 'underlay-opacity': 0.35 } },
+    { selector: 'edge.near', style: { opacity: 0.9, width: 1.8 } },
     { selector: 'node.traced', style: { 'background-color': css('--trace'), 'background-opacity': 1, color: '#1a1a19', 'border-color': css('--trace') } },
     { selector: 'edge.flow', style: { opacity: 1, width: 2.5, 'line-color': css('--trace'), 'target-arrow-color': css('--trace'), 'line-style': 'dashed', 'line-dash-pattern': [8, 5] } },
     { selector: 'node.match', style: { 'border-color': css('--trace'), 'border-width': 3 } },
+    // an opened module is a membrane: it never fills, whatever state it is in
+    { selector: 'node[kind = "module"].parent.focus, node[kind = "module"].parent.near', style: { 'background-opacity': 0.12, 'underlay-opacity': 0, 'border-width': 1.5 } },
+    { selector: 'node[kind = "module"].parent.traced', style: { 'background-color': fcss('--trace'), 'background-opacity': 0.12, 'border-color': fcss('--trace'), 'border-width': 1.5, color: ink } },
   ];
 }
 function build(first) {
@@ -426,7 +443,65 @@ function build(first) {
   cy.on('tap', evt => { if (evt.target === cy) clearSelection(); });
   focusTop();
   if (first && !REDUCED) reveal();
+  sizeFlow(); lastSample = -1e9;
+  if (!flowRun && !REDUCED) setTimeout(() => { if (!flowRun) flowRun = requestAnimationFrame(flowFrame); }, first ? 1100 : 0);
 }
+
+// ---------- the living layer ----------
+// An overlay canvas above the graph: particles travel along visible import and call edges (density follows
+// the edge's count), and entry points plus the busiest modules breathe. Everything is seeded from ids, so
+// the picture is the same on every open; time only moves the particles. Off under prefers-reduced-motion.
+const flowEl = document.getElementById('flow'), fctx = flowEl.getContext('2d');
+let flowRun = null, flowEdges = [], pulseNodes = [], lastSample = -1e9;
+const hash01 = s => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; };
+function sizeFlow() {
+  const el = document.getElementById('cy'), dpr = devicePixelRatio || 1;
+  flowEl.style.left = el.offsetLeft + 'px'; flowEl.style.top = el.offsetTop + 'px'; flowEl.style.width = el.offsetWidth + 'px'; flowEl.style.height = el.offsetHeight + 'px';
+  flowEl.width = Math.round(el.offsetWidth * dpr); flowEl.height = Math.round(el.offsetHeight * dpr); fctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+function sampleFlow() {
+  const MAX = 420; let total = 0; flowEdges = [];
+  const cand = cy.edges(':visible').filter(e => (e.data('kind') === 'imports' || e.data('kind') === 'calls') && e.source().id() !== e.target().id())
+    .map(e => ({ e, h: hash01(e.id()), n: Math.min(3, 1 + Math.floor(Math.log2(e.data('count') || 1))) })).sort((a, b) => a.h - b.h);
+  for (const it of cand) { if (total + it.n > MAX) break; flowEdges.push(it); total += it.n; }
+  const mods = cy.nodes('node[kind = "module"]:visible').filter(n => !n.hasClass('dead'));
+  const hot = mods.sort((a, b) => b.data('hot') - a.data('hot')).slice(0, 6);
+  pulseNodes = [...new Set([...cy.nodes('.root:visible').toArray(), ...hot.toArray()])];
+}
+function flowFrame(t) {
+  flowRun = requestAnimationFrame(flowFrame);
+  if (document.hidden || !cy || document.getElementById('view-graph').dataset.active !== 'true') return;
+  if (t - lastSample > 600) { sampleFlow(); lastSample = t; }
+  fctx.save(); fctx.setTransform(1, 0, 0, 1, 0, 0); fctx.clearRect(0, 0, flowEl.width, flowEl.height); fctx.restore();
+  fctx.globalCompositeOperation = 'lighter';
+  const z = cy.zoom(), ec = EDGE(), trace = fcss('--trace'), anyFocus = selected !== null;
+  for (const n of pulseNodes) {
+    if (n.hasClass('faded')) continue;
+    const p = n.renderedPosition(), r = n.renderedWidth() / 2 + 2, a = 0.07 + 0.07 * Math.sin(t / 1500 * 6.283 + hash01(n.id()) * 6.283);
+    const g = fctx.createRadialGradient(p.x, p.y, r * 0.7, p.x, p.y, r * 2.4);
+    g.addColorStop(0, n.data('color')); g.addColorStop(1, 'rgba(0,0,0,0)');
+    fctx.globalAlpha = a; fctx.fillStyle = g; fctx.beginPath(); fctx.arc(p.x, p.y, r * 2.4, 0, 6.283); fctx.fill();
+  }
+  const rad = Math.max(1.3, 2.1 * Math.min(1.5, z));
+  for (const it of flowEdges) {
+    const e = it.e; if (e.hasClass('faded')) continue;
+    const s = e.renderedSourceEndpoint(), d = e.renderedTargetEndpoint(); if (!s || !d) continue;
+    // quadratic control point recovered from the rendered midpoint: M = P0/4 + C/2 + P1/4, so C = 2M - (P0 + P1)/2
+    const m = e.renderedMidpoint(); const c = m ? { x: 2 * m.x - (s.x + d.x) / 2, y: 2 * m.y - (s.y + d.y) / 2 } : null;
+    const onTrace = e.hasClass('flow'), col = onTrace ? trace : ec[e.data('kind')];
+    const speed = onTrace ? 1 / 1400 : e.data('kind') === 'calls' ? 1 / 3200 : 1 / 5200;
+    fctx.fillStyle = col; fctx.globalAlpha = e.hasClass('near') || onTrace ? 1 : anyFocus ? 0.35 : 0.7;
+    for (let k = 0; k < it.n; k++) {
+      const u = (t * speed + it.h + k / it.n) % 1, v = 1 - u;
+      const x = c ? v * v * s.x + 2 * v * u * c.x + u * u * d.x : s.x + (d.x - s.x) * u;
+      const y = c ? v * v * s.y + 2 * v * u * c.y + u * u * d.y : s.y + (d.y - s.y) * u;
+      fctx.beginPath(); fctx.arc(x, y, rad, 0, 6.283); fctx.fill();
+      fctx.globalAlpha *= 0.35; fctx.beginPath(); fctx.arc(x, y, rad * 2.6, 0, 6.283); fctx.fill(); fctx.globalAlpha /= 0.35;
+    }
+  }
+  fctx.globalAlpha = 1; fctx.globalCompositeOperation = 'source-over';
+}
+addEventListener('resize', () => { if (cy) { cy.resize(); sizeFlow(); } });
 function focusTop() {
   const vis = cy.nodes(':visible'); if (!vis.length) return;
   cy.fit(vis, 40);
