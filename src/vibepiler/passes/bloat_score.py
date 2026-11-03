@@ -99,7 +99,7 @@ class Bloat:
         return cls(loc=loc, removable_loc=d["removable_loc"], tangle=d["tangle"], model_loc=d.get("model_loc", 0.0))
 
     def __str__(self) -> str:
-        return f"waste {self.waste:.0%} ({self.removable_loc:.0f} of {self.loc} lines) · tangle {self.tangle:.2f} · bloat {self.score:.0%}"
+        return f"waste {self.waste:.1%} ({self.removable_loc:.0f} of {self.loc} lines) · tangle {self.tangle:.1%} · bloat {self.score:.1%}"
 
 
 def score(removable: float, loc: int, tangle: float) -> dict:
@@ -314,10 +314,10 @@ class BloatScorePass(Pass):
             top = ", ".join(f"{c} {v:.0f}" for c, v in causes.most_common(3))
             knot = ", ".join(f"{c} ×{k}" for c, k in knots.most_common(3))
             if b["removable_loc"] > 0:
-                msg = f"`{m.name}`: {b['removable_loc']:.0f} removable lines of {m.loc} ({b['waste']:.0%} waste" + (f": {top}" if top else "") + f"); tangle {b['tangle']:.2f}" + (f" ({knot})" if knot else "") + f"; bloat {b['score']:.0%}"
+                msg = f"`{m.name}`: {b['removable_loc']:.0f} removable lines of {m.loc} ({b['waste']:.0%} waste" + (f": {top}" if top else "") + f"); tangle {b['tangle']:.0%}" + (f" ({knot})" if knot else "") + f"; bloat {b['score']:.0%}"
                 sev, fix, action = Severity.WARNING, "Work the elimination plan from the top: delete what is dead, fold what is duplicated or wrapped, then split what is tangled.", "fold"
             else:
-                msg = f"`{m.name}`: nothing to delete, but tangled {b['tangle']:.2f}" + (f" ({knot})" if knot else "") + f"; bloat {b['score']:.0%}"
+                msg = f"`{m.name}`: nothing to delete, but tangled {b['tangle']:.0%}" + (f" ({knot})" if knot else "") + f"; bloat {b['score']:.0%}"
                 sev, fix, action = Severity.INFO, "No lines to free here; the bloat is structure. Split the tangled functions, starting with the most complex.", "simplify"
             diags.append(self.diag("bloated-module", sev, msg, node=m, suggestion=fix, action=action, confidence="inferred", **{k: round(v, 3) for k, v in b.items()}))
         return diags

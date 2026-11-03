@@ -170,10 +170,10 @@ def size(
     for col, just in (("folder", "left"), ("modules", "right"), ("lines", "right"), ("removable", "right"), ("waste", "right"), ("tangle", "right"), ("bloat", "right")):
         table.add_column(col, justify=just)  # type: ignore[arg-type]
     for f in b["folders"]:
-        table.add_row(f["path"], str(f["modules"]), str(f["loc"]), f"{f['removable_loc']:.0f}", f"{f['waste']:.0%}", f"{f['tangle']:.2f}", f"{f['score']:.0%}")
+        table.add_row(f["path"], str(f["modules"]), str(f["loc"]), f"{f['removable_loc']:.0f}", f"{f['waste']:.1%}", f"{f['tangle']:.1%}", f"{f['score']:.1%}")
     t = b.get("tests", {})
     if t.get("loc"):
-        table.add_row("[dim]tests (not in the totals)[/dim]", str(t["modules"]), str(t["loc"]), f"{t['removable_loc']:.0f}", f"{t['waste']:.0%}", f"{t['tangle']:.2f}", f"{t['score']:.0%}")
+        table.add_row("[dim]tests (not in the totals)[/dim]", str(t["modules"]), str(t["loc"]), f"{t['removable_loc']:.0f}", f"{t['waste']:.1%}", f"{t['tangle']:.1%}", f"{t['score']:.1%}")
     console.print(table)
     print_remarks(program, top)
 

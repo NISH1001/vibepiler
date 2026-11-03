@@ -37,7 +37,7 @@ def test_bloat_is_also_a_value(tmp_path):
     repo = Bloat.of(prog)
     assert repo is not None and 0 < repo.waste <= 1 and repo.score == 1 - (1 - repo.waste) * (1 - repo.tangle)
     dead = Bloat.of(prog.graph.node("sym:main.py::dead"))
-    assert dead.waste == 1.0 and dead.score == 1.0 and "bloat 100%" in str(dead)
+    assert dead.waste == 1.0 and dead.score == 1.0 and "bloat 100.0%" in str(dead)
 
 
 def test_a_function_made_of_named_steps_is_not_indirection(tmp_path):

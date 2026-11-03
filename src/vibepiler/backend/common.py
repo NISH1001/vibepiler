@@ -65,11 +65,11 @@ def size_parts(b: dict) -> dict[str, str]:
     c = b.get("conditions", {})
     stamp = ", ".join(x for x in [f"-O{c.get('opt_level')}" if c.get("opt_level") is not None else "", f"{c['linked']:.0%} linked" if c.get("linked") is not None else "", c.get("model") or ""] if x)
     return {
-        "waste": f"{b['waste']:.0%}",
+        "waste": f"{b['waste']:.1%}",
         "lines": f"{b['removable_loc']:.0f} of {b['loc']} lines" + (f"; {conf}" if conf else ""),
-        "tangle": f"{b['tangle']:.2f}",
+        "tangle": f"{b['tangle']:.1%}",
         "reasons": ", ".join(f"{r['code']} ×{r['count']}" for r in b.get("tangle_reasons", [])[:3]),
-        "bloat": f"{b['score']:.0%}",
+        "bloat": f"{b['score']:.1%}",
         "stamp": stamp,
         "tests": f"tests ({b['tests']['loc']} lines) scored apart: waste {b['tests']['waste']:.0%}" if b.get("tests", {}).get("loc") else "",
     }

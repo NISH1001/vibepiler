@@ -742,13 +742,13 @@ function renderNode(id) {
   document.querySelectorAll('#node [data-go]').forEach(li => li.addEventListener('click', () => select(li.dataset.go, true)));
 }
 
-function bloatBlock(b, loc) { const pct = Math.round(b.score * 100); return `<div class="section"><h3>Bloat ${pct}%</h3><div class="bloatbar"><i style="width:${pct}%;background:${tint(b.score)}"></i></div><div class="meta2">${Math.round(b.removable_loc)} of ${loc || '?'} lines could go (waste ${Math.round(b.waste * 100)}%) · tangle ${b.tangle.toFixed(2)}</div></div>`; }
+function bloatBlock(b, loc) { const pct = Math.round(b.score * 100); return `<div class="section"><h3>Bloat ${pct}%</h3><div class="bloatbar"><i style="width:${pct}%;background:${tint(b.score)}"></i></div><div class="meta2">${Math.round(b.removable_loc)} of ${loc || '?'} lines could go (waste ${(100 * b.waste).toFixed(1)}%) · tangle ${(100 * b.tangle).toFixed(1)}% · bloat = 1 − (1 − waste)(1 − tangle)</div></div>`; }
 
 // ---------- overview ----------
 function renderOverview() {
   const m = DATA.metrics; const tiles = [];
   const bs = m.bloat_score, meter = document.getElementById('meter');
-  if (bs) { const pct = Math.round(bs.score * 100); meter.hidden = false; meter.innerHTML = `<span class="l">waste</span><b>${Math.round(bs.removable_loc)}</b><span class="s">of ${bs.loc} lines</span><span class="l">tangle</span><b style="font-size:13px">${bs.tangle.toFixed(2)}</b><span class="l">bloat</span><b>${pct}%</b><span class="bar"><i style="width:${pct}%;background:${tint(bs.score)}"></i></span>`; }
+  if (bs) { const pct = Math.round(bs.score * 100); meter.hidden = false; meter.innerHTML = `<span class="l">waste</span><b>${(100 * bs.waste).toFixed(1)}%</b><span class="s">${Math.round(bs.removable_loc)} of ${bs.loc} lines</span><span class="l">tangle</span><b>${(100 * bs.tangle).toFixed(1)}%</b><span class="l">bloat</span><b>${(100 * bs.score).toFixed(1)}%</b><span class="bar"><i style="width:${pct}%;background:${tint(bs.score)}"></i></span>`; }
   if (m.dead_code) tiles.push([m.dead_code.symbols, 'dead symbols', `${m.dead_code.loc} lines to delete`]);
   if (m.duplicates) tiles.push([m.duplicates.exact_groups, 'duplicate groups', `${m.duplicates.removable_loc} lines to merge`]);
   if (m.wrappers) tiles.push([m.wrappers.count, 'pass-through wrappers', `${m.wrappers.chains} chains to collapse`]);
