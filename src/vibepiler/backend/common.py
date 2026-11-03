@@ -57,6 +57,24 @@ def short_label(n: Node) -> str:
     return n.qualname
 
 
+def size_parts(b: dict) -> dict[str, str]:
+    """The pieces of the `size` line, plain text; the terminal and markdown backends only add their markup."""
+    conf = ", ".join(f"{k} {v:.0f}" for k, v in b.get("waste_by_confidence", {}).items() if k != "model")
+    conf += f"; +{b['model_loc']:.0f} if the semantic pairs merge" if b.get("model_loc") else ""
+    conf += f"; {b['unverified_loc']:.0f} alive only by name" if b.get("unverified_loc") else ""
+    c = b.get("conditions", {})
+    stamp = ", ".join(x for x in [f"-O{c.get('opt_level')}" if c.get("opt_level") is not None else "", f"{c['linked']:.0%} linked" if c.get("linked") is not None else "", c.get("model") or ""] if x)
+    return {
+        "waste": f"{b['waste']:.0%}",
+        "lines": f"{b['removable_loc']:.0f} of {b['loc']} lines" + (f"; {conf}" if conf else ""),
+        "tangle": f"{b['tangle']:.2f}",
+        "reasons": ", ".join(f"{r['code']} ×{r['count']}" for r in b.get("tangle_reasons", [])[:3]),
+        "bloat": f"{b['score']:.0%}",
+        "stamp": stamp,
+        "tests": f"tests ({b['tests']['loc']} lines) scored apart: waste {b['tests']['waste']:.0%}" if b.get("tests", {}).get("loc") else "",
+    }
+
+
 def summarize(program: Program) -> dict:
     g = program.graph
     counts = {s.label: 0 for s in SEVERITY_ORDER}

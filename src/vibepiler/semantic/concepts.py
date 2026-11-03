@@ -55,20 +55,13 @@ def label_for(docs: list[list[str]], idf: dict[str, float], k: int = MAX_LABEL_W
     return " · ".join(top), top
 
 
-def build_concepts(program: Program) -> dict | None:
-    """Cluster the embedded functions into concepts; None when the embedding backend is missing."""
-    nodes, vectors, model = symbol_vectors(program)
-    if nodes is None:
-        return None
+def _communities(vectors) -> list[list[int]]:  # noqa: ANN001
+    """Louvain communities of the k-nearest-neighbour graph over the vectors; stable because seeded."""
     import networkx as nx
     import numpy as np
     from networkx.algorithms.community import louvain_communities
 
-    n = len(nodes)
-    result: dict = {"model": model, "symbols": n, "clustered": 0, "concepts": [], "edges": []}
-    if n < MIN_CONCEPT:
-        return result
-
+    n = vectors.shape[0]
     sims = vectors @ vectors.T
     np.fill_diagonal(sims, -1.0)
     k = min(KNN, n - 1)
@@ -81,48 +74,64 @@ def build_concepts(program: Program) -> dict | None:
                 j = int(j)
                 G.add_edge(i, j, weight=max(s, G[i][j]["weight"] if G.has_edge(i, j) else 0.0))
     comms = [sorted(c) for c in louvain_communities(G, weight="weight", resolution=RESOLUTION, seed=0) if len(c) >= MIN_CONCEPT]
-    comms.sort(key=lambda c: (-len(c), c[0]))
+    return sorted(comms, key=lambda c: (-len(c), c[0]))
 
-    docs, idf = identifier_idf([nd.qualname for nd in nodes])
-    concepts: list[dict] = []
-    centroids = []
-    for ci, c in enumerate(comms):
-        vecs = vectors[c]
-        centroid = vecs.mean(axis=0)
-        centroid = centroid / (np.linalg.norm(centroid) or 1.0)
-        sim_c = vecs @ centroid
-        exemplar = nodes[c[int(np.argmax(sim_c))]]
-        label, top = label_for([docs[i] for i in c], idf)
-        mods = Counter(nodes[i].module for i in c)
-        names = Counter(nodes[i].name for i in c)
-        pattern = names.most_common(1)[0][1] / len(c) >= PATTERN_SHARE
-        concepts.append(
-            {
-                "id": f"concept:{ci}",
-                "label": label or exemplar.name,
-                "words": top,
-                "exemplar": exemplar.id,
-                "size": len(c),
-                "members": [nodes[i].id for i in c],
-                "modules": dict(mods.most_common()),
-                "cohesion": round(float(sim_c.mean()), 3),
-                "scattered": len(mods) >= SCATTER_MODULES and max(mods.values()) / len(c) < SCATTER_SHARE and not pattern,
-                "pattern": names.most_common(1)[0][0] if pattern else None,
-            }
-        )
-        centroids.append(centroid)
 
-    xy, result["projection"] = project_2d(np.stack(centroids)) if centroids else (np.zeros((0, 2)), "none")
-    for c, p in zip(concepts, xy):
-        c["x"], c["y"] = round(float(p[0]), 4), round(float(p[1]), 4)
+def _describe(ci: int, members: list[int], nodes, vectors, docs, idf):  # noqa: ANN001
+    """One concept: its label, exemplar, module spread, cohesion, and whether it is scattered or a pattern."""
+    import numpy as np
 
+    vecs = vectors[members]
+    centroid = vecs.mean(axis=0)
+    centroid = centroid / (np.linalg.norm(centroid) or 1.0)
+    sim_c = vecs @ centroid
+    exemplar = nodes[members[int(np.argmax(sim_c))]]
+    label, top = label_for([docs[i] for i in members], idf)
+    mods = Counter(nodes[i].module for i in members)
+    names = Counter(nodes[i].name for i in members)
+    pattern = names.most_common(1)[0][1] / len(members) >= PATTERN_SHARE
+    concept = {
+        "id": f"concept:{ci}",
+        "label": label or exemplar.name,
+        "words": top,
+        "exemplar": exemplar.id,
+        "size": len(members),
+        "members": [nodes[i].id for i in members],
+        "modules": dict(mods.most_common()),
+        "cohesion": round(float(sim_c.mean()), 3),
+        "scattered": len(mods) >= SCATTER_MODULES and max(mods.values()) / len(members) < SCATTER_SHARE and not pattern,
+        "pattern": names.most_common(1)[0][0] if pattern else None,
+    }
+    return concept, centroid
+
+
+def _call_edges(program: Program, concepts: list[dict]) -> list[dict]:
     owner = {m: c["id"] for c in concepts for m in c["members"]}
     counts: Counter = Counter()
     for e in program.graph.edges(EdgeKind.CALLS):
         a, b = owner.get(e.src), owner.get(e.dst)
         if a and b and a != b:
             counts[(a, b)] += e.count or 1
-    result["edges"] = [{"src": a, "dst": b, "calls": c} for (a, b), c in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
+    return [{"src": a, "dst": b, "calls": c} for (a, b), c in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
+
+
+def build_concepts(program: Program) -> dict | None:
+    """Cluster the embedded functions into concepts; None when the embedding backend is missing."""
+    nodes, vectors, model = symbol_vectors(program)
+    if nodes is None:
+        return None
+    import numpy as np
+
+    result: dict = {"model": model, "symbols": len(nodes), "clustered": 0, "concepts": [], "edges": []}
+    if len(nodes) < MIN_CONCEPT:
+        return result
+    docs, idf = identifier_idf([nd.qualname for nd in nodes])
+    described = [_describe(ci, c, nodes, vectors, docs, idf) for ci, c in enumerate(_communities(vectors))]
+    concepts = [c for c, _ in described]
+    xy, result["projection"] = project_2d(np.stack([v for _, v in described])) if described else (np.zeros((0, 2)), "none")
+    for c, p in zip(concepts, xy):
+        c["x"], c["y"] = round(float(p[0]), 4), round(float(p[1]), 4)
+    result["edges"] = _call_edges(program, concepts)
     result["concepts"] = concepts
     result["clustered"] = sum(c["size"] for c in concepts)
     return result

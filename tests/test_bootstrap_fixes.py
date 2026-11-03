@@ -47,3 +47,23 @@ def test_a_function_made_of_named_steps_is_not_indirection(tmp_path):
     run_passes(prog, opt_level=2)
     helpers = {d.data["qualname"] for d in prog.diagnostics if d.code == "single-use-helper"}
     assert helpers == {"_lonely"}  # the three steps of build() are decomposition, not indirection
+
+
+def test_a_method_called_through_its_base_keeps_its_overrides_alive(tmp_path):
+    (tmp_path / "shapes.py").write_text("class Shape:\n    def area(self):\n        return 0\n\n\nclass Square(Shape):\n    def area(self):\n        return 4\n\n    def perimeter(self):\n        return 8\n")
+    (tmp_path / "main.py").write_text("from shapes import Shape, Square\n\n\ndef total(shapes):\n    return sum(Shape.area(s) for s in shapes)\n\n\nif __name__ == '__main__':\n    total([Square()])\n")
+    prog = build_program(tmp_path)
+    run_passes(prog, opt_level=2)
+    dead = {d.data["qualname"] for d in prog.diagnostics if d.code in ("dead-symbol", "unreachable-symbol")}
+    assert "Square.area" not in dead and "Square.perimeter" in dead  # virtual dispatch, not blanket exemption
+
+
+def test_accepted_findings_are_counted_not_reported(tmp_path):
+    (tmp_path / "pyproject.toml").write_text('[tool.vibepiler]\naccept = ["single-use-helper:_tiny*", "dead-symbol"]\n')
+    (tmp_path / "main.py").write_text("def _tiny(x):\n    return x + 1\n\n\ndef dead():\n    return 0\n\n\ndef run(x):\n    return _tiny(x)\n\n\nif __name__ == '__main__':\n    run(1)\n")
+    from vibepiler.config import Config
+
+    prog = build_program(tmp_path, config=Config.load(tmp_path))
+    run_passes(prog, opt_level=2)
+    assert not [d for d in prog.diagnostics if d.code in ("single-use-helper", "dead-symbol")]
+    assert {a["code"] for a in prog.metrics["accepted"]} == {"single-use-helper", "dead-symbol"}

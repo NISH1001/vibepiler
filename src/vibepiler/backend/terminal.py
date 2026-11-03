@@ -11,6 +11,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 
+from vibepiler.backend.common import size_parts
 from vibepiler.ir.program import Program
 from vibepiler.passes.diagnostic import Severity
 
@@ -45,14 +46,10 @@ def print_phase(n: int, name: str, msg: str) -> None:
 
 
 def size_line(b: dict) -> str:
-    conf = ", ".join(f"{k} {v:.0f}" for k, v in b.get("waste_by_confidence", {}).items() if k != "model")
-    reasons = ", ".join(f"{r['code']} ×{r['count']}" for r in b.get("tangle_reasons", [])[:3])
-    c = b.get("conditions", {})
-    stamp = ", ".join(x for x in [f"-O{c.get('opt_level')}" if c.get("opt_level") is not None else "", f"{c['linked']:.0%} linked" if c.get("linked") is not None else "", c.get("model") or ""] if x)
+    p = size_parts(b)
     return (
-        f"[bold]waste[/bold] {b['waste']:.0%} [dim]({b['removable_loc']:.0f} of {b['loc']} lines" + (f"; {conf}" if conf else "") + (f"; +{b['model_loc']:.0f} if the semantic pairs merge" if b.get("model_loc") else "") + (f"; {b['unverified_loc']:.0f} alive only by name" if b.get("unverified_loc") else "") + ")[/dim]   "
-        f"[bold]tangle[/bold] {b['tangle']:.2f}" + (f" [dim]({reasons})[/dim]" if reasons else "") + "   "
-        f"[bold]bloat[/bold] {b['score']:.0%}" + (f"   [dim]\\[{stamp}][/dim]" if stamp else "")
+        f"[bold]waste[/bold] {p['waste']} [dim]({p['lines']})[/dim]   [bold]tangle[/bold] {p['tangle']}" + (f" [dim]({p['reasons']})[/dim]" if p["reasons"] else "")
+        + f"   [bold]bloat[/bold] {p['bloat']}" + (f"   [dim]\\[{p['stamp']}][/dim]" if p["stamp"] else "")
     )
 
 

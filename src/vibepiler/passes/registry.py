@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fnmatch
 import time
 
 from vibepiler.ir.program import Program
@@ -62,6 +63,15 @@ def run_pass(name: str, program: Program) -> list[Diagnostic]:
     return diags
 
 
+def is_accepted(d: Diagnostic, patterns: list[str]) -> bool:
+    """`accept = ["class-as-function:*Embedder", "single-use-helper"]`: a code, or a code and a qualname glob."""
+    for pat in patterns:
+        code, _, glob = pat.partition(":")
+        if d.code == code and (not glob or fnmatch.fnmatch(d.data.get("qualname", "") or "", glob)):
+            return True
+    return False
+
+
 def run_passes(
     program: Program,
     opt_level: int = 2,
@@ -85,14 +95,23 @@ def run_passes(
             continue
         selected.append(p)
     timings: dict[str, float] = {}
+    accepted: list[dict] = []
     for p in selected:
         t0 = time.perf_counter()
         diags = run_pass(p.name, program)
         timings[p.name] = round(time.perf_counter() - t0, 4)
+        kept = []
+        for d in diags:
+            if is_accepted(d, program.config.accept):
+                accepted.append({"code": d.code, "qualname": d.data.get("qualname", ""), "file": d.file})
+            else:
+                kept.append(d)
+        diags = kept
         program.diagnostics.extend(diags)
         if on_pass is not None:
             on_pass(p, diags, timings[p.name])
     program.metrics["timings"] = timings
+    program.metrics["accepted"] = accepted
     program.metrics.pop("_ran", None)
     program.diagnostics.sort(key=lambda d: (-int(d.severity), d.file or "", d.line or 0))
     return program.diagnostics

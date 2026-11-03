@@ -25,48 +25,20 @@ class DeadCodePass(Pass):
         dead_classes: set[str] = set()
         total_loc = 0
         by_file: dict[str, int] = {}
-
-        def inbound(nid: str) -> list[str]:
-            return [e.src for e in g.in_edges(nid, INBOUND)]
-
         for n in sorted(g.nodes((NodeKind.CLASS, NodeKind.FUNCTION, NodeKind.METHOD, NodeKind.VARIABLE)), key=lambda x: (x.file or "", x.start_line or 0)):
-            if n.attrs.get("is_root") or n.attrs.get("reachable"):
+            if self._kept_alive(g, n, used_names, dead_classes):
                 continue
-            if is_dunder(n.name):
-                continue
-            parent = g.parent(n.id)
-            if parent is not None and parent.id in dead_classes:
-                continue  # reported with the class
-            if n.kind is NodeKind.VARIABLE:
-                mod = g.node(n.module) if n.module else None
-                if mod and any(tag in (mod.file or "") for tag in ("settings", "config", "constants", "__init__")):
-                    continue
-            if n.kind is NodeKind.METHOD and n.name in used_names:
-                continue
-            if parent is not None and parent.kind is NodeKind.CLASS and g.has_external_base(parent.id):
-                continue  # framework may call this override
-            callers = inbound(n.id)
-            live_callers = [c for c in callers if g.node(c).attrs.get("reachable")]
-            if live_callers:
+            callers = [e.src for e in g.in_edges(n.id, INBOUND)]
+            if any(g.node(c).attrs.get("reachable") for c in callers):
                 continue
             if n.kind is NodeKind.CLASS:
                 dead_classes.add(n.id)
-            exported = n.attrs.get("exported", False) and n.language != "python"
-            if callers:
-                code, sev = "unreachable-symbol", Severity.INFO
-                why = f"only used by dead code ({', '.join(g.node(c).qualname for c in callers[:3])})"
-            elif exported:
-                code, sev = "unused-export", Severity.INFO
-                why = "exported but never imported anywhere in the project"
-            else:
-                code, sev = "dead-symbol", Severity.WARNING
-                why = "never called or referenced"
-            kind = n.kind.value
+            code, sev, why = self._classify(g, n, callers)
             diags.append(
                 self.diag(
                     code,
                     sev,
-                    f"{kind} `{n.qualname}` is dead: {why}",
+                    f"{n.kind.value} `{n.qualname}` is dead: {why}",
                     node=n,
                     suggestion=f"Delete it ({n.loc} lines)." if n.loc else "Delete it.",
                     loc=n.loc,
@@ -98,3 +70,27 @@ class DeadCodePass(Pass):
         }
         return diags
 
+    @staticmethod
+    def _kept_alive(g, n, used_names, dead_classes: set[str]) -> bool:  # noqa: ANN001
+        """Reasons not to report a symbol: reachable, dunder, inside a dead class (reported with it), a settings
+        constant, a method name some unresolved call uses, or an override a framework may call."""
+        if n.attrs.get("is_root") or n.attrs.get("reachable") or is_dunder(n.name):
+            return True
+        parent = g.parent(n.id)
+        if parent is not None and parent.id in dead_classes:
+            return True
+        if n.kind is NodeKind.VARIABLE:
+            mod = g.node(n.module) if n.module else None
+            if mod and any(tag in (mod.file or "") for tag in ("settings", "config", "constants", "__init__")):
+                return True
+        if n.kind is NodeKind.METHOD and n.name in used_names:
+            return True
+        return parent is not None and parent.kind is NodeKind.CLASS and g.has_external_base(parent.id)
+
+    @staticmethod
+    def _classify(g, n, callers: list[str]) -> tuple[str, Severity, str]:  # noqa: ANN001
+        if callers:
+            return "unreachable-symbol", Severity.INFO, f"only used by dead code ({', '.join(g.node(c).qualname for c in callers[:3])})"
+        if n.attrs.get("exported", False) and n.language != "python":
+            return "unused-export", Severity.INFO, "exported but never imported anywhere in the project"
+        return "dead-symbol", Severity.WARNING, "never called or referenced"

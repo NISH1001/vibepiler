@@ -8,12 +8,12 @@ from vibepiler.passes.base import Pass
 from vibepiler.passes.diagnostic import Diagnostic, Severity
 from vibepiler.passes.entry_points import is_dunder
 from vibepiler.passes.manifests import (
-    PY_TOOL_PACKAGES,
     is_js_tool_package,
     is_py_stdlib,
     js_package_for_specifier,
     normalize_py,
-    py_dist_for_import,
+    PY_IMPORT_TO_DIST,
+    PY_TOOL_PACKAGES,
     read_manifests,
 )
 
@@ -53,7 +53,7 @@ class BloatPass(Pass):
             if dst.kind is not NodeKind.PACKAGE:
                 continue
             lang = "python" if src.language == "python" else "javascript"
-            key = py_dist_for_import(dst.name) if lang == "python" else (js_package_for_specifier(dst.name) or dst.name)
+            key = normalize_py(PY_IMPORT_TO_DIST.get(dst.name, dst.name)) if lang == "python" else (js_package_for_specifier(dst.name) or dst.name)
             imported[lang].setdefault(key, set()).add(src.file or "")
 
         for m in manifests:

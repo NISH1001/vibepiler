@@ -21,10 +21,22 @@ vibepiler = "vibepiler.cli:app"
 [project.optional-dependencies]
 semantic = [
     "fastembed>=0.4",
+    "huggingface-hub>=0.20",
     "model2vec>=0.4",
+    "numpy>=1.26",
 ]
 map = [
     "umap-learn>=0.5",
+]
+
+[tool.vibepiler]
+ignore = ["tests/fixtures/**"]                     # deliberately bloated sample projects for the test suite
+accept = [                                         # self-findings judged intentional; counted, not reported
+    "class-as-function:*Embedder",                 # they implement the Embedder protocol and hold a loaded model
+    "thin-wrapper:ProgramGraph.*_edges",           # the public API is one accessor per direction
+    "near-duplicate-function:Diagnostic.to_dict",  # every to_dict is a dict literal of its fields
+    "single-use-helper:*_id",                      # module_id/symbol_id/package_id define the id scheme in one place
+    "single-use-helper:get_pass",
 ]
 
 [tool.hatch.version]

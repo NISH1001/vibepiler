@@ -1453,7 +1453,9 @@ map = [
 ]
 semantic = [
     { name = "fastembed" },
+    { name = "huggingface-hub" },
     { name = "model2vec" },
+    { name = "numpy" },
 ]
 
 [package.dev-dependencies]
@@ -1466,8 +1468,10 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastembed", marker = "extra == 'semantic'", specifier = ">=0.4" },
+    { name = "huggingface-hub", marker = "extra == 'semantic'", specifier = ">=0.20" },
     { name = "model2vec", marker = "extra == 'semantic'", specifier = ">=0.4" },
     { name = "networkx", specifier = ">=3.5" },
+    { name = "numpy", marker = "extra == 'semantic'", specifier = ">=1.26" },
     { name = "pathspec", specifier = ">=0.12" },
     { name = "rich", specifier = ">=13" },
     { name = "tree-sitter", specifier = ">=0.25" },

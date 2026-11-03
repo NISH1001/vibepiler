@@ -33,6 +33,7 @@ class Config:
     thresholds: Thresholds = field(default_factory=Thresholds)
     use_gitignore: bool = True
     embedding_model: str = "nomic-ai/CodeRankEmbed"  # -O3 model; "minishlab/potion-code-16M-v2" for the fast static mode
+    accept: list[str] = field(default_factory=list)  # findings judged intentional: "code" or "code:qualname-glob"; counted, not reported
 
     @classmethod
     def load(cls, root: Path, **overrides: Any) -> Config:

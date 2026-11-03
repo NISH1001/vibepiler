@@ -24,6 +24,14 @@ class ImportOption:
     binding_path: str | None = None  # dotted path the local name is bound to; None = the matched module
 
 
+def decorator_parts(dec: Node, call_type: str) -> tuple[Node | None, Node | None]:
+    """A decorator's expression and the thing it names: `@a.b(c)` -> (the call, `a.b`); `@x` -> (`x`, `x`)."""
+    expr = next((c for c in dec.named_children), None)
+    if expr is None:
+        return None, None
+    return expr, (expr.child_by_field_name("function") if expr.type == call_type else expr)
+
+
 class LanguageSpec(ABC):
     name: str
     #: tree-sitter node types that add a branch to cyclomatic complexity

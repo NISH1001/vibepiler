@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Protocol, Sequence
@@ -140,7 +141,7 @@ class FastEmbedEmbedder:
         try:  # fastembed takes the stricter of the tokenizer config's two length keys; we know the real one
             self._model.model.tokenizer.enable_truncation(max_length=spec.max_length)
         except AttributeError:
-            pass
+            warnings.warn(f"could not set the tokenizer length for {model}; fastembed's internals changed, long functions may be truncated", RuntimeWarning, stacklevel=2)
 
     def embed(self, texts: Sequence[str]) -> Sequence[Sequence[float]]:
         return [list(map(float, v)) for v in self._model.embed(list(texts), batch_size=max(1, len(texts)))]
@@ -254,8 +255,8 @@ def embed_texts(embedder: Embedder, texts: Sequence[str], cache_dir: Path | None
         try:
             keys = list(cached)
             np.savez(path, hashes=np.array(keys), vectors=np.stack([cached[k] for k in keys]))
-        except OSError:
-            pass
+        except OSError as exc:
+            warnings.warn(f"embedding cache not written ({exc}); vectors will be recomputed next run", RuntimeWarning, stacklevel=2)
     mat = np.stack([cached[h] for h in hashes]) if hashes else np.zeros((0, 1), dtype=np.float32)
     norms = np.linalg.norm(mat, axis=1, keepdims=True)
     norms[norms == 0] = 1.0

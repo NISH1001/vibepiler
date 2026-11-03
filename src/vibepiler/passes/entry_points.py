@@ -94,6 +94,14 @@ class EntryPointsPass(Pass):
                 if e.dst not in reachable:
                     frontier.append(e.dst)
             node = g.node(nid)
+            if node.kind is NodeKind.METHOD:
+                # a call resolved to a base-class method reaches every override: virtual dispatch
+                owner = g.parent(nid)
+                if owner is not None and owner.kind is NodeKind.CLASS:
+                    for e in g.in_edges(owner.id, EdgeKind.INHERITS):
+                        for child in g.children(e.src):
+                            if child.kind is NodeKind.METHOD and child.name == node.name and child.id not in reachable:
+                                frontier.append(child.id)
             if node.kind is NodeKind.CLASS:
                 # a live class keeps alive the methods that are called by name anywhere
                 for child in g.children(nid):

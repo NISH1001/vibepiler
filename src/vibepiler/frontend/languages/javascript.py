@@ -13,7 +13,7 @@ from pathlib import Path
 from tree_sitter import Node
 
 from vibepiler.frontend.facts import CallSite, EntryHint, FileFacts, ImportDef, RefSite, SymbolDef
-from vibepiler.frontend.languages.base import ImportOption, LanguageSpec
+from vibepiler.frontend.languages.base import decorator_parts, ImportOption, LanguageSpec
 from vibepiler.frontend.loader import SourceFile
 from vibepiler.ir.model import NodeKind
 from vibepiler.passes.manifests import js_package_for_specifier
@@ -448,10 +448,9 @@ class _Extractor:
                 self.visit(c, scope, class_scope)
 
     def visit_decorator(self, node: Node, scope: str | None) -> None:
-        expr = next((c for c in node.named_children), None)
+        expr, target = decorator_parts(node, "call_expression")
         if expr is None:
             return
-        target = expr.child_by_field_name("function") if expr.type == "call_expression" else expr
         chain = self.loose_chain_of(target) if target is not None else None
         if chain is not None:
             self.facts.refs.append(RefSite(chain=chain, line=self.line(node), scope=scope, context="decorator"))
@@ -461,10 +460,9 @@ class _Extractor:
                 self.visit(args, scope, None)
 
     def decorator_name(self, dec: Node) -> str:
-        expr = next((c for c in dec.named_children), None)
+        expr, target = decorator_parts(dec, "call_expression")
         if expr is None:
             return ""
-        target = expr.child_by_field_name("function") if expr.type == "call_expression" else expr
         chain = self.loose_chain_of(target) if target is not None else None
         return ".".join(chain) if chain else self.text(expr)
 

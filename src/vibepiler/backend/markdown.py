@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from vibepiler.backend.common import summarize
+from vibepiler.backend.common import size_parts, summarize
 from vibepiler.ir.program import Program
 from vibepiler.passes.diagnostic import Diagnostic
 from vibepiler.passes.registry import all_passes
@@ -35,14 +35,8 @@ def _summary(program: Program) -> list[str]:
 
 def _size(b: dict) -> list[str]:
     """The size line and the per-folder table, like `size` on a binary."""
-    conf = ", ".join(f"{k} {v:.0f}" for k, v in b.get("waste_by_confidence", {}).items() if k != "model")
-    conf += f"; +{b['model_loc']:.0f} more if the semantic pairs merge" if b.get("model_loc") else ""
-    conf += f"; {b['unverified_loc']:.0f} lines are alive only because an unresolved call used their name" if b.get("unverified_loc") else ""
-    reasons = ", ".join(f"{r['code']} ×{r['count']}" for r in b.get("tangle_reasons", [])[:4])
-    c = b.get("conditions", {})
-    stamp = f"measured at -O{c.get('opt_level')}" + (f", {c['linked']:.0%} of call sites linked" if c.get("linked") is not None else "") + (f", model `{c['model']}`" if c.get("model") else "")
-    tests = f" Tests ({b['tests']['loc']} lines) are scored apart: waste {b['tests']['waste']:.0%}." if b.get("tests", {}).get("loc") else ""
-    line = f"**waste {b['waste']:.0%}** ({b['removable_loc']:.0f} of {b['loc']} source lines could go" + (f"; {conf}" if conf else "") + f") · **tangle {b['tangle']:.2f}**" + (f" ({reasons})" if reasons else "") + f" · **bloat {b['score']:.0%}** — {stamp}. `{b['formula']}`.{tests}"
+    p = size_parts(b)
+    line = f"**waste {p['waste']}** ({p['lines']}) · **tangle {p['tangle']}**" + (f" ({p['reasons']})" if p["reasons"] else "") + f" · **bloat {p['bloat']}**" + (f" — measured at {p['stamp']}" if p["stamp"] else "") + f". `{b['formula']}`." + (f" {p['tests'].capitalize()}." if p["tests"] else "")
     rows = [[f"`{f['path']}`", str(f["modules"]), str(f["loc"]), f"{f['score']:.0%}", f"{f['waste']:.0%}", f"{f['tangle']:.2f}"] for f in b["folders"][:15]]
     return ["", line, "", _table(["folder", "modules", "lines", "bloat", "waste", "tangle"], rows)]
 
