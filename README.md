@@ -27,39 +27,71 @@ structure can be recovered mechanically and analyzed like a program.
 
 Languages: **Python**, **JavaScript/TypeScript** (incl. JSX/TSX). Adding a language means adding one adapter file.
 
-## Run it on any repo, no clone needed
+## Quick start
+
+You need [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`). Nothing else: no clone, no install step.
 
 ```bash
-# one-off, straight from GitHub (needs uv: https://docs.astral.sh/uv/)
+# a project on disk
 uvx --from git+https://github.com/NISH1001/vibepiler vibepiler compile path/to/project
-open vibepiler-out/report.html
 
-# the target can be remote too: owner/repo, owner/repo@branch, a GitHub URL or any git URL.
-# it is shallow-cloned into ~/.cache/vibepiler and the reports land in vibepiler-out/<repo>/
+# a repo on GitHub: owner/repo, owner/repo@branch, or any GitHub / git URL
 uvx --from git+https://github.com/NISH1001/vibepiler vibepiler compile igaurab/gpython
-open vibepiler-out/gpython/report.html
 
-# or install the command once
-uv tool install git+https://github.com/NISH1001/vibepiler
-vibepiler compile path/to/project -Wall
+# the project you are standing in
+cd my-vibe-coded-app && uvx --from git+https://github.com/NISH1001/vibepiler vibepiler compile .
+```
 
-# pipx works the same way
-pipx run --spec git+https://github.com/NISH1001/vibepiler vibepiler compile path/to/project
+If you will run it more than once, install the command:
+
+```bash
+uv tool install git+https://github.com/NISH1001/vibepiler   # or: pipx install git+https://github.com/NISH1001/vibepiler
+vibepiler compile .                                           # then just this
+vibepiler compile owner/repo -Wall                            # -Wall also shows the info-level findings
+```
+
+### Where the output goes
+
+Everything is written to a `vibepiler-out/` directory **in the directory you ran the command from** (`vibepiler-out/<repo>/` for a remote target). Change it with `-o some/dir`.
+
+```
+vibepiler-out/
+├── report.html         the interactive viewer: open this first
+├── report.md           every finding grouped by pass, each with a suggested action
+├── ir.json             the whole program graph, findings and metrics, for scripts and agents
+├── graph.dot           module dependency graph (dot -Tsvg graph.dot -o graph.svg)
+├── graph-symbols.dot   symbol-level graph
+└── graph.mmd           Mermaid module graph, pasteable into a GitHub issue
+```
+
+```bash
+open vibepiler-out/report.html            # macOS; xdg-open on Linux
+```
+
+The terminal shows the phase-by-phase progress, the warnings (first 60), and a "what can go" table. The files always contain everything.
+
+Remote repos are shallow-cloned into `~/.cache/vibepiler/repos/` and reused on the next run (`--refresh` re-clones, `--cache DIR` relocates). File paths in the report are relative to that checkout.
+
+### Reading the result
+
+1. **`report.html` → Overview**: the "what can go" tiles and the entry points. Click an entry point to watch execution trace outward from it.
+2. **Findings tab** (or `report.md`): work top-down. `dead-code`, `duplicates`, `wrappers` and `abstraction` findings remove the most lines per decision; `cycles`, `complexity` and `hotspots` tell you what is risky to touch.
+3. **Link tab**: how much of the call graph was proven. A low "linked" percentage means lots of dynamic dispatch; dead-code results are still safe (they are conservative), but there will be fewer of them.
+4. Hand `ir.json` or `report.md` to your coding agent and ask it to act on the warnings; every finding carries the file, line and a concrete suggestion.
+
+### Use it as a CI gate
+
+```bash
+vibepiler compile . --fail-on warning -q      # exit code 1 if any warning-level finding exists
 ```
 
 ## Develop on it
 
 ```bash
 git clone https://github.com/NISH1001/vibepiler && cd vibepiler
-uv sync                                    # or: pip install -e .
-uv run vibepiler compile path/to/project   # full pipeline, writes ./vibepiler-out/
-open vibepiler-out/report.html             # interactive graph + findings
-```
-
-Try it on itself:
-
-```bash
-uv run vibepiler compile . --ignore "tests/fixtures/**"
+uv sync
+uv run vibepiler compile path/to/project
+uv run pytest
 ```
 
 ## The CLI (deliberately compiler-shaped)
