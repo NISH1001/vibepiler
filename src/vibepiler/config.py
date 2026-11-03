@@ -32,7 +32,7 @@ class Config:
     entry_patterns: list[str] = field(default_factory=list)  # extra glob/regex of entry qualnames
     thresholds: Thresholds = field(default_factory=Thresholds)
     use_gitignore: bool = True
-    embedding_model: str = "jinaai/jina-embeddings-v2-base-code"  # -O3 model; "minishlab/potion-code-16M-v2" for the fast static mode
+    embedding_model: str = "nomic-ai/CodeRankEmbed"  # -O3 model; "minishlab/potion-code-16M-v2" for the fast static mode
 
     @classmethod
     def load(cls, root: Path, **overrides: Any) -> Config:

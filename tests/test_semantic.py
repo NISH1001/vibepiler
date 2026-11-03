@@ -154,3 +154,64 @@ def test_real_model_end_to_end(monkeypatch):
     run_passes(prog, opt_level=3)
     pairs = [set(d.data["members"]) for d in prog.diagnostics if d.code == "semantic-duplicate"]
     assert {"sum_even", "even_total"} in pairs
+
+
+# --------------------------------------------------------------------------- default model, no truncation, batching
+def test_default_model_is_coderankembed_with_its_own_thresholds():
+    assert embed.DEFAULT_MODEL == "nomic-ai/CodeRankEmbed"
+    assert Config().embedding_model == embed.DEFAULT_MODEL
+    assert embed.backend_for(embed.DEFAULT_MODEL) == "fastembed"
+    assert embed.default_thresholds(embed.DEFAULT_MODEL) == (0.72, 0.32)
+    spec = embed.MODELS[embed.DEFAULT_MODEL]
+    assert spec.hf == "nishparadox/CodeRankEmbed-onnx-int8" and spec.model_file.endswith("model_quantized.onnx")
+    assert spec.pooling == "cls" and spec.max_length == 8192 and len(spec.revision or "") == 40
+
+
+def test_symbol_text_is_not_truncated(tmp_path):
+    body = "\n".join(f"    total += value_{i} * {i}  # line {i}" for i in range(120))
+    (tmp_path / "big.py").write_text(f"def big(total):\n{body}\n    return total\n")
+    prog = build_program(tmp_path)
+    node = prog.graph.node("sym:big.py::big")
+    text = embed.symbol_text(prog, node)
+    assert len(text) > 3000
+    assert text.rstrip().endswith("return total")
+
+
+class RecordingEmbedder:
+    name = "recording"
+
+    def __init__(self):
+        self.calls = []
+
+    def embed(self, texts):
+        self.calls.append(list(texts))
+        return [[float(len(t)), 1.0] for t in texts]  # unit-normalised later: v[0] / v[1] == len(t)
+
+
+def test_embed_texts_batches_by_length_within_a_budget_and_keeps_order(tmp_path):
+    texts = ["x" * n for n in (5000, 10, 30000, 300, 12, 900, 7, 2500)] + ["y" * 20 + str(i) for i in range(40)]
+    rec = RecordingEmbedder()
+    vecs = embed.embed_texts(rec, texts, cache_dir=tmp_path)
+    assert [round(float(v[0] / v[1])) for v in vecs] == [len(t) for t in texts]  # rows in input order
+    flat = [t for call in rec.calls for t in call]
+    assert flat == sorted(flat, key=len)  # sorted by length across the whole run
+    for call in rec.calls:
+        assert len(call) <= embed.BATCH_MAX
+        if len(call) > 1:
+            assert max(map(len, call)) * len(call) <= embed.BATCH_CHAR_BUDGET
+    assert ["x" * 30000] in rec.calls  # the giant function is embedded alone
+
+
+def test_prepare_model_dir_downloads_once_into_the_cache(tmp_path):
+    spec = embed.MODELS["nomic-ai/CodeRankEmbed"]
+    calls = []
+
+    def snapshot(spec, dest):
+        calls.append(spec.hf)
+        (dest / "onnx").mkdir(parents=True, exist_ok=True)
+        (dest / spec.model_file).write_bytes(b"int8")
+
+    d, model_file = embed.prepare_model_dir("nomic-ai/CodeRankEmbed", spec, cache_dir=tmp_path, snapshot=snapshot)
+    assert model_file == "onnx/model_quantized.onnx" and (d / model_file).is_file() and d.parent == tmp_path
+    assert embed.prepare_model_dir("nomic-ai/CodeRankEmbed", spec, cache_dir=tmp_path, snapshot=snapshot) == (d, model_file)
+    assert calls == ["nishparadox/CodeRankEmbed-onnx-int8"]
