@@ -75,6 +75,10 @@
   #cy2 { flex: 1; min-width: 0; }
   #view-concepts .hint { top: 10px; max-width: calc(100% - 430px); line-height: 1.5; }
   .status { color: #ffd166; font-weight: 600; margin-left: 6px; }
+  .toolbar .slider { display: flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; font-size: 12px; white-space: nowrap; }
+  .toolbar .slider input { width: 90px; margin: 0; }
+  .speed { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); margin-top: 8px; }
+  .speed input { width: 130px; margin: 0; }
   .meter { display: flex; align-items: center; gap: 8px; padding: 0 18px; border-left: 1px solid var(--line); font-size: 12px; white-space: nowrap; }
   .meter .l { color: var(--ink-3); } .meter b { font-size: 16px; } .meter .s { color: var(--ink-3); font-size: 11px; }
   .meter .bar, .bloatbar { display: inline-block; width: 90px; height: 6px; border-radius: 3px; background: var(--surface-3); overflow: hidden; vertical-align: middle; }
@@ -90,7 +94,7 @@
   .toolbar .group { display: flex; gap: 0; background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
   .toolbar .group button { border: 0; border-radius: 0; background: transparent; }
   .toolbar .group button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
-  .toolbar input[type=text] { width: 200px; }
+  .toolbar input[type=text] { width: 160px; }
   .legend { position: absolute; left: 10px; bottom: 10px; z-index: 2; display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--field-ink-2); font-size: 11px; background: rgba(13, 20, 38, 0.8); padding: 6px 10px; border-radius: 6px; border: 1px solid var(--field-line); backdrop-filter: blur(4px); }
   .legend .k.orb::before { border-radius: 50%; box-shadow: 0 0 6px var(--c); }
   .legend .k.dot::before { width: 5px; height: 5px; border-radius: 50%; box-shadow: 0 0 5px var(--c); vertical-align: 1px; }
@@ -223,6 +227,7 @@
         <button id="t-dead" aria-pressed="true">unreachable</button>
         <button id="t-flagged" aria-pressed="false">only flagged</button>
       </div>
+      <label class="slider" title="Hide every module and symbol scored below this">bloat ≥ <input type="range" id="bloat-min" min="0" max="100" step="5" value="0" aria-label="Minimum bloat"><b id="bloat-min-v">0%</b></label>
       <button id="expand-all">Expand all</button>
       <button id="collapse-all">Collapse all</button>
       <input type="text" id="search" placeholder="Find a symbol  (/)" aria-label="Find a symbol">
@@ -255,6 +260,7 @@
       <div class="panel" id="p-findings">
         <div class="filters">
           <select id="f-pass"><option value="">all passes</option></select>
+          <select id="f-code"><option value="">all findings</option></select>
           <select id="f-sev"><option value="10">info and up</option><option value="20" selected>warning and up</option><option value="30">errors only</option></select>
           <span class="count" id="f-count"></span>
         </div>
@@ -284,6 +290,7 @@
     <table class="data" id="passes"></table>
     <div class="filters" style="padding-left:0;margin-top:18px">
       <select id="o-pass"><option value="">all passes</option></select>
+      <select id="o-code"><option value="">all findings</option></select>
       <select id="o-sev"><option value="10">info and up</option><option value="20" selected>warning and up</option><option value="30">errors only</option></select>
       <span class="count" id="o-count"></span>
     </div>
@@ -412,13 +419,14 @@ function positions() {
 
 // ---------- elements ----------
 const edgeOn = { imports: true, calls: true, references: false, inherits: true };
-const show = { packages: false, dead: true, flagged: false };
+const show = { packages: false, dead: true, flagged: false, bloatMin: 0 };
 function visibleNode(n) {
   if (n.kind === 'package') return show.packages;
   if (n.kind === 'variable') return false;
   if (n.kind !== 'module' && !expanded.has(n.module)) return false;
   if (!show.dead && n.attrs.reachable === false) return false;
-  if (show.flagged && !(n.kind === 'module' ? flaggedModules.has(n.id) : (diagsByNode[n.id] || []).length)) return false;
+  if (show.flagged && !isFlagged(n)) return false;
+  if (show.bloatMin > 0 && n.kind !== 'package' && Math.round(100 * ((n.attrs.bloat || {}).score || 0)) < show.bloatMin) return false;
   return true;
 }
 function elements() {
@@ -472,7 +480,7 @@ function style() {
     { selector: 'node.focus', style: { 'border-color': '#ffffff', 'border-width': 3, 'background-opacity': 1, 'underlay-opacity': 0.5, 'underlay-padding': 14 } },
     { selector: 'node.near', style: { 'background-opacity': 1, 'underlay-opacity': 0.35 } },
     { selector: 'edge.near', style: { opacity: 0.9, width: 1.8 } },
-    { selector: 'node.traced', style: { 'background-color': css('--trace'), 'background-opacity': 1, color: '#1a1a19', 'border-color': css('--trace') } },
+    { selector: 'node.traced', style: { 'background-color': fcss('--trace'), 'background-opacity': 1, 'border-color': fcss('--trace'), 'pie-1-background-opacity': 0 } },
     { selector: 'edge.flow', style: { opacity: 1, width: 2.5, 'line-color': css('--trace'), 'target-arrow-color': css('--trace'), 'line-style': 'dashed', 'line-dash-pattern': [8, 5] } },
     { selector: 'node.match', style: { 'border-color': css('--trace'), 'border-width': 3 } },
     // an opened module is a membrane: it never fills, whatever state it is in
@@ -537,7 +545,7 @@ function flowFrame(t) {
     // quadratic control point recovered from the rendered midpoint: M = P0/4 + C/2 + P1/4, so C = 2M - (P0 + P1)/2
     const m = e.renderedMidpoint(); const c = m ? { x: 2 * m.x - (s.x + d.x) / 2, y: 2 * m.y - (s.y + d.y) / 2 } : null;
     const onTrace = e.hasClass('flow'), col = onTrace ? trace : ec[e.data('kind')];
-    const speed = onTrace ? 1 / 1400 : e.data('kind') === 'calls' ? 1 / 3200 : 1 / 5200;
+    const speed = onTrace ? traceSpeed / 1400 : e.data('kind') === 'calls' ? 1 / 3200 : 1 / 5200;
     fctx.fillStyle = col; fctx.globalAlpha = e.hasClass('near') || onTrace ? 1 : anyFocus ? 0.35 : 0.7;
     for (let k = 0; k < it.n; k++) {
       const u = (t * speed + it.h + k / it.n) % 1, v = 1 - u;
@@ -549,7 +557,9 @@ function flowFrame(t) {
   }
   fctx.globalAlpha = 1; fctx.globalCompositeOperation = 'source-over';
 }
-addEventListener('resize', () => { if (cy) { cy.resize(); sizeFlow(); } if (cy2) cy2.resize(); });
+function placeHint() { const tb = document.querySelector('#view-graph .toolbar'), h = document.querySelector('#view-graph .hint'); if (tb && h) h.style.top = (tb.offsetTop + tb.offsetHeight + 8) + 'px'; }
+placeHint();
+addEventListener('resize', () => { if (cy) { cy.resize(); sizeFlow(); } if (cy2) cy2.resize(); placeHint(); });
 
 // ---------- concepts (-O3): the semantic space ----------
 // A concept is a community of functions by meaning (embeddings -> nearest-neighbour graph -> Louvain). The map is a
@@ -671,6 +681,7 @@ function toggleExpand(id) { if (expanded.has(id)) expanded.delete(id); else expa
 
 // ---------- interaction ----------
 let selected = null, traceTimer = null, flowRaf = null, dashOffset = 0;
+let traceSpeed = 1; try { traceSpeed = +(localStorage.getItem('vibepiler.traceSpeed') || 1) || 1; } catch (_) {}
 function hover(node) { if (selected) return; cy.elements().addClass('faded'); node.closedNeighborhood().removeClass('faded').addClass('near'); }
 function refocus() { if (!selected) return; const n = cy.getElementById(selected); cy.elements().removeClass('faded near focus'); if (!n.length) return; cy.elements().addClass('faded'); n.closedNeighborhood().removeClass('faded').addClass('near'); n.addClass('focus'); }
 function select(id, pan) {
@@ -680,7 +691,7 @@ function select(id, pan) {
   if (pan) { const el = cy.getElementById(id); if (el.length) cy.animate({ center: { eles: el }, zoom: Math.max(cy.zoom(), 1) }, { duration: REDUCED ? 0 : 300 }); }
 }
 function clearSelection() { selected = null; stopTrace(); cy.elements().removeClass('faded near focus match'); }
-function stopTrace() { if (traceTimer) clearInterval(traceTimer); traceTimer = null; if (flowRaf) cancelAnimationFrame(flowRaf); flowRaf = null; if (cy) cy.elements().removeClass('traced flow'); }
+function stopTrace() { if (traceTimer) clearTimeout(traceTimer); traceTimer = null; if (flowRaf) cancelAnimationFrame(flowRaf); flowRaf = null; if (cy) cy.elements().removeClass('traced flow'); }
 function trace(id) {
   stopTrace(); cy.elements().removeClass('faded near focus').addClass('faded');
   const kinds = new Set(['calls', 'references', 'imports', 'inherits']);
@@ -700,10 +711,10 @@ function trace(id) {
     }
     wave = next; hops++;
     document.getElementById('trace-status').textContent = `${reached} nodes reached in ${hops - 1} hop${hops === 2 ? '' : 's'}` + (wave.length ? '…' : '.');
-    if (!wave.length) { clearInterval(traceTimer); traceTimer = null; }
   };
-  step(); traceTimer = setInterval(step, REDUCED ? 0 : 260);
-  if (!REDUCED) { const flow = () => { dashOffset -= 0.6; cy.edges('.flow').style('line-dash-offset', dashOffset); flowRaf = requestAnimationFrame(flow); }; flowRaf = requestAnimationFrame(flow); }
+  const tick = () => { step(); traceTimer = wave.length ? setTimeout(tick, REDUCED ? 0 : 260 / traceSpeed) : null; }; // speed can change mid-trace
+  tick();
+  if (!REDUCED) { const flow = () => { dashOffset -= 0.6 * traceSpeed; cy.edges('.flow').style('line-dash-offset', dashOffset); flowRaf = requestAnimationFrame(flow); }; flowRaf = requestAnimationFrame(flow); }
 }
 
 // ---------- node panel ----------
@@ -718,6 +729,7 @@ function renderNode(id) {
     <div class="section"><div style="display:flex;gap:8px;align-items:baseline"><span class="pill" style="background:color-mix(in srgb, ${KIND()[n.kind]} 30%, transparent)">${esc(n.kind)}</span><b class="mono" style="font-size:13px">${esc(n.qualname || n.name)}</b></div>
       <div class="mono" style="color:var(--ink-3);margin-top:4px">${esc(n.file || '')}${n.start_line ? ':' + n.start_line + '–' + n.end_line : ''}</div>
       <div class="actions"><button class="primary" id="btn-trace">Trace execution from here</button><button id="btn-clear">Clear</button></div>
+      <label class="speed">trace speed <input type="range" id="trace-speed" min="0.25" max="4" step="0.25" value="${traceSpeed}" aria-label="Trace speed"><span id="trace-speed-v">×${traceSpeed}</span></label>
       <div id="trace-status" style="color:var(--ink-2);margin-top:6px;min-height:1.2em"></div></div>
     ${n.attrs.bloat ? bloatBlock(n.attrs.bloat, n.attrs.loc) : ''}
     ${ds.length ? `<div class="section"><h3>Findings (${ds.length})</h3>${ds.map(d => `<div class="finding" style="padding:6px 0"><div class="head"><span class="sev ${d.severity}"></span><span class="code">${esc(d.code)}</span></div><div class="msg">${esc(d.message)}</div>${d.suggestion ? `<div class="fix">${esc(d.suggestion)}</div>` : ''}</div>`).join('')}</div>` : ''}
@@ -726,6 +738,7 @@ function renderNode(id) {
     <div class="section"><h3>Uses (${outs.length})</h3><ul class="list">${outs.join('') || '<li style="color:var(--ink-3);cursor:default">nothing</li>'}</ul></div>`;
   document.getElementById('btn-trace').onclick = () => trace(id);
   document.getElementById('btn-clear').onclick = clearSelection;
+  document.getElementById('trace-speed').addEventListener('input', e => { traceSpeed = +e.target.value; document.getElementById('trace-speed-v').textContent = '×' + traceSpeed; try { localStorage.setItem('vibepiler.traceSpeed', traceSpeed); } catch (_) {} });
   document.querySelectorAll('#node [data-go]').forEach(li => li.addEventListener('click', () => select(li.dataset.go, true)));
 }
 
@@ -755,9 +768,38 @@ function renderOverview() {
 function findingHtml(d) {
   return `<div class="finding" data-go="${esc(d.node_id || '')}"><div class="head"><span class="sev ${d.severity}"></span><span class="code">${esc(d.pass)} · ${esc(d.code)}</span><span class="loc mono">${esc(d.file || '')}${d.line ? ':' + d.line : ''}</span></div><div class="msg">${esc(d.message)}</div>${d.suggestion ? `<div class="fix">${esc(d.suggestion)}</div>` : ''}</div>`;
 }
+function fillCodes(passId, codeId) {
+  const pass = document.getElementById(passId).value, sel = document.getElementById(codeId), cur = sel.value;
+  const codes = [...new Set(DATA.diagnostics.filter(d => !pass || d.pass === pass).map(d => d.code))].sort();
+  sel.innerHTML = '<option value="">all findings</option>' + codes.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  if (codes.includes(cur)) sel.value = cur;
+}
+function findingFilter(prefix) { return { pass: document.getElementById(prefix + '-pass').value, code: document.getElementById(prefix + '-code').value, min: +document.getElementById(prefix + '-sev').value }; }
+const matchesFilter = (d, f) => (!f.pass || d.pass === f.pass) && (!f.code || d.code === f.code) && SEV[d.severity] >= f.min;
+// which nodes count as "flagged" in the graph: the graph panel's own filters decide
+let flaggedSet = null; // null = any finding at all
+function isFlagged(n) { return flaggedSet ? flaggedSet.has(n.id) : (n.kind === 'module' ? flaggedModules.has(n.id) : !!(diagsByNode[n.id] || []).length); }
+function recomputeFlagged() {
+  const f = findingFilter('f');
+  if (!f.pass && !f.code && f.min <= 10) { flaggedSet = null; } else {
+    flaggedSet = new Set();
+    for (const d of DATA.diagnostics) {
+      if (!matchesFilter(d, f)) continue;
+      const n = d.node_id && nodeById[d.node_id];
+      if (n) { flaggedSet.add(n.id); if (n.module) flaggedSet.add(n.module); } else if (d.file && nodeById['mod:' + d.file]) flaggedSet.add('mod:' + d.file);
+    }
+  }
+  if (!cy) return;
+  cy.nodes().removeClass('match');
+  if (f.pass || f.code) {
+    const ids = [...flaggedSet]; ids.forEach(id => cy.getElementById(id).addClass('match'));
+    say(`${ids.length} nodes carry ${f.code || f.pass} findings (lit up); "only flagged" isolates them`);
+  }
+  if (show.flagged) applyVisibility();
+}
 function renderFindings(listId, passId, sevId, countId) {
-  const pass = document.getElementById(passId).value, min = +document.getElementById(sevId).value;
-  const list = DATA.diagnostics.filter(d => (!pass || d.pass === pass) && SEV[d.severity] >= min);
+  const prefix = passId.split('-')[0]; const f = findingFilter(prefix);
+  const list = DATA.diagnostics.filter(d => matchesFilter(d, f));
   document.getElementById(countId).textContent = `${list.length} of ${DATA.diagnostics.length}`;
   const el = document.getElementById(listId);
   el.innerHTML = list.map(findingHtml).join('') || '<div class="empty">Nothing at this severity. Lower the filter to see more.</div>';
@@ -765,8 +807,11 @@ function renderFindings(listId, passId, sevId, countId) {
 }
 const passNames = [...new Set(DATA.diagnostics.map(d => d.pass))];
 for (const id of ['f-pass', 'o-pass']) for (const p of passNames) { const o = document.createElement('option'); o.value = p; o.textContent = p; document.getElementById(id).appendChild(o); }
-['f-pass', 'f-sev'].forEach(id => document.getElementById(id).addEventListener('change', () => renderFindings('findings', 'f-pass', 'f-sev', 'f-count')));
-['o-pass', 'o-sev'].forEach(id => document.getElementById(id).addEventListener('change', () => renderFindings('o-findings', 'o-pass', 'o-sev', 'o-count')));
+fillCodes('f-pass', 'f-code'); fillCodes('o-pass', 'o-code');
+document.getElementById('f-pass').addEventListener('change', () => fillCodes('f-pass', 'f-code'));
+document.getElementById('o-pass').addEventListener('change', () => fillCodes('o-pass', 'o-code'));
+['f-pass', 'f-code', 'f-sev'].forEach(id => document.getElementById(id).addEventListener('change', () => { renderFindings('findings', 'f-pass', 'f-sev', 'f-count'); recomputeFlagged(); }));
+['o-pass', 'o-code', 'o-sev'].forEach(id => document.getElementById(id).addEventListener('change', () => renderFindings('o-findings', 'o-pass', 'o-sev', 'o-count')));
 
 // ---------- frontend page ----------
 function renderFiles() {
@@ -809,14 +854,21 @@ function renderPasses() {
 // ---------- toolbar ----------
 document.querySelectorAll('[data-edge]').forEach(b => b.addEventListener('click', () => { edgeOn[b.dataset.edge] = !edgeOn[b.dataset.edge]; b.setAttribute('aria-pressed', edgeOn[b.dataset.edge]); applyVisibility(); }));
 function bindToggle(id, key) { document.getElementById(id).addEventListener('click', e => { show[key] = !show[key]; e.currentTarget.setAttribute('aria-pressed', show[key]); applyVisibility(); toggleFeedback(key); }); }
+function say(text) { const st = document.getElementById('status'); st.textContent = text; clearTimeout(say.t); say.t = setTimeout(() => { st.textContent = ''; }, 6000); }
+document.getElementById('bloat-min').addEventListener('input', e => {
+  show.bloatMin = +e.target.value; document.getElementById('bloat-min-v').textContent = show.bloatMin + '%'; applyVisibility();
+  const n = modules.filter(visibleNode).length;
+  say(show.bloatMin ? `${n} modules at bloat ≥ ${show.bloatMin}%` : 'all modules shown');
+});
 function toggleFeedback(key) {
   const st = document.getElementById('status');
-  const n = key === 'packages' ? cy.nodes('[kind = "package"]').length : key === 'dead' ? cy.nodes('node[kind = "module"].dead').length : cy.nodes(':visible').length;
+  const n = key === 'packages' ? DATA.nodes.filter(x => x.kind === 'package').length : key === 'dead' ? modules.filter(m => m.attrs.reachable === false).length : DATA.nodes.filter(visibleNode).length;
+  const f = findingFilter('f'), what = f.code || f.pass ? `${f.code || f.pass} findings` : f.min > 10 ? 'findings at warning or above' : 'findings';
   st.textContent = key === 'packages' ? (show.packages ? `${n} external packages shown in a row below the modules` : 'external packages hidden')
     : key === 'dead' ? (show.dead ? `${n} unreachable modules shown, grey, in the column on the right` : `${n} unreachable modules hidden`)
-    : (show.flagged ? `only the ${n} nodes with findings` : 'showing everything');
+    : (show.flagged ? `only the ${n} nodes with ${what} (the Findings filters decide)` : 'showing everything');
   if (show[key] && !REDUCED) cy.animate({ fit: { eles: cy.nodes(':visible'), padding: 40 } }, { duration: 450, easing: 'ease-in-out-cubic' });
-  clearTimeout(toggleFeedback.t); toggleFeedback.t = setTimeout(() => { st.textContent = ''; }, 5000);
+  clearTimeout(say.t); say.t = setTimeout(() => { st.textContent = ''; }, 6000);
 }
 bindToggle('t-packages', 'packages'); bindToggle('t-dead', 'dead'); bindToggle('t-flagged', 'flagged');
 function applyVisibility() {
