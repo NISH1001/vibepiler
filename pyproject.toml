@@ -1,6 +1,8 @@
 [project]
 name = "vibepiler"
-version = "0.1.0"
+dynamic = ["version"]
+license = "MIT"
+license-files = ["LICENSE"]
 description = "A compiler for vibe-coded software: parse a whole project into a program graph, then run optimization passes that find dead code, duplicates, cycles, over-abstraction and bloat."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -24,6 +26,9 @@ semantic = [
 map = [
     "umap-learn>=0.5",
 ]
+
+[tool.hatch.version]
+path = "src/vibepiler/__init__.py"  # the one place the version lives
 
 [build-system]
 requires = ["hatchling"]

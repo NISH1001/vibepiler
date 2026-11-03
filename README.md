@@ -32,7 +32,7 @@ Languages: **Python**, **JavaScript/TypeScript** (incl. JSX/TSX). Adding a langu
 You need [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`). Nothing else: no clone, no install step.
 
 ```bash
-# a project on disk
+# a project on disk (add @v0.1.0 after the URL to pin a release)
 uvx --from git+https://github.com/NISH1001/vibepiler vibepiler compile path/to/project
 
 # a repo on GitHub: owner/repo, owner/repo@branch, or any GitHub / git URL
@@ -404,3 +404,7 @@ cg = g.call_graph()                     # nx.DiGraph of callables
 - Concepts are seed-stable but not edit-stable: one deletion can reshuffle communities, which is why they are reported and mapped but never scored.
 
 Design notes live in `docs/superpowers/specs/`.
+
+## License
+
+MIT. See `LICENSE`.

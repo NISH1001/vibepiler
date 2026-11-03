@@ -1437,7 +1437,6 @@ wheels = [
 
 [[package]]
 name = "vibepiler"
-version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "networkx" },
@@ -1476,7 +1475,7 @@ requires-dist = [
     { name = "typer", specifier = ">=0.12" },
     { name = "umap-learn", marker = "extra == 'map'", specifier = ">=0.5" },
 ]
-provides-extras = ["semantic", "map"]
+provides-extras = ["map", "semantic"]
 
 [package.metadata.requires-dev]
 dev = [
