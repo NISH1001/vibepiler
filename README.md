@@ -253,12 +253,4 @@ cg = g.call_graph()                     # nx.DiGraph of callables
 - Python and JS/TS only, for now. Go, Rust and Java grammars are already available through the language pack.
 - Analysis only; an `--fix` mode for the mechanical findings (unused imports, dead symbols) is the obvious next step.
 
-## Development
-
-```bash
-uv sync
-uv run pytest
-uv run vibepiler compile . --ignore "tests/fixtures/**" -Wall
-```
-
 Design notes live in `docs/superpowers/specs/`.
