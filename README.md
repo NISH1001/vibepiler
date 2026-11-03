@@ -306,15 +306,20 @@ Every finding also carries an `action`, delete, fold or simplify, and the **elim
 
 ### Bootstrapped on itself
 
-The first thing it was run on was vibepiler. Round one of the loop, measured with `--baseline`:
+The first thing it was run on was vibepiler. Three rounds of the loop, each measured with `--baseline`:
 
-| | before | after |
-|---|---|---|
-| removable lines shown by analysis | 71 | 34 |
-| of which proven | 13 | 3 |
-| bloat | 31% | 31% |
+| | start | round 1 | round 2 | round 3 |
+|---|---|---|---|---|
+| removable lines shown by analysis | 71 | 34 | 41 | 31 |
+| tangle | 0.30 | 0.31 | 0.27 | 0.26 |
+| bloat | 31% | 31% | 28% | 26% |
+| most tangled function | `BloatScorePass.run` 100 | same | `AbstractionPass.run` 57 | `read_manifests` 43 |
 
-What went: five dead helpers in the tree-sitter wrapper left over from the first implementation, a constant nothing read, two unused imports, the `extract` method that every language adapter had copied, and two copies of the "does this class inherit from a framework" check. What did not go, and became fixes to the tool instead: a module constant used only as a default argument was reported dead (the extractor skipped identifier defaults) and typer's decorated callback was called a stub (decorated stubs are registered with a framework on purpose). The score did not move because what is left is tangle, 55 functions over the complexity threshold, which is a rewrite rather than a deletion; the size line says so.
+Round one was waste: five dead helpers in the tree-sitter wrapper left over from the first implementation, a constant nothing read, unused imports, the `extract` method every language adapter had copied, and two copies of the "does this class inherit from a framework" check. Rounds two and three were tangle: the tool's own scoring pass, at cyclomatic complexity 100, became five stages; the markdown emitter became one function per section; the CLI's printing moved into a terminal backend, which is what the mixed-responsibilities finding on `cli.py` meant; the abstraction and entry-point passes were split the same way.
+
+Self-findings the owner rejected became fixes to the tool, which is the other half of the loop: a module constant used only as a default argument was reported dead (the extractor skipped identifier defaults); typer's decorated callback was called a stub (decorated stubs are registered with a framework on purpose); and round two briefly *raised* waste by 7 lines because the section functions it created were charged as single-use helpers, so the rule now recognises a caller with three or more such helpers as a function made of named steps, not indirection.
+
+What is left is honest: 60 functions over the complexity threshold, most of them tree-walkers and manifest parsers that are long because the grammar is, and 1,040 lines alive only by name because 54% of call sites link. The second number is the one a type-aware linker would move.
 
 ## Configuration
 
