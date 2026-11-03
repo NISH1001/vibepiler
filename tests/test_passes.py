@@ -185,3 +185,13 @@ def test_run_passes_opt_level_one_skips_expensive_passes(program):
     program.diagnostics.clear()
     diags = run_passes(program, opt_level=1)
     assert "duplicates" not in {d.pass_name for d in diags}
+
+
+def test_bloat_flags_undeclared_dependency_but_not_local_or_stdlib_modules(tmp_path):
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\nversion = "0"\ndependencies = ["requests"]\n')
+    (tmp_path / "app.py").write_text("import os\nimport flask\nimport requests\nimport helpers\n\ndef main():\n    return flask.Flask(__name__)\n")
+    (tmp_path / "helpers.py").write_text("def h():\n    return 1\n")
+    prog = build_program(tmp_path)
+    diags = run_pass("bloat", prog)
+    undeclared = {d.data["package"] for d in codes(diags, "undeclared-dependency")}
+    assert undeclared == {"flask"}

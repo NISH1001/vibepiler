@@ -88,8 +88,10 @@ class BloatPass(Pass):
                 if m.language == "python":
                     if is_py_stdlib(key) or key in declared_keys or any(k.replace("-", "") == key.replace("-", "") for k in declared_keys):
                         continue
-                    # relative-looking or local module names (e.g. `import utils` that we could not resolve)
-                    if key in {g.node(x).name.split(".")[0] for x in g.nodes(NodeKind.MODULE) if True}:
+                    # local module names we could not resolve as imports (e.g. `import utils` from a script dir)
+                    local_roots = {x.name.split(".")[0] for x in g.nodes(NodeKind.MODULE)}
+                    local_roots |= {a.split(".")[0] for x in g.nodes(NodeKind.MODULE) for a in x.attrs.get("aliases", [])}
+                    if key in local_roots:
                         continue
                 else:
                     if key in declared_keys or key.startswith("node:"):

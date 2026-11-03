@@ -34,6 +34,11 @@ Languages: **Python**, **JavaScript/TypeScript** (incl. JSX/TSX). Adding a langu
 uvx --from git+https://github.com/NISH1001/vibepiler vibepiler compile path/to/project
 open vibepiler-out/report.html
 
+# the target can be remote too: owner/repo, owner/repo@branch, a GitHub URL or any git URL.
+# it is shallow-cloned into ~/.cache/vibepiler and the reports land in vibepiler-out/<repo>/
+uvx --from git+https://github.com/NISH1001/vibepiler vibepiler compile igaurab/gpython
+open vibepiler-out/gpython/report.html
+
 # or install the command once
 uv tool install git+https://github.com/NISH1001/vibepiler
 vibepiler compile path/to/project -Wall
@@ -60,9 +65,10 @@ uv run vibepiler compile . --ignore "tests/fixtures/**"
 ## The CLI (deliberately compiler-shaped)
 
 ```
-vibepiler compile <path> [-O0|-O1|-O2] [-W all|warning|error] [--emit json,dot,mermaid,html,md] [-o out/]
-                         [--only pass,pass] [--skip pass] [--ignore "glob,glob"] [--lang python,typescript]
-                         [--fail-on warning|error] [-q]
+vibepiler compile <path | owner/repo[@ref] | git url> [-O0|-O1|-O2] [-W all|warning|error]
+                         [--emit json,dot,mermaid,html,md] [-o out/] [--only pass,pass] [--skip pass]
+                         [--ignore "glob,glob"] [--lang python,typescript] [--fail-on warning|error] [-q]
+                         [--cache DIR] [--refresh]
 vibepiler graph   <path> [--level module|symbol] [--format dot|mermaid|json] [--packages]
 vibepiler paths   <path> --from <symbol> [--to <symbol>] [--depth N]
 vibepiler passes

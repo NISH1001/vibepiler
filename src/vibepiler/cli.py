@@ -21,6 +21,7 @@ from vibepiler.ir.model import EdgeKind, NodeKind
 from vibepiler.ir.program import Program
 from vibepiler.passes.diagnostic import Severity
 from vibepiler.passes.registry import all_passes, run_passes
+from vibepiler.remote import default_cache, fetch_remote, parse_remote, repo_name
 
 app = typer.Typer(
     name="vibepiler",
@@ -59,14 +60,32 @@ def _parse_warn(w: str | None) -> Severity:
     raise typer.BadParameter(f"unknown warning level {w!r}; use all|warning|error")
 
 
+def _resolve_source(path: str, cache: Path | None, refresh: bool = False) -> tuple[Path, str | None]:
+    """Local path as-is; `owner/repo`, GitHub URLs or git URLs are cloned into the cache. Returns (root, repo name or None)."""
+    remote = parse_remote(path)
+    if remote is None:
+        root = Path(path).resolve()
+        if not root.exists():
+            err_console.print(f"[red]error:[/red] {root} does not exist (to compile a GitHub repo, pass owner/repo or a URL)")
+            raise typer.Exit(2)
+        return root, None
+    url, ref = remote
+    try:
+        root = fetch_remote(url, ref, cache=cache or default_cache(), refresh=refresh, log=lambda m: console.print(f"[dim]remote[/dim]    {m}"))
+    except RuntimeError as exc:
+        err_console.print(f"[red]error:[/red] {exc}")
+        raise typer.Exit(2)
+    return root, repo_name(url)
+
+
 def _print_phase(n: int, name: str, msg: str) -> None:
     console.print(f"[dim][{n}/4][/dim] [bold]{name:9}[/bold] {msg}")
 
 
 @app.command()
 def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
-    path: Path = typer.Argument(Path("."), help="Project root to compile."),
-    out: Path = typer.Option(Path("vibepiler-out"), "-o", "--out", help="Output directory."),
+    path: str = typer.Argument(".", help="Project root, or a remote repo: owner/repo[@ref], a GitHub URL, or any git URL."),
+    out: Path = typer.Option(None, "-o", "--out", help="Output directory (default vibepiler-out/, or vibepiler-out/<repo> for remotes)."),
     opt: int = typer.Option(None, "-O", "--opt", min=0, max=2, help="-O0 graph only, -O1 cheap passes, -O2 everything (default)."),
     warn: Optional[str] = typer.Option(None, "-W", "--warn", help="Minimum severity to print: all|warning|error (default warning). `-Wall` shows infos."),
     emit: str = typer.Option(",".join(EMITTERS), "--emit", help="Comma-separated outputs: json,dot,mermaid,html,md."),
@@ -77,12 +96,13 @@ def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
     fail_on: Optional[str] = typer.Option(None, "--fail-on", help="Exit 1 if any finding is at/above this severity (warning|error)."),
     quiet: bool = typer.Option(False, "-q", "--quiet", help="Only print the phase lines and the summary."),
     max_print: int = typer.Option(60, "--max-print", help="Max findings printed to the terminal."),
+    cache: Optional[Path] = typer.Option(None, "--cache", help="Where remote repos are cloned (default ~/.cache/vibepiler)."),
+    refresh: bool = typer.Option(False, "--refresh", help="Re-clone a remote repo instead of reusing the cached clone."),
 ) -> None:
     """Compile a project: frontend -> semantic graph -> optimization passes -> reports."""
-    root = path.resolve()
-    if not root.exists():
-        err_console.print(f"[red]error:[/red] {root} does not exist")
-        raise typer.Exit(2)
+    root, remote_name = _resolve_source(path, cache, refresh)
+    if out is None:
+        out = Path("vibepiler-out") / remote_name if remote_name else Path("vibepiler-out")
     langs = [x.strip() for x in lang.split(",")] if lang else None
     if langs and (bad_langs := [x for x in langs if x not in available()]):
         raise typer.BadParameter(f"unknown language(s) {bad_langs}; choose from {', '.join(available())}")
@@ -170,17 +190,18 @@ def passes() -> None:
 
 @app.command()
 def graph(
-    path: Path = typer.Argument(Path(".")),
+    path: str = typer.Argument(".", help="Project root, owner/repo, or git URL."),
     level: str = typer.Option("module", "--level", help="module | symbol"),
     fmt: str = typer.Option("dot", "--format", help="dot | mermaid | json"),
     packages: bool = typer.Option(False, "--packages/--no-packages", help="Include external packages."),
     ignore: Optional[str] = typer.Option(None, "--ignore"),
 ) -> None:
     """Print the dependency / call graph in DOT, Mermaid or JSON."""
-    cfg = Config.load(path.resolve())
+    root, _ = _resolve_source(path, None)
+    cfg = Config.load(root)
     if ignore:
         cfg.ignore += ignore.split(",")
-    program = build_program(path, config=cfg)
+    program = build_program(root, config=cfg)
     run_passes(program, opt_level=1, only=["entry-points", "cycles"])
     if fmt == "dot":
         typer.echo(emit_dot(program, level=level, include_packages=packages))
@@ -216,14 +237,15 @@ def _find_symbol(program: Program, query: str) -> str:
 
 @app.command()
 def paths(
-    path: Path = typer.Argument(Path(".")),
+    path: str = typer.Argument(".", help="Project root, owner/repo, or git URL."),
     src: str = typer.Option(..., "--from", help="Start symbol, e.g. app.main.main or main.py"),
     dst: Optional[str] = typer.Option(None, "--to", help="Target symbol; omit to print the execution tree from --from."),
     depth: int = typer.Option(6, "--depth", help="Max depth of the execution tree."),
     refs: bool = typer.Option(True, "--refs/--no-refs", help="Follow reference edges too, not just calls."),
 ) -> None:
     """Show execution pathways: the call tree from a symbol, or every shortest path between two symbols."""
-    program = build_program(path)
+    root, _ = _resolve_source(path, None)
+    program = build_program(root)
     g = program.graph
     kinds = [EdgeKind.CALLS] + ([EdgeKind.REFERENCES] if refs else [])
     start = _find_symbol(program, src)
