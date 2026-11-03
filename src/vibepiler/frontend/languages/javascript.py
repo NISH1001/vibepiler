@@ -222,14 +222,8 @@ class JavaScriptSpec(LanguageSpec):
         return False
 
     # ---------------------------------------------------------------- extract
-    def extract(self, sf: SourceFile) -> FileFacts:
-        name, aliases = self.module_name(sf)
-        facts = FileFacts(file=sf, module_name=name, aliases=aliases, is_test=self.is_test_file(sf.rel))
-        facts.attrs["loc"] = sf.lines
-        ex = _Extractor(self, sf, facts)
-        ex.visit(sf.tree.root_node, scope=None, class_scope=None)
-        ex.finish()
-        return facts
+    def extractor(self, sf: SourceFile, facts: FileFacts) -> "_Extractor":
+        return _Extractor(self, sf, facts)
 
 
 class TypeScriptSpec(JavaScriptSpec):

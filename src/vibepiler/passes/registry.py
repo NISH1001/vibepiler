@@ -8,7 +8,9 @@ from vibepiler.ir.program import Program
 from vibepiler.passes.abstraction import AbstractionPass
 from vibepiler.passes.base import Pass
 from vibepiler.passes.bloat import BloatPass
+from vibepiler.passes.bloat_score import BloatScorePass
 from vibepiler.passes.complexity import ComplexityPass
+from vibepiler.passes.concepts import ConceptsPass
 from vibepiler.passes.cycles import CyclesPass
 from vibepiler.passes.dead_code import DeadCodePass
 from vibepiler.passes.diagnostic import Diagnostic
@@ -33,6 +35,8 @@ _PASSES: list[Pass] = [
     DuplicatesPass(),
     SemanticDuplicatesPass(),
     ResponsibilitiesPass(),
+    ConceptsPass(),
+    BloatScorePass(),  # last: it scores whatever the passes above found
 ]
 
 
@@ -68,6 +72,7 @@ def run_passes(
     """Run the pass pipeline. -O0 builds the graph only; -O1 cheap passes; -O2 adds duplicates; -O3 adds the embedding tier."""
     program.diagnostics = []
     program.metrics["_ran"] = set()
+    program.metrics["opt_level"] = opt_level
     if opt_level <= 0 and not only:
         return []
     selected: list[Pass] = []

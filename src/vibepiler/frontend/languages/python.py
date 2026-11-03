@@ -218,14 +218,8 @@ class PythonSpec(LanguageSpec):
         return False
 
     # ---------------------------------------------------------------- extract
-    def extract(self, sf: SourceFile) -> FileFacts:
-        name, aliases = self.module_name(sf)
-        facts = FileFacts(file=sf, module_name=name, aliases=aliases, is_test=self.is_test_file(sf.rel))
-        facts.attrs["loc"] = sf.lines
-        ex = _Extractor(self, sf, facts)
-        ex.visit(sf.tree.root_node, scope=None, class_scope=None)
-        ex.finish()
-        return facts
+    def extractor(self, sf: SourceFile, facts: FileFacts) -> "_Extractor":
+        return _Extractor(self, sf, facts)
 
 
 class _Extractor:
@@ -386,11 +380,12 @@ class _Extractor:
         )
         self.facts.defs.append(d)
         self.add_entry_hints(d)
-        # defaults & annotations in params are references
+        # defaults & annotations in params are references (only the parameter's own name is not)
         if params_node is not None:
             for p in params_node.named_children:
+                own = p.child_by_field_name("name")
                 for c in p.named_children:
-                    if c.type != "identifier":
+                    if c is not own:
                         self.visit(c, scope, class_scope)
         ret = node.child_by_field_name("return_type")
         if ret is not None:

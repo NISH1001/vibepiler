@@ -69,3 +69,39 @@ def test_paths_between_two_symbols():
 def test_compile_fails_with_nonzero_on_errors_when_requested(tmp_path):
     res = runner.invoke(app, ["compile", str(FIX), "-o", str(tmp_path), "--emit", "json", "--fail-on", "warning"])
     assert res.exit_code == 1
+
+
+def test_compile_prints_the_size_line_like_a_linker(tmp_path):
+    res = runner.invoke(app, ["compile", str(FIX), "-o", str(tmp_path), "--emit", "json"])
+    assert res.exit_code == 0, res.output
+    assert "waste" in res.output and "tangle" in res.output and "bloat" in res.output and "-O2" in res.output
+
+
+def test_remarks_flag_prints_missed_optimizations(tmp_path):
+    res = runner.invoke(app, ["compile", str(FIX), "-o", str(tmp_path), "--emit", "json", "-R", "-q"])
+    assert res.exit_code == 0, res.output
+    assert "missed-optimization remarks" in res.output
+    assert "remark:" in res.output and "delete" in res.output and "unused_fn" in res.output
+
+
+def test_fail_on_bloat_threshold(tmp_path):
+    ok = runner.invoke(app, ["compile", str(FIX), "-o", str(tmp_path), "--emit", "json", "-q", "--fail-on", "bloat>0.99"])
+    assert ok.exit_code == 0, ok.output
+    bad = runner.invoke(app, ["compile", str(FIX), "-o", str(tmp_path), "--emit", "json", "-q", "--fail-on", "bloat>0.01"])
+    assert bad.exit_code == 1, bad.output
+    assert "bloat" in bad.output
+
+
+def test_baseline_prints_the_change_since_a_previous_run(tmp_path):
+    first = runner.invoke(app, ["compile", str(FIX), "-o", str(tmp_path / "a"), "--emit", "json", "-q"])
+    assert first.exit_code == 0, first.output
+    second = runner.invoke(app, ["compile", str(FIX), "-o", str(tmp_path / "b"), "--emit", "json", "-q", "--baseline", str(tmp_path / "a" / "ir.json")])
+    assert second.exit_code == 0, second.output
+    assert "since baseline" in second.output and "+0" in second.output or "±0" in second.output or "no change" in second.output
+
+
+def test_size_command_prints_waste_tangle_and_bloat_per_folder():
+    res = runner.invoke(app, ["size", str(FIX)])
+    assert res.exit_code == 0, res.output
+    assert "waste" in res.output and "tangle" in res.output and "bloat" in res.output
+    assert "src/app" in res.output and "remark:" in res.output

@@ -93,7 +93,9 @@ def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
     skip: Optional[str] = typer.Option(None, "--skip", help="Comma-separated pass names to skip."),
     ignore: Optional[str] = typer.Option(None, "--ignore", help="Extra gitignore-style patterns, comma-separated."),
     lang: Optional[str] = typer.Option(None, "--lang", help="Restrict to languages: python,javascript,typescript."),
-    fail_on: Optional[str] = typer.Option(None, "--fail-on", help="Exit 1 if any finding is at/above this severity (warning|error)."),
+    fail_on: Optional[str] = typer.Option(None, "--fail-on", help="Exit 1 if any finding is at/above this severity (warning|error), or if the repo's bloat exceeds a value: bloat>0.25."),
+    remarks: bool = typer.Option(False, "-R", "--remarks", help="Print missed-optimization remarks: the elimination plan, one line per edit with the lines it frees."),
+    baseline: Optional[Path] = typer.Option(None, "--baseline", help="A previous run's ir.json: print how waste, tangle and bloat moved since it."),
     quiet: bool = typer.Option(False, "-q", "--quiet", help="Only print the phase lines and the summary."),
     max_print: int = typer.Option(60, "--max-print", help="Max findings printed to the terminal."),
     cache: Optional[Path] = typer.Option(None, "--cache", help="Where remote repos are cloned (default ~/.cache/vibepiler)."),
@@ -145,14 +147,74 @@ def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
         if len(shown) > max_print:
             console.print(f"[dim]... {len(shown) - max_print} more; see {out / 'report.md'} or ir.json[/dim]")
     _print_summary(program)
+    if remarks:
+        _print_remarks(program, max_print)
+    if baseline:
+        _print_baseline(program, baseline)
     if fail_on:
-        threshold = _parse_warn(fail_on)
-        if any(d.severity >= threshold for d in program.diagnostics):
-            raise typer.Exit(1)
+        if fail_on.startswith("bloat>"):
+            limit = float(fail_on[6:])
+            b = program.metrics.get("bloat_score", {})
+            if b and b["score"] > limit:
+                console.print(f"[red]bloat {b['score']:.0%} exceeds the limit {limit:.0%}[/red]")
+                raise typer.Exit(1)
+        else:
+            threshold = _parse_warn(fail_on)
+            if any(d.severity >= threshold for d in program.diagnostics):
+                raise typer.Exit(1)
+
+
+def _size_line(b: dict) -> str:
+    conf = ", ".join(f"{k} {v:.0f}" for k, v in b.get("waste_by_confidence", {}).items() if k != "model")
+    reasons = ", ".join(f"{r['code']} ×{r['count']}" for r in b.get("tangle_reasons", [])[:3])
+    c = b.get("conditions", {})
+    stamp = ", ".join(x for x in [f"-O{c.get('opt_level')}" if c.get("opt_level") is not None else "", f"{c['linked']:.0%} linked" if c.get("linked") is not None else "", c.get("model") or ""] if x)
+    return (
+        f"[bold]waste[/bold] {b['waste']:.0%} [dim]({b['removable_loc']:.0f} of {b['loc']} lines" + (f"; {conf}" if conf else "") + (f"; +{b['model_loc']:.0f} if the semantic pairs merge" if b.get("model_loc") else "") + ")[/dim]   "
+        f"[bold]tangle[/bold] {b['tangle']:.2f}" + (f" [dim]({reasons})[/dim]" if reasons else "") + "   "
+        f"[bold]bloat[/bold] {b['score']:.0%}" + (f"   [dim]\\[{stamp}][/dim]" if stamp else "")
+    )
+
+
+def _print_remarks(program: Program, limit: int = 60) -> None:
+    b = program.metrics.get("bloat_score", {})
+    plan = b.get("plan", [])
+    console.print()
+    console.print(f"[bold]missed-optimization remarks[/bold] [dim]({len(plan)} edits; {b.get('removable_loc', 0):.0f} lines shown by analysis" + (f", {b['model_loc']:.0f} more if the semantic pairs merge" if b.get("model_loc") else "") + "; apply the top one, re-run, repeat)[/dim]")
+    for p in plan[:limit]:
+        where = f"{p['file']}:{p['line']}" if p.get("line") else (p.get("file") or "")
+        console.print(f"  [dim]remark:[/dim] [bold]{p['action']:8}[/bold] {p['code']:24} [cyan]{p['qualname'] or ''}[/cyan] [dim]({where})[/dim]  {p['lines']:.0f} lines [dim]{p['confidence']}[/dim]")
+    if len(plan) > limit:
+        console.print(f"  [dim]... {len(plan) - limit} more in report.md[/dim]")
+
+
+def _print_baseline(program: Program, path: Path) -> None:
+    import json
+
+    try:
+        prev = json.loads(Path(path).read_text(encoding="utf-8"))["metrics"]["bloat_score"]
+    except (OSError, ValueError, KeyError) as exc:
+        console.print(f"[yellow]baseline {path}: no bloat score in it ({type(exc).__name__})[/yellow]")
+        return
+    cur = program.metrics.get("bloat_score")
+    if not cur:
+        return
+    dl = cur["removable_loc"] - prev["removable_loc"]
+    db = cur["score"] - prev["score"]
+    if abs(dl) < 0.5 and abs(db) < 0.005 and abs(cur["tangle"] - prev["tangle"]) < 0.005:
+        console.print("[bold]since baseline[/bold]: no change")
+        return
+    console.print(
+        f"[bold]since baseline[/bold]: waste {prev['removable_loc']:.0f} → {cur['removable_loc']:.0f} lines ({dl:+.0f}), "
+        f"tangle {prev['tangle']:.2f} → {cur['tangle']:.2f}, bloat {prev['score']:.0%} → {cur['score']:.0%} ({db * 100:+.0f} pts)"
+    )
 
 
 def _print_summary(program: Program) -> None:
     m = program.metrics
+    if "bloat_score" in m:
+        console.print()
+        console.print(_size_line(m["bloat_score"]))
     table = Table(title="what can go", show_lines=False, title_style="bold", header_style="dim")
     table.add_column("category")
     table.add_column("found")
@@ -176,6 +238,35 @@ def _print_summary(program: Program) -> None:
     if table.row_count:
         console.print()
         console.print(table)
+
+
+@app.command()
+def size(
+    path: str = typer.Argument(".", help="Project root, or a remote repo: owner/repo[@ref], a GitHub URL, or any git URL."),
+    opt: int = typer.Option(None, "-O", "--opt", min=1, max=3, help="Which passes feed the score (default from config, usually -O2)."),
+    top: int = typer.Option(15, "--top", help="How many remarks to print."),
+    cache: Optional[Path] = typer.Option(None, "--cache", help="Where remote repos are cloned (default ~/.cache/vibepiler)."),
+) -> None:
+    """The size report: waste, tangle and bloat per folder, like `size` on a binary, plus the top remarks."""
+    root, _ = _resolve_source(path, cache)
+    cfg = Config.load(root)
+    program = Compiler(root, cfg).run(opt_level=opt, emit=()).program
+    b = program.metrics.get("bloat_score")
+    if not b:
+        console.print("[yellow]no passes ran, nothing to size[/yellow]")
+        raise typer.Exit(1)
+    console.print(f"[bold]vibepiler size[/bold] [cyan]{root}[/cyan]")
+    console.print(_size_line(b))
+    table = Table(header_style="dim", show_lines=False)
+    for col, just in (("folder", "left"), ("modules", "right"), ("lines", "right"), ("removable", "right"), ("waste", "right"), ("tangle", "right"), ("bloat", "right")):
+        table.add_column(col, justify=just)  # type: ignore[arg-type]
+    for f in b["folders"]:
+        table.add_row(f["path"], str(f["modules"]), str(f["loc"]), f"{f['removable_loc']:.0f}", f"{f['waste']:.0%}", f"{f['tangle']:.2f}", f"{f['score']:.0%}")
+    t = b.get("tests", {})
+    if t.get("loc"):
+        table.add_row("[dim]tests (not in the totals)[/dim]", str(t["modules"]), str(t["loc"]), f"{t['removable_loc']:.0f}", f"{t['waste']:.0%}", f"{t['tangle']:.2f}", f"{t['score']:.0%}")
+    console.print(table)
+    _print_remarks(program, top)
 
 
 @app.command()

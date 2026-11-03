@@ -83,6 +83,16 @@ class ProgramGraph:
         parents = self.in_edges(node_id, EdgeKind.CONTAINS)
         return self.node(parents[0].src) if parents else None
 
+    def has_external_base(self, cls_id: str) -> bool:
+        """True when a class inherits, at any depth, from a package or an unresolved base: a framework may call its methods."""
+        if self.node(cls_id).attrs.get("unresolved_bases"):
+            return True
+        for e in self.out_edges(cls_id, EdgeKind.INHERITS):
+            t = self.node(e.dst)
+            if t.kind is NodeKind.PACKAGE or (t.kind is NodeKind.CLASS and self.has_external_base(t.id)):
+                return True
+        return False
+
     @staticmethod
     def _kinds(kind: EdgeKind | Iterable[EdgeKind] | None) -> set[str] | None:
         if kind is None:

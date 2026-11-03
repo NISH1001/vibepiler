@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from vibepiler.ir.model import NodeKind
 from vibepiler.ir.program import Program
 from vibepiler.passes.base import Pass
 from vibepiler.passes.diagnostic import Diagnostic, Severity
 from vibepiler.passes.semantic_duplicates import SKIP_HINT
+from vibepiler.semantic.concepts import identifier_idf, label_for
 from vibepiler.semantic.embed import default_thresholds, symbol_vectors
 
 MIN_SYMBOLS = 6
@@ -31,6 +31,7 @@ class ResponsibilitiesPass(Pass):
         import numpy as np
 
         threshold = th.responsibility_similarity if th.responsibility_similarity is not None else default_thresholds(program.config.embedding_model)[1]
+        docs, idf = identifier_idf([n.qualname for n in nodes])
         by_module: dict[str, list[int]] = {}
         for i, n in enumerate(nodes):
             if n.module:
@@ -47,13 +48,14 @@ class ResponsibilitiesPass(Pass):
             groups = []
             for c in sorted(big, key=len, reverse=True):
                 members = [nodes[idxs[k]] for k in c]
-                groups.append({"members": [m.qualname for m in members], "lines": sum(m.loc for m in members)})
+                label, _ = label_for([docs[idxs[k]] for k in c], idf)
+                groups.append({"label": label or members[0].name, "members": [m.qualname for m in members], "lines": sum(m.loc for m in members)})
             cohesion = float(np.mean(vectors[idxs] @ vectors[idxs].T))
             diags.append(
                 self.diag(
                     "mixed-responsibilities",
                     Severity.INFO,
-                    f"`{mod.name}` mixes {len(big)} unrelated groups of functions: " + "; ".join("[" + ", ".join(g["members"][:3]) + ("…" if len(g["members"]) > 3 else "") + "]" for g in groups),
+                    f"`{mod.name}` mixes {len(big)} unrelated groups of functions: " + "; ".join(f"{{{g['label']}}} x{len(g['members'])} ({', '.join(g['members'][:2])}…)" for g in groups),
                     node=mod,
                     suggestion="Split the module along those groups, or move the odd group next to the code that uses it.",
                     clusters=groups,

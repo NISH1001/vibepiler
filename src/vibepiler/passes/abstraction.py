@@ -45,7 +45,7 @@ class AbstractionPass(Pass):
                         implementations=[s.qualname for s in subclasses],
                     )
                 )
-            elif not abstract_like and len(subclasses) == 1 and not direct_uses and not self._is_data_class(cls) and not self._has_external_base(program, cls):
+            elif not abstract_like and len(subclasses) == 1 and not direct_uses and not self._is_data_class(cls) and not program.graph.has_external_base(cls.id):
                 diags.append(
                     self.diag(
                         "single-subclass",
@@ -164,10 +164,6 @@ class AbstractionPass(Pass):
             return True
         return False
 
-    @staticmethod
-    def _has_external_base(program: Program, cls: Node) -> bool:
-        g = program.graph
-        return bool(cls.attrs.get("unresolved_bases")) or any(g.node(e.dst).kind is NodeKind.PACKAGE for e in g.out_edges(cls.id, EdgeKind.INHERITS))
 
     @staticmethod
     def _inheritance_depth(program: Program, cls: Node, depth: int = 0) -> int:

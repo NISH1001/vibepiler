@@ -69,8 +69,23 @@
   .field { --field: #0d1426; --field-2: #182440; --field-ink: #eef1f8; --field-ink-2: #b3bdd1; --field-line: rgba(255,255,255,0.14);
     --module: #4f9cff; --class: #ff8a5c; --function: #3fd79a; --method: #a596ff; --variable: #ff8fb8; --package: #8e9bb3;
     --warning: #ffb020; --error: #ff6b6b; --trace: #ffc53d; }
-  #cy.field { background: radial-gradient(ellipse 85% 75% at 50% 32%, var(--field-2) 0%, var(--field) 55%, #070b16 100%); }
+  #cy.field, #cy2.field { background: radial-gradient(ellipse 85% 75% at 50% 32%, var(--field-2) 0%, var(--field) 55%, #070b16 100%); }
   #flow { position: absolute; left: 0; top: 0; z-index: 1; pointer-events: none; }
+  #view-concepts { position: relative; }
+  #cy2 { flex: 1; min-width: 0; }
+  #view-concepts .hint { top: 10px; max-width: calc(100% - 430px); line-height: 1.5; }
+  .status { color: #ffd166; font-weight: 600; margin-left: 6px; }
+  .meter { display: flex; align-items: center; gap: 8px; padding: 0 18px; border-left: 1px solid var(--line); font-size: 12px; white-space: nowrap; }
+  .meter .l { color: var(--ink-3); } .meter b { font-size: 16px; } .meter .s { color: var(--ink-3); font-size: 11px; }
+  .meter .bar, .bloatbar { display: inline-block; width: 90px; height: 6px; border-radius: 3px; background: var(--surface-3); overflow: hidden; vertical-align: middle; }
+  .bloatbar { display: block; width: 100%; height: 8px; margin: 6px 0; }
+  .meter .bar i, .bloatbar i { display: block; height: 100%; border-radius: 3px; }
+  .meta2 { color: var(--ink-2); font-size: 12px; }
+  .cbar { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 12px; }
+  .cbar .n { width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cbar .b { flex: 1; height: 6px; background: var(--surface-3); border-radius: 3px; overflow: hidden; } .cbar .b i { display: block; height: 100%; background: var(--method); }
+  .cbar .c { width: 3ch; text-align: right; color: var(--ink-3); }
+  .howto { margin: 0; padding-left: 18px; color: var(--ink-2); } .howto li { margin: 3px 0; }
   .toolbar { position: absolute; top: 10px; left: 10px; z-index: 2; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; max-width: calc(100% - 420px); }
   .toolbar .group { display: flex; gap: 0; background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
   .toolbar .group button { border: 0; border-radius: 0; background: transparent; }
@@ -158,10 +173,12 @@
   <div class="brand"><b>vibepiler</b><span>__NAME__</span></div>
   <nav class="phases" role="tablist" aria-label="Compiler phases">
     <button class="phase" role="tab" data-view="frontend"><span class="step">1 · frontend</span><span class="name">Parse</span><span class="count"><b class="num" data-count="__FILES__">0</b> files</span></button>
-    <button class="phase" role="tab" data-view="semantic"><span class="step">2 · semantic</span><span class="name">Link</span><span class="count"><b class="num" data-count="__SYMBOLS__">0</b> symbols, <b>__LINKED__</b> linked</span></button>
+    <button class="phase" role="tab" data-view="semantic"><span class="step">2 · linker</span><span class="name">Link</span><span class="count"><b class="num" data-count="__SYMBOLS__">0</b> symbols, <b>__LINKED__</b> linked</span></button>
     <button class="phase" role="tab" data-view="graph" aria-selected="true"><span class="step">3 · ir</span><span class="name">Program graph</span><span class="count"><b class="num" data-count="__EDGES__">0</b> edges</span></button>
-    <button class="phase" role="tab" data-view="optimize"><span class="step">4 · optimize</span><span class="name">Passes</span><span class="count"><b class="num" data-count="__FINDINGS__">0</b> findings</span></button>
+    <button class="phase" role="tab" data-view="concepts"><span class="step">4 · semantic (-O3)</span><span class="name">Concepts</span><span class="count" id="concept-count">needs -O3</span></button>
+    <button class="phase" role="tab" data-view="optimize"><span class="step">5 · optimize</span><span class="name">Passes</span><span class="count"><b class="num" data-count="__FINDINGS__">0</b> findings</span></button>
   </nav>
+  <div class="meter" id="meter" hidden title="bloat = 1 − (1 − waste)(1 − tangle); waste = lines that could go / lines, tangle = structure harder than its job"></div>
 </header>
 <main>
   <!-- ========== 1 frontend ========== -->
@@ -174,7 +191,7 @@
   <!-- ========== 2 semantic ========== -->
   <section class="view" id="view-semantic"><div class="page">
     <h2>Link: names resolved across files</h2>
-    <p class="lede">Each module gets a binding table from its imports and definitions. Every call site and reference is then resolved through that table, the enclosing class, and module/class member lookup. Calls whose receiver type is unknown are not guessed; their member names are kept so the passes stay conservative.</p>
+    <p class="lede">Semantic analysis in the compiler sense: names, not meaning. Each module gets a binding table from its imports and definitions. Every call site and reference is then resolved through that table, the enclosing class, and module/class member lookup. Calls whose receiver type is unknown are not guessed; their member names are kept so the passes stay conservative. Meaning, what a function <em>does</em>, is tab 4: Concepts.</p>
     <h3 style="margin:0 0 6px">Call sites</h3>
     <div class="bar" id="resbar"></div>
     <div class="barlegend" id="reslegend"></div>
@@ -210,11 +227,11 @@
       <button id="collapse-all">Collapse all</button>
       <input type="text" id="search" placeholder="Find a symbol  (/)" aria-label="Find a symbol">
     </div>
-    <div class="hint">Live code glows and carries traffic; dead code is grey and still. Double-click a module to open it. Click a node, then Trace to follow execution. Layout is fixed: toggles never move nodes.</div>
+    <div class="hint">Live code glows and carries traffic; dead code is grey and still. Double-click a module to open it. Click a node, then Trace to follow execution. Layout is fixed: toggles never move nodes. <span id="status" class="status" aria-live="polite"></span></div>
     <div id="cy" class="field" role="img" aria-label="Program graph"></div>
     <canvas id="flow" aria-hidden="true"></canvas>
     <div class="legend field">
-      <span class="k orb" style="--c:var(--module)">module, sized by lines</span><span class="k" style="--c:var(--class)">class</span><span class="k" style="--c:var(--function)">function</span><span class="k" style="--c:var(--method)">method</span><span class="k" style="--c:var(--package)">package</span>
+      <span class="k orb" style="--c:var(--module)">module, sized by lines</span><span class="k orb" style="--c:#ff6b6b">red wedge = share of lines that could go</span><span class="k" style="--c:var(--class)">class</span><span class="k" style="--c:var(--function)">function</span><span class="k" style="--c:var(--method)">method</span><span class="k" style="--c:var(--package)">package</span>
       <span class="k edge" style="--c:var(--module)">imports</span><span class="k edge" style="--c:var(--function)">calls</span><span class="k edge dashed" style="--c:var(--method)">references</span><span class="k edge" style="--c:var(--class)">inherits</span>
       <span class="k dot" style="--c:var(--function)">moving dots = traffic</span><span class="k" style="--c:var(--warning)">warning border</span><span class="k" style="--c:var(--error)">error border</span><span>▶ entry point, breathing</span><span class="k ghost">grey and still = unreachable</span>
     </div>
@@ -226,6 +243,11 @@
         <button role="tab" data-panel="node">Node</button>
       </div>
       <div class="panel" id="p-overview" data-active="true">
+        <div class="section"><h3>How to read this</h3><ol class="howto">
+          <li>Top rows are entry points; arrows point at what they depend on. Big orbs are big modules.</li>
+          <li>A red wedge in an orb is the share of that module's lines that could go. Grey and still is unreachable.</li>
+          <li>Moving dots are import and call traffic. Double-click a module to open it; click anything for its findings.</li>
+          <li>Start with <b>Biggest wins</b> below, or the elimination plan in <code>report.md</code>.</li></ol></div>
         <div class="section"><h3>What can go</h3><div class="tiles" id="tiles"></div></div>
         <div class="section"><h3>Start here: entry points</h3><ul class="list" id="roots"></ul></div>
         <div class="section"><h3>Biggest wins</h3><ul class="list" id="wins"></ul></div>
@@ -242,7 +264,20 @@
     </aside>
   </section>
 
-  <!-- ========== 4 optimize ========== -->
+  <!-- ========== 4 semantic (-O3): concepts ========== -->
+  <section class="view" id="view-concepts">
+    <div class="hint">Each dot is a <b>concept</b>: functions that do the same kind of thing, wherever they live. Nearby dots mean similar things; size is how many functions; amber is a concept spread over many modules with no home; lines are calls between concepts. Click a dot.</div>
+    <div id="cy2" class="field" role="img" aria-label="Concept map"></div>
+    <div class="legend field"><span class="k orb" style="--c:var(--module)">lives in one module</span><span class="k orb" style="--c:var(--method)">spans a few modules</span><span class="k orb" style="--c:var(--warning)">scattered, no home</span><span class="k edge" style="--c:var(--function)">calls between concepts</span><span>size = functions</span><span>distance = meaning</span></div>
+    <aside>
+      <div class="tabs" role="tablist"><button role="tab" data-cpanel="about" aria-selected="true">What this is</button><button role="tab" data-cpanel="concept">Concept</button><button role="tab" data-cpanel="modules">Modules</button></div>
+      <div class="panel cpanel" id="cp-about" data-active="true"><div id="c-about"></div></div>
+      <div class="panel cpanel" id="cp-concept"><div class="empty" id="c-empty">Select a concept on the map.</div><div id="c-node"></div></div>
+      <div class="panel cpanel" id="cp-modules"><div class="section"><h3>Modules by how many concepts they touch</h3><div class="meta2" style="margin-bottom:6px">A module across many concepts is doing several unrelated jobs.</div><ul class="list" id="c-modules"></ul></div></div>
+    </aside>
+  </section>
+
+  <!-- ========== 5 optimize ========== -->
   <section class="view" id="view-optimize"><div class="page">
     <h2>Optimize: what each pass found</h2>
     <p class="lede">Each pass is the analysis half of a compiler optimization. Vibepiler does not rewrite code; it tells you exactly what a compiler would prune and why. Click a finding to see it in the graph.</p>
@@ -272,6 +307,11 @@ const nodeById = Object.fromEntries(DATA.nodes.map(n => [n.id, n]));
 const diagsByNode = {};
 for (const d of DATA.diagnostics) if (d.node_id) (diagsByNode[d.node_id] ||= []).push(d);
 const worst = id => (diagsByNode[id] || []).reduce((m, d) => Math.max(m, SEV[d.severity]), 0);
+const flaggedModules = new Set(DATA.diagnostics.map(d => { const n = d.node_id && nodeById[d.node_id]; return n ? (n.kind === 'module' ? n.id : n.module) : (d.file && nodeById['mod:' + d.file] ? 'mod:' + d.file : null); }).filter(Boolean));
+function tint(score) { // bloat: clean blue -> amber -> red
+  const stops = [[79, 156, 255], [255, 176, 32], [255, 107, 107]]; const p = Math.max(0, Math.min(1, score || 0)) * 2; const i = Math.min(1, Math.floor(p)), f = p - i;
+  const a = stops[i], b = stops[i + 1]; return `rgb(${a.map((v, k) => Math.round(v + (b[k] - v) * f)).join(',')})`;
+}
 const modules = DATA.nodes.filter(n => n.kind === 'module');
 const symbolsByModule = {};
 for (const n of DATA.nodes) if (n.module && n.kind !== 'variable') (symbolsByModule[n.module] ||= []).push(n);
@@ -292,13 +332,14 @@ function showView(name) {
   document.querySelectorAll('.view').forEach(v => v.dataset.active = v.id === 'view-' + name);
   document.querySelectorAll('.phase').forEach(b => b.setAttribute('aria-selected', b.dataset.view === name));
   if (name === 'graph' && cy) { cy.resize(); sizeFlow(); }
+  if (name === 'concepts') { if (!cy2 && CONCEPTS) buildConcepts(); else if (cy2) cy2.resize(); }
 }
 document.querySelectorAll('.phase').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
 function showPanel(name) {
-  document.querySelectorAll('.panel').forEach(p => p.dataset.active = p.id === 'p-' + name);
-  document.querySelectorAll('.tabs [role=tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.panel === name));
+  document.querySelectorAll('#view-graph .panel').forEach(p => p.dataset.active = p.id === 'p-' + name);
+  document.querySelectorAll('#view-graph .tabs [role=tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.panel === name));
 }
-document.querySelectorAll('.tabs [role=tab]').forEach(b => b.addEventListener('click', () => showPanel(b.dataset.panel)));
+document.querySelectorAll('#view-graph .tabs [role=tab]').forEach(b => b.addEventListener('click', () => showPanel(b.dataset.panel)));
 
 // ---------- deterministic layered layout ----------
 // Layer = BFS depth from root modules over import edges. Unreachable modules sit in their own column on the right.
@@ -362,9 +403,10 @@ function positions() {
       syms.forEach((s, i) => { pos[s.id] = { x: p.x + (i % cols) * SYM_W + SYM_W / 2, y: p.y + 30 + Math.floor(i / cols) * SYM_H }; });
     }
   }
-  // packages: a row above everything, spread evenly
+  // packages: external dependencies are the deepest layer, so they sit in a row below everything
   const pk = DATA.nodes.filter(n => n.kind === 'package'); const span = Math.max(600, Object.values(mp).reduce((m, p) => Math.max(m, p.x + p.w), 0));
-  pk.forEach((p, i) => { pos[p.id] = { x: (i + 0.5) * span / pk.length, y: -ROW * 1.4 }; });
+  const maxY = Object.values(mp).reduce((m, p) => Math.max(m, p.y), 0);
+  pk.forEach((p, i) => { pos[p.id] = { x: (i + 0.5) * span / pk.length, y: maxY + ROW * 2.2 }; });
   return pos;
 }
 
@@ -376,7 +418,7 @@ function visibleNode(n) {
   if (n.kind === 'variable') return false;
   if (n.kind !== 'module' && !expanded.has(n.module)) return false;
   if (!show.dead && n.attrs.reachable === false) return false;
-  if (show.flagged && !(diagsByNode[n.id] || []).length && n.kind !== 'module') return false;
+  if (show.flagged && !(n.kind === 'module' ? flaggedModules.has(n.id) : (diagsByNode[n.id] || []).length)) return false;
   return true;
 }
 function elements() {
@@ -389,18 +431,23 @@ function elements() {
     els.push({ group: 'nodes', classes: (v ? '' : 'hidden') + (isParent ? ' parent' : '') + (n.attrs.reachable === false && n.kind !== 'package' ? ' dead' : '') + (n.kind === 'module' && n.attrs.is_root && n.attrs.reachable !== false ? ' root' : ''),
       position: { x: pos[n.id].x, y: pos[n.id].y },
       data: { id: n.id, label: displayName(n), kind: n.kind, parent: (n.kind !== 'module' && n.kind !== 'package' && expanded.has(n.module)) ? n.module : undefined,
-        color: kc[n.kind], border: w >= 30 ? css('--error') : w >= 20 ? css('--warning') : kc[n.kind], bw: w >= 20 ? 3 : 1.5,
+        color: kc[n.kind], border: w >= 30 ? css('--error') : w >= 20 ? css('--warning') : kc[n.kind], bw: w >= 20 ? 3 : 1.5, waste: n.kind === 'module' && n.attrs.bloat ? Math.round(100 * n.attrs.bloat.waste) : 0,
         size: n.kind === 'module' ? Math.min(64, 22 + Math.sqrt(n.attrs.loc || 0) * 1.4) : 20, hot: n.attrs.fan_in || 0 } });
   }
+  // every edge is drawn between whatever stands for its endpoints on screen: the symbol if its module is open,
+  // otherwise the module. So calls between two closed modules show as one module-to-module edge with a count.
+  const rep = id => { const n = nodeById[id]; if (!n || n.kind === 'variable') return null; if (n.kind === 'module' || n.kind === 'package') return id; return expanded.has(n.module) ? id : n.module; };
+  const agg = {};
   for (const e of DATA.edges) {
     if (e.kind === 'contains' || (e.attrs && e.attrs.implicit)) continue;
-    if (!pos[e.src] || !pos[e.dst]) continue;
-    const a = nodeById[e.src], b = nodeById[e.dst];
-    // when a module is expanded, module-level import edges are drawn from the compound; symbol edges from the symbols
-    if (e.kind === 'imports' && b.kind !== 'package' && (expanded.has(e.src) && expanded.has(e.dst))) continue;
-    const v = vis.has(e.src) && vis.has(e.dst) && edgeOn[e.kind];
-    els.push({ group: 'edges', classes: v ? '' : 'hidden', data: { id: e.src + '|' + e.kind + '|' + e.dst, source: e.src, target: e.dst, kind: e.kind, count: e.count, members: (e.attrs && e.attrs.members) || [] } });
+    const a = rep(e.src), b = rep(e.dst); if (!a || !b || a === b || !pos[a] || !pos[b]) continue;
+    // when both modules are open, module-level import edges are implied by the symbol edges inside them
+    if (e.kind === 'imports' && nodeById[b].kind !== 'package' && expanded.has(e.src) && expanded.has(e.dst)) continue;
+    const key = a + '|' + e.kind + '|' + b;
+    const cur = agg[key] ||= { group: 'edges', classes: '', data: { id: key, source: a, target: b, kind: e.kind, count: 0, members: [], lifted: a !== e.src || b !== e.dst } };
+    cur.data.count += e.count || 1; if (e.attrs && e.attrs.members) cur.data.members.push(...e.attrs.members);
   }
+  for (const el of Object.values(agg)) { el.classes = vis.has(el.data.source) && vis.has(el.data.target) && edgeOn[el.data.kind] ? '' : 'hidden'; els.push(el); }
   return els;
 }
 
@@ -410,7 +457,8 @@ function style() {
   const ec = EDGE(); const ink = fcss('--field-ink'), ink2 = fcss('--field-ink-2'), field = fcss('--field');
   return [
     { selector: 'node', style: { label: 'data(label)', 'font-family': 'IBM Plex Sans, sans-serif', 'font-size': 10, color: ink, 'text-outline-color': field, 'text-outline-width': 2, 'text-outline-opacity': 0.85, 'text-valign': 'center', 'text-halign': 'center', 'background-color': 'data(color)', 'background-opacity': 0.92, 'border-color': 'data(border)', 'border-width': 'data(bw)', shape: 'round-rectangle', width: 'label', height: 'data(size)', padding: '6px', 'text-wrap': 'ellipsis', 'text-max-width': 170, 'min-zoomed-font-size': 4, 'underlay-color': 'data(color)', 'underlay-opacity': 0.16, 'underlay-padding': 5, 'underlay-shape': 'round-rectangle', 'transition-property': 'background-opacity, opacity, border-color, underlay-opacity', 'transition-duration': 150 } },
-    { selector: 'node[kind = "module"]', style: { shape: 'ellipse', width: 'data(size)', height: 'data(size)', padding: 0, 'font-weight': 600, 'text-valign': 'bottom', 'text-margin-y': 7, 'underlay-shape': 'ellipse', 'underlay-padding': 9, 'underlay-opacity': 0.22, 'background-opacity': 1 } },
+    { selector: 'node[kind = "module"]', style: { shape: 'ellipse', width: 'data(size)', height: 'data(size)', padding: 0, 'font-weight': 600, 'text-valign': 'bottom', 'text-margin-y': 7, 'underlay-shape': 'ellipse', 'underlay-padding': 9, 'underlay-opacity': 0.22, 'background-opacity': 1, 'pie-size': '100%', 'pie-1-background-color': '#ff6b6b', 'pie-1-background-size': 'data(waste)', 'pie-1-background-opacity': 0.95 } },
+    { selector: 'node[kind = "module"].dead', style: { 'pie-1-background-opacity': 0 } },
     { selector: 'node.root', style: { 'border-width': 2, 'border-color': '#ffffff', 'underlay-padding': 14, 'underlay-opacity': 0.35 } },
     { selector: 'node[kind = "package"]', style: { shape: 'hexagon', color: ink2, 'background-opacity': 0.3, 'underlay-opacity': 0 } },
     { selector: 'node[kind = "function"], node[kind = "method"], node[kind = "class"]', style: { 'font-size': 9, color: '#0b1020', 'text-outline-width': 0, 'background-opacity': 0.9, shape: 'round-rectangle', 'underlay-opacity': 0.12 } },
@@ -501,7 +549,94 @@ function flowFrame(t) {
   }
   fctx.globalAlpha = 1; fctx.globalCompositeOperation = 'source-over';
 }
-addEventListener('resize', () => { if (cy) { cy.resize(); sizeFlow(); } });
+addEventListener('resize', () => { if (cy) { cy.resize(); sizeFlow(); } if (cy2) cy2.resize(); });
+
+// ---------- concepts (-O3): the semantic space ----------
+// A concept is a community of functions by meaning (embeddings -> nearest-neighbour graph -> Louvain). The map is a
+// 2-D projection of the concept centroids, so distance is meaning; a deterministic nudge keeps dots from overlapping.
+const CONCEPTS = DATA.metrics.concepts && DATA.metrics.concepts.concepts && DATA.metrics.concepts.concepts.length ? DATA.metrics.concepts : null;
+const conceptById = CONCEPTS ? Object.fromEntries(CONCEPTS.concepts.map(c => [c.id, c])) : {};
+let cy2 = null;
+(function initConceptTab() {
+  const el = document.getElementById('concept-count');
+  if (!CONCEPTS) { el.textContent = DATA.metrics.concepts && DATA.metrics.concepts.skipped ? 'needs vibepiler[semantic]' : 'needs -O3'; return; }
+  el.innerHTML = `<b>${CONCEPTS.concepts.length}</b> concepts, <b>${CONCEPTS.clustered}</b> functions`;
+})();
+function conceptColor(c) { const k = Object.keys(c.modules).length; return c.scattered ? fcss('--warning') : k === 1 ? fcss('--module') : fcss('--method'); }
+function conceptPositions() {
+  const W = 1500, H = 820, cs = CONCEPTS.concepts;
+  const P = cs.map(c => ({ x: c.x * W, y: c.y * H, r: 14 + 5 * Math.sqrt(c.size) }));
+  for (let it = 0; it < 80; it++) for (let i = 0; i < P.length; i++) for (let j = i + 1; j < P.length; j++) {
+    const a = P[i], b = P[j]; let dx = b.x - a.x, dy = b.y - a.y; let d = Math.hypot(dx, dy); const min = a.r + b.r + 22;
+    if (d >= min) continue; if (d < 1e-6) { dx = 1; dy = 0.3; d = 1; }
+    const push = (min - d) / 2 / d; a.x -= dx * push; a.y -= dy * push; b.x += dx * push; b.y += dy * push;
+  }
+  return Object.fromEntries(cs.map((c, i) => [c.id, { x: P[i].x, y: P[i].y, size: P[i].r * 2 }]));
+}
+function buildConcepts() {
+  const pos = conceptPositions(); const els = [];
+  for (const c of CONCEPTS.concepts) els.push({ group: 'nodes', position: { x: pos[c.id].x, y: pos[c.id].y }, data: { id: c.id, label: c.label, size: pos[c.id].size, color: conceptColor(c), scattered: c.scattered } });
+  for (const e of CONCEPTS.edges) els.push({ group: 'edges', data: { id: e.src + '>' + e.dst, source: e.src, target: e.dst, calls: e.calls, w: 1 + Math.log2(e.calls) } });
+  const ink = fcss('--field-ink'), field = fcss('--field');
+  cy2 = cytoscape({ container: document.getElementById('cy2'), elements: els, layout: { name: 'preset', fit: true, padding: 60 }, wheelSensitivity: 0.25, minZoom: 0.2, maxZoom: 4, boxSelectionEnabled: false, style: [
+    { selector: 'node', style: { shape: 'ellipse', width: 'data(size)', height: 'data(size)', 'background-color': 'data(color)', 'background-opacity': 0.95, 'border-width': 0, label: 'data(label)', 'font-family': 'IBM Plex Sans, sans-serif', 'font-size': 11, 'font-weight': 600, color: ink, 'text-outline-color': field, 'text-outline-width': 2, 'text-outline-opacity': 0.85, 'text-valign': 'bottom', 'text-margin-y': 6, 'text-wrap': 'wrap', 'text-max-width': 150, 'underlay-color': 'data(color)', 'underlay-opacity': 0.25, 'underlay-padding': 10, 'underlay-shape': 'ellipse', 'min-zoomed-font-size': 5, 'transition-property': 'opacity, underlay-opacity', 'transition-duration': 150 } },
+    { selector: 'node[?scattered]', style: { 'border-width': 2, 'border-color': '#ffffff', 'border-opacity': 0.7, 'underlay-opacity': 0.35 } },
+    { selector: 'edge', style: { width: 'data(w)', 'curve-style': 'bezier', 'line-color': fcss('--function'), 'target-arrow-color': fcss('--function'), 'target-arrow-shape': 'triangle', 'arrow-scale': 0.7, opacity: 0.3, 'line-cap': 'round', 'transition-property': 'opacity', 'transition-duration': 150 } },
+    { selector: '.faded', style: { opacity: 0.12 } },
+    { selector: 'node.focus', style: { 'underlay-opacity': 0.6, 'underlay-padding': 16 } },
+    { selector: 'edge.near', style: { opacity: 0.95 } },
+  ] });
+  cy2.on('tap', 'node', evt => selectConcept(evt.target.id()));
+  cy2.on('tap', evt => { if (evt.target === cy2) { cy2.elements().removeClass('faded near focus'); } });
+  cy2.on('mouseover', 'node', evt => { if (cy2.nodes('.focus').length) return; cy2.elements().addClass('faded'); evt.target.closedNeighborhood().removeClass('faded').addClass('near'); });
+  cy2.on('mouseout', 'node', () => { if (cy2.nodes('.focus').length) return; cy2.elements().removeClass('faded near'); });
+  if (!REDUCED) { cy2.nodes().style({ opacity: 0 }); cy2.nodes().forEach((n, i) => setTimeout(() => n.removeStyle('opacity'), 25 * i + 50)); }
+  renderConceptAbout(); renderConceptModules();
+}
+function showCPanel(name) {
+  document.querySelectorAll('#view-concepts .cpanel').forEach(p => p.dataset.active = p.id === 'cp-' + name);
+  document.querySelectorAll('#view-concepts [role=tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.cpanel === name));
+}
+document.querySelectorAll('#view-concepts [role=tab]').forEach(b => b.addEventListener('click', () => showCPanel(b.dataset.cpanel)));
+function selectConcept(id) {
+  const c = conceptById[id]; if (!c || !cy2) return;
+  cy2.elements().removeClass('faded near focus'); cy2.elements().addClass('faded'); const n = cy2.getElementById(id); n.closedNeighborhood().removeClass('faded').addClass('near'); n.addClass('focus');
+  cy2.animate({ center: { eles: n } }, { duration: REDUCED ? 0 : 300 });
+  const total = c.size; const mods = Object.entries(c.modules);
+  const byMod = {}; for (const m of c.members) { const s = nodeById[m]; if (s) (byMod[s.module] ||= []).push(s); }
+  document.getElementById('c-empty').style.display = 'none';
+  document.getElementById('c-node').innerHTML = `
+    <div class="section"><div style="display:flex;gap:8px;align-items:baseline"><span class="pill" style="background:color-mix(in srgb, ${conceptColor(c)} 35%, transparent)">concept</span><b style="font-size:14px">${esc(c.label)}</b></div>
+      <div class="meta2" style="margin-top:4px">${total} functions across ${mods.length} module${mods.length === 1 ? '' : 's'} · cohesion ${c.cohesion.toFixed(2)}${c.scattered ? ' · <b style="color:var(--warning)">scattered: no module holds half of it</b>' : ''}</div>
+      <div class="meta2" style="margin-top:4px">most typical: <span class="mono" data-go="${esc(c.exemplar)}" style="cursor:pointer;color:var(--module)">${esc(nodeById[c.exemplar] ? nodeById[c.exemplar].qualname : c.exemplar)}</span></div></div>
+    <div class="section"><h3>Where it lives</h3>${mods.map(([m, k]) => `<div class="cbar"><span class="n mono" title="${esc(m)}">${esc(nodeById[m] ? nodeById[m].name : m)}</span><span class="b"><i style="width:${Math.round(100 * k / total)}%"></i></span><span class="c">${k}</span></div>`).join('')}</div>
+    <div class="section"><h3>Members (${total})</h3>${Object.entries(byMod).map(([m, ss]) => `<div class="meta2 mono" style="margin-top:6px">${esc(nodeById[m] ? nodeById[m].name : m)}</div><ul class="list">${ss.map(sx => `<li data-go="${esc(sx.id)}"><span class="pill">${esc(sx.kind)}</span><span class="mono">${esc(sx.qualname)}</span><span class="meta">${sx.attrs.loc || ''} lines</span></li>`).join('')}</ul>`).join('')}</div>`;
+  document.querySelectorAll('#c-node [data-go]').forEach(el => el.addEventListener('click', () => { showView('graph'); select(el.dataset.go, true); }));
+  showCPanel('concept');
+}
+function renderConceptAbout() {
+  const m = DATA.metrics; const sem = (m.semantic_duplicates || {}).pairs ?? DATA.diagnostics.filter(d => d.code === 'semantic-duplicate').length;
+  const mixed = DATA.diagnostics.filter(d => d.code === 'mixed-responsibilities'), scattered = CONCEPTS.concepts.filter(c => c.scattered);
+  document.getElementById('c-about').innerHTML = `
+    <div class="section"><h3>How the semantic tier works</h3><ol class="howto">
+      <li>Every function's source is turned into a vector by a code embedding model (<span class="mono">${esc(CONCEPTS.model)}</span>). Two functions that do the same job land close together even when their code differs.</li>
+      <li>Each function is linked to its nearest neighbours by meaning; communities in that graph are the <b>concepts</b> on this map (${CONCEPTS.concepts.length} of them, covering ${CONCEPTS.clustered} of ${CONCEPTS.symbols} functions). Labels are the words their names share.</li>
+      <li>The map position comes from projecting each concept's centre to 2-D (${esc(CONCEPTS.projection || 'pca')}): distance is similarity of meaning.</li></ol></div>
+    <div class="section"><h3>What it outputs</h3><ol class="howto">
+      <li><b>${sem}</b> semantic duplicates: pairs that do the same thing with different code (tab 5, pass <span class="mono">semantic-duplicates</span>).</li>
+      <li><b>${mixed.length}</b> mixed modules: files whose functions fall into several unrelated groups (<span class="mono">responsibilities</span>).</li>
+      <li><b>${scattered.length}</b> scattered concepts: one idea spread over many modules with no home (<span class="mono">concepts</span>).</li></ol></div>
+    <div class="section"><h3>Scattered concepts</h3><ul class="list" id="c-scattered">${scattered.map(c => `<li data-c="${esc(c.id)}"><span class="sev warning"></span><span>${esc(c.label)}</span><span class="meta">${c.size} fns · ${Object.keys(c.modules).length} modules</span></li>`).join('') || '<li style="cursor:default;color:var(--ink-3)">none: every concept has a home</li>'}</ul></div>
+    <div class="section"><h3>Mixed modules</h3><ul class="list" id="c-mixed">${mixed.map(d => `<li data-go="${esc(d.node_id)}"><span class="sev info"></span><span class="mono">${esc(d.data.qualname)}</span><span class="meta">${(d.data.clusters || []).map(c => c.label).join(' / ')}</span></li>`).join('') || '<li style="cursor:default;color:var(--ink-3)">none</li>'}</ul></div>`;
+  document.querySelectorAll('#c-scattered [data-c]').forEach(li => li.addEventListener('click', () => selectConcept(li.dataset.c)));
+  document.querySelectorAll('#c-mixed [data-go]').forEach(li => li.addEventListener('click', () => { showView('graph'); select(li.dataset.go, true); }));
+}
+function renderConceptModules() {
+  const spread = {}; for (const c of CONCEPTS.concepts) for (const m of Object.keys(c.modules)) (spread[m] ||= []).push(c);
+  const rows = Object.entries(spread).sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0])).slice(0, 40);
+  document.getElementById('c-modules').innerHTML = rows.map(([m, cs]) => `<li data-go="${esc(m)}"><span class="mono">${esc(nodeById[m] ? nodeById[m].name : m)}</span><span class="meta">${cs.length} concept${cs.length === 1 ? '' : 's'}</span></li>`).join('');
+  document.querySelectorAll('#c-modules [data-go]').forEach(li => li.addEventListener('click', () => { showView('graph'); select(li.dataset.go, true); }));
+}
 function focusTop() {
   const vis = cy.nodes(':visible'); if (!vis.length) return;
   cy.fit(vis, 40);
@@ -525,7 +660,8 @@ function reveal() {
 function relayout() {
   const pos = positions();
   cy.batch(() => {
-    const els = elements(); const have = new Set(cy.elements().map(e => e.id()));
+    const els = elements(); const want = new Set(els.map(e => e.data.id));
+    cy.edges().filter(e => !want.has(e.id())).remove(); // edges re-aggregate when modules open or close
     for (const el of els) { const ex = cy.getElementById(el.data.id); if (!ex.length) cy.add(el); else { ex.classes(el.classes); if (el.group === 'nodes') ex.move({ parent: el.data.parent || null }); } }
   });
   cy.nodes().forEach(n => { const p = pos[n.id()]; if (p && !n.isParent()) n.animate({ position: p }, { duration: REDUCED ? 0 : 350, easing: 'ease-in-out-cubic' }); });
@@ -576,13 +712,14 @@ function renderNode(id) {
   document.getElementById('node-empty').style.display = 'none';
   const ins = (inn[id] || []).filter(e => e.kind !== 'contains').map(e => `<li data-go="${esc(e.src)}"><span class="pill">${e.kind}</span> ${esc(label(nodeById[e.src]))}</li>`);
   const outs = (out[id] || []).filter(e => e.kind !== 'contains').map(e => `<li data-go="${esc(e.dst)}"><span class="pill">${e.kind}</span> ${esc(label(nodeById[e.dst]))}${e.attrs && e.attrs.members ? ' <span class="meta">.' + esc(e.attrs.members.join(', .')) + '</span>' : ''}</li>`);
-  const attrs = Object.entries(n.attrs).filter(([k, v]) => !['imports', 'aliases', 'entry', 'shape_hash'].includes(k) && v !== null && v !== '' && v !== false && !(Array.isArray(v) && !v.length));
+  const attrs = Object.entries(n.attrs).filter(([k, v]) => !['imports', 'aliases', 'entry', 'shape_hash', 'bloat'].includes(k) && v !== null && v !== '' && v !== false && !(Array.isArray(v) && !v.length));
   const ds = diagsByNode[id] || [];
   document.getElementById('node').innerHTML = `
     <div class="section"><div style="display:flex;gap:8px;align-items:baseline"><span class="pill" style="background:color-mix(in srgb, ${KIND()[n.kind]} 30%, transparent)">${esc(n.kind)}</span><b class="mono" style="font-size:13px">${esc(n.qualname || n.name)}</b></div>
       <div class="mono" style="color:var(--ink-3);margin-top:4px">${esc(n.file || '')}${n.start_line ? ':' + n.start_line + '–' + n.end_line : ''}</div>
       <div class="actions"><button class="primary" id="btn-trace">Trace execution from here</button><button id="btn-clear">Clear</button></div>
       <div id="trace-status" style="color:var(--ink-2);margin-top:6px;min-height:1.2em"></div></div>
+    ${n.attrs.bloat ? bloatBlock(n.attrs.bloat, n.attrs.loc) : ''}
     ${ds.length ? `<div class="section"><h3>Findings (${ds.length})</h3>${ds.map(d => `<div class="finding" style="padding:6px 0"><div class="head"><span class="sev ${d.severity}"></span><span class="code">${esc(d.code)}</span></div><div class="msg">${esc(d.message)}</div>${d.suggestion ? `<div class="fix">${esc(d.suggestion)}</div>` : ''}</div>`).join('')}</div>` : ''}
     <div class="section"><h3>Properties</h3><dl class="kv">${attrs.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(Array.isArray(v) ? v.join(', ') : typeof v === 'object' ? JSON.stringify(v) : v)}</dd>`).join('')}</dl></div>
     <div class="section"><h3>Used by (${ins.length})</h3><ul class="list">${ins.join('') || '<li style="color:var(--ink-3);cursor:default">nothing in the project</li>'}</ul></div>
@@ -592,9 +729,13 @@ function renderNode(id) {
   document.querySelectorAll('#node [data-go]').forEach(li => li.addEventListener('click', () => select(li.dataset.go, true)));
 }
 
+function bloatBlock(b, loc) { const pct = Math.round(b.score * 100); return `<div class="section"><h3>Bloat ${pct}%</h3><div class="bloatbar"><i style="width:${pct}%;background:${tint(b.score)}"></i></div><div class="meta2">${Math.round(b.removable_loc)} of ${loc || '?'} lines could go (waste ${Math.round(b.waste * 100)}%) · tangle ${b.tangle.toFixed(2)}</div></div>`; }
+
 // ---------- overview ----------
 function renderOverview() {
   const m = DATA.metrics; const tiles = [];
+  const bs = m.bloat_score, meter = document.getElementById('meter');
+  if (bs) { const pct = Math.round(bs.score * 100); meter.hidden = false; meter.innerHTML = `<span class="l">waste</span><b>${Math.round(bs.removable_loc)}</b><span class="s">of ${bs.loc} lines</span><span class="l">tangle</span><b style="font-size:13px">${bs.tangle.toFixed(2)}</b><span class="l">bloat</span><b>${pct}%</b><span class="bar"><i style="width:${pct}%;background:${tint(bs.score)}"></i></span>`; }
   if (m.dead_code) tiles.push([m.dead_code.symbols, 'dead symbols', `${m.dead_code.loc} lines to delete`]);
   if (m.duplicates) tiles.push([m.duplicates.exact_groups, 'duplicate groups', `${m.duplicates.removable_loc} lines to merge`]);
   if (m.wrappers) tiles.push([m.wrappers.count, 'pass-through wrappers', `${m.wrappers.chains} chains to collapse`]);
@@ -667,7 +808,16 @@ function renderPasses() {
 
 // ---------- toolbar ----------
 document.querySelectorAll('[data-edge]').forEach(b => b.addEventListener('click', () => { edgeOn[b.dataset.edge] = !edgeOn[b.dataset.edge]; b.setAttribute('aria-pressed', edgeOn[b.dataset.edge]); applyVisibility(); }));
-function bindToggle(id, key) { document.getElementById(id).addEventListener('click', e => { show[key] = !show[key]; e.currentTarget.setAttribute('aria-pressed', show[key]); applyVisibility(); }); }
+function bindToggle(id, key) { document.getElementById(id).addEventListener('click', e => { show[key] = !show[key]; e.currentTarget.setAttribute('aria-pressed', show[key]); applyVisibility(); toggleFeedback(key); }); }
+function toggleFeedback(key) {
+  const st = document.getElementById('status');
+  const n = key === 'packages' ? cy.nodes('[kind = "package"]').length : key === 'dead' ? cy.nodes('node[kind = "module"].dead').length : cy.nodes(':visible').length;
+  st.textContent = key === 'packages' ? (show.packages ? `${n} external packages shown in a row below the modules` : 'external packages hidden')
+    : key === 'dead' ? (show.dead ? `${n} unreachable modules shown, grey, in the column on the right` : `${n} unreachable modules hidden`)
+    : (show.flagged ? `only the ${n} nodes with findings` : 'showing everything');
+  if (show[key] && !REDUCED) cy.animate({ fit: { eles: cy.nodes(':visible'), padding: 40 } }, { duration: 450, easing: 'ease-in-out-cubic' });
+  clearTimeout(toggleFeedback.t); toggleFeedback.t = setTimeout(() => { st.textContent = ''; }, 5000);
+}
 bindToggle('t-packages', 'packages'); bindToggle('t-dead', 'dead'); bindToggle('t-flagged', 'flagged');
 function applyVisibility() {
   // visibility only: positions are untouched

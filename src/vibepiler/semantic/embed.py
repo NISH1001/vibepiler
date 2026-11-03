@@ -25,7 +25,6 @@ from vibepiler.ir.model import CALLABLE_KINDS, Node
 from vibepiler.ir.program import Program
 
 DEFAULT_MODEL = "nomic-ai/CodeRankEmbed"
-FAST_MODEL = "minishlab/potion-code-16M-v2"
 
 
 @dataclass(frozen=True)

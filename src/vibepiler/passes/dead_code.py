@@ -43,7 +43,7 @@ class DeadCodePass(Pass):
                     continue
             if n.kind is NodeKind.METHOD and n.name in used_names:
                 continue
-            if parent is not None and parent.kind is NodeKind.CLASS and self._class_has_external_base(program, parent):
+            if parent is not None and parent.kind is NodeKind.CLASS and g.has_external_base(parent.id):
                 continue  # framework may call this override
             callers = inbound(n.id)
             live_callers = [c for c in callers if g.node(c).attrs.get("reachable")]
@@ -98,15 +98,3 @@ class DeadCodePass(Pass):
         }
         return diags
 
-    @staticmethod
-    def _class_has_external_base(program: Program, cls) -> bool:  # noqa: ANN001
-        g = program.graph
-        if cls.attrs.get("unresolved_bases"):
-            return True
-        for e in g.out_edges(cls.id, EdgeKind.INHERITS):
-            t = g.node(e.dst)
-            if t.kind is NodeKind.PACKAGE:
-                return True
-            if t.kind is NodeKind.CLASS and DeadCodePass._class_has_external_base(program, t):
-                return True
-        return False

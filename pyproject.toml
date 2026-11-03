@@ -21,6 +21,9 @@ semantic = [
     "fastembed>=0.4",
     "model2vec>=0.4",
 ]
+map = [
+    "umap-learn>=0.5",
+]
 
 [build-system]
 requires = ["hatchling"]

@@ -40,8 +40,18 @@ class LanguageSpec(ABC):
         """Return (canonical module name, aliases)."""
 
     @abstractmethod
+    def extractor(self, sf: SourceFile, facts: FileFacts):  # noqa: ANN201 - the language's tree walker
+        """The visitor that fills `facts` from the file's syntax tree."""
+
     def extract(self, sf: SourceFile) -> FileFacts:
         """Extract definitions, imports, calls and references from one file."""
+        name, aliases = self.module_name(sf)
+        facts = FileFacts(file=sf, module_name=name, aliases=aliases, is_test=self.is_test_file(sf.rel))
+        facts.attrs["loc"] = sf.lines
+        ex = self.extractor(sf, facts)
+        ex.visit(sf.tree.root_node, scope=None, class_scope=None)
+        ex.finish()
+        return facts
 
     @abstractmethod
     def import_targets(self, imp: ImportDef, facts: FileFacts) -> list[ImportOption]:

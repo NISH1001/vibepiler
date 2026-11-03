@@ -173,8 +173,8 @@ class BloatPass(Pass):
             if parent is not None and parent.kind is NodeKind.CLASS and any(b.split(".")[-1] in ("Protocol", "ABC") for b in parent.attrs.get("bases", [])):
                 continue
             d = program.symbol_def(n)
-            if d is None or d.node is None:
-                continue
+            if d is None or d.node is None or n.attrs.get("decorators"):
+                continue  # decorated stubs (callbacks, abstract methods) are placeholders on purpose
             spec = program.spec_for(n)
             sf = program.facts[n.module].file  # type: ignore[index]
             if spec.is_stub_body(spec.body_statements(d.node, sf), sf):

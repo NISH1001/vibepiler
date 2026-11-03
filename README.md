@@ -99,8 +99,9 @@ uv run pytest
 ```
 vibepiler compile <path | owner/repo[@ref] | git url> [-O0|-O1|-O2|-O3] [-W all|warning|error]
                          [--emit json,dot,mermaid,html,md] [-o out/] [--only pass,pass] [--skip pass]
-                         [--ignore "glob,glob"] [--lang python,typescript] [--fail-on warning|error] [-q]
-                         [--cache DIR] [--refresh]
+                         [--ignore "glob,glob"] [--lang python,typescript] [--fail-on warning|error|bloat>0.25] [-q]
+                         [-R] [--baseline previous/ir.json] [--cache DIR] [--refresh]
+vibepiler size    <path> [-O1|-O2|-O3] [--top N]    # waste, tangle and bloat per folder, like `size` on a binary
 vibepiler graph   <path> [--level module|symbol] [--format dot|mermaid|json] [--packages]
 vibepiler paths   <path> --from <symbol> [--to <symbol>] [--depth N]
 vibepiler similar <path> <symbol> [-n 10]          # -O3 tier: nearest functions by meaning
@@ -109,7 +110,20 @@ vibepiler passes
 
 - `-O0` builds the graph only. `-O1` runs the linear passes. `-O2` (default) adds the quadratic ones (duplicate detection). `-O3` adds the embedding tier (see below).
 - `-W` is the minimum severity printed to the terminal. `-Wall` shows `info` findings. Everything is always in `ir.json`/`report.md`.
-- `--fail-on warning` makes it usable as a CI gate.
+- `-R` prints the **missed-optimization remarks** (after clang's `-Rpass-missed`): the elimination plan, one line per edit with the lines it frees and how sure the tool is.
+- `--baseline previous/ir.json` prints how waste, tangle and bloat moved since an earlier run. That is the loop: apply the top remark, re-run, repeat.
+- `--fail-on warning` or `--fail-on bloat>0.25` makes it a CI gate.
+
+What each tier does:
+
+| tier | passes | what it can tell you |
+|---|---|---|
+| `-O0` | none | the program graph only: modules, symbols, imports, calls, inheritance, references |
+| `-O1` | entry-points, dead-code, unused-imports, cycles, complexity, wrappers, hotspots, bloat-score | everything that follows from reachability and structure in linear time |
+| `-O2` | + abstraction, bloat, duplicates | needless interfaces and classes, dependency and exception boilerplate, structurally identical and near-identical functions |
+| `-O3` | + semantic-duplicates, responsibilities, concepts | meaning: functions that do the same job with different code, modules mixing unrelated jobs, and the concept map of the whole codebase |
+
+The bloat score runs at every level above `-O0` and reflects only the passes that ran; it says which level it was measured at.
 - `paths` prints execution pathways: the call tree from a symbol, or every shortest path between two symbols
   (`vibepiler paths . --from app.main.cli --to app.utils._impl`).
 
@@ -149,8 +163,8 @@ warning abstraction/single-implementation  src/app/core.py:6: abstract class `Ba
 
 | File | What it is |
 |---|---|
-| `report.html` | Self-contained interactive viewer organized by compiler phase: **Parse** (every file and its parse status), **Link** (call-resolution breakdown, the binding table of each module, member names that could only be matched dynamically), **Program graph** (a fixed layered layout where execution flows down from the entry points, unreachable modules parked in their own zone; double-click a module to open its symbols, click a node and *Trace* to watch execution animate outward from it; toggles only show/hide, they never move nodes), **Passes** (every finding with its suggestion, click to jump into the graph). |
-| `report.md` | Summary, "what can go" table, entry points, hotspots, complexity, then every finding grouped by pass with a suggestion. |
+| `report.html` | Self-contained interactive viewer organized by compiler phase: **Parse** (every file and its parse status), **Link** (name resolution: the call-resolution breakdown, each module's binding table, member names that could only be matched dynamically), **Program graph** (a living map: modules are orbs sized by lines with a red wedge for the share of lines that could go, traffic moves along import and call edges, unreachable code is grey and still; the layout is fixed and toggles never move nodes; double-click a module to open it, click a node and *Trace* to watch execution flow), **Concepts** (`-O3`: the semantic space, see below), **Passes** (every finding with its suggestion, click to jump into the graph). The header carries the size line: waste, tangle, bloat. |
+| `report.md` | Summary with the size line and bloat per folder, "what can go" table, entry points, hotspots, complexity, concepts, the elimination plan, then every finding grouped by pass with a suggestion. |
 | `ir.json` | The whole IR: nodes (with all computed attributes), edges, diagnostics, metrics. Feed it to anything. |
 | `graph.dot`, `graph-symbols.dot` | Graphviz: `dot -Tsvg vibepiler-out/graph.dot -o graph.svg`. Cycle edges are red, unreachable nodes dashed, flagged nodes get a colored border. |
 | `graph.mmd` | Mermaid flowchart of the module graph, pasteable into GitHub issues / READMEs. |
@@ -242,7 +256,65 @@ vibepiler similar . app.utils.sum_even      # the functions closest in meaning t
 - **Swap the model** with `embedding_model = "..."` in the config: any fastembed model name, or any `minishlab/potion-*` static model.
 - Without the extra installed, `-O3` runs everything else and prints one line telling you what to install; it never fails the build.
 
-What it does and does not do: an embedding cannot tell `parse` from `dump`, so inverse operations will occasionally pair up. It is also not used anywhere exactness matters; call resolution, reachability and dead code stay deterministic.
+What the tier produces, concretely:
+
+1. **`semantic-duplicates`**: pairs of functions that do the same job with different code. Structural duplicate detection (`-O2`) cannot see these; this is the one thing embeddings add that nothing else can.
+2. **`responsibilities`**: modules whose functions fall into several unrelated groups, each group labelled by the words its names share (`{resolve · import} ×6, {emit · html} ×4`).
+3. **`concepts`**: the whole codebase partitioned by meaning. Every function is linked to its nearest neighbours by cosine similarity, communities in that graph (Louvain, fixed seed) become concepts, each labelled from identifier words and placed on a 2-D map of the concept centroids. The **Concepts** tab of the viewer is that map: distance is similarity of meaning, size is how many functions, lines are calls between concepts, amber means a concept spread over several modules with no home (a *scattered concern*, the mirror image of a mixed module). An interface implemented in every module, such as a `run` on every pass, is recognised as a pattern, not scattering.
+
+The map is projected with PCA by default. Install `vibepiler[map]` to project with UMAP instead (seeded, so the map is the same on every run); it is a separate extra because umap-learn pulls in scikit-learn, scipy and numba, about 150 MB, and the rest of the tool should keep installing in seconds.
+
+What it does and does not do: an embedding cannot tell `parse` from `dump`, so inverse operations will occasionally pair up. It is also not used anywhere exactness matters; call resolution, reachability and dead code stay deterministic, and lines the model thinks could merge are kept out of the bloat score.
+
+## Bloat, the score
+
+Every function, class, module, folder and the repo gets one number in [0, 1]. It prints like `size` prints text, data and bss:
+
+```
+waste 1% (34 of 6326 lines; inferred 31, proven 3; +222 if the semantic pairs merge)   tangle 0.31 (high-complexity ×55, long-function ×13, mixed-responsibilities ×8)   bloat 31%   [-O3, 54% linked, nomic-ai/CodeRankEmbed:int8]
+```
+
+```
+bloat = 1 − (1 − waste)(1 − tangle)
+```
+
+- **waste** is lines that could go, over the unit's lines. Every finding claims a line budget on the symbol it is about; budgets are allocated largest-first and never exceed the symbol's lines or an enclosing class's or module's, so a function that is both dead and a stub counts once and the elimination plan sums exactly to the removable total. Each claim carries a confidence: **proven** (unused import, exact duplicate, redundant try), **inferred** (reachability and structure, which depend on how much of the call graph linked) or **model** (an embedding said so). Model lines are shown and planned but never scored.
+- **tangle** is structure harder than its job needs, each term derived from the finding's own numbers as `(value − limit) / value` against your thresholds, combined as a noisy OR. Containers take their children's tangle weighted by share of lines, then OR their own flags. Centrality is not tangle: a module everybody imports is normal.
+- The two combine as a probabilistic OR, so the score stays in range and one bad function cannot push a module past 1. Clean code is exactly 0.
+
+| finding | lines charged | action |
+|---|---|---|
+| dead or unreachable symbol or module, stub, one-implementation interface, pass-through or thin wrapper, indirection link | all of it | delete / fold |
+| exact duplicate group | every copy but the first | fold |
+| near or semantic duplicate pair | the second copy, at model confidence | fold |
+| class-as-function, namespace class, one-subclass base, tiny module | the shell: the container minus what it contains | fold |
+| single-use helper | 2, the boundary itself | fold |
+| redundant try, swallowed exception, log-and-reraise | 2, the clause | delete / simplify |
+| unused import | 1 | delete |
+
+| finding | tangle term |
+|---|---|
+| complexity, nesting, parameters, length over the threshold | (value − threshold) / value |
+| god module | (fan − threshold) / fan |
+| module in an import cycle | share of its imports that stay inside the cycle |
+| mixed responsibilities | ½ · (groups − 1) / groups |
+| deep inheritance | (depth − 3) / depth |
+
+Rules that follow from the critique it went through before shipping: tests are scored but kept out of the repo and folder totals; modules are ranked by lines freed, with the score shown beside them as a density, because a 3,000-line module with 50 dead lines matters more than a 10-line module with 3; the score is stamped with the `-O` level, link rate and model it was measured under, since it is a property of the analysis, not of the code alone; and the semantic tier can list a pair but cannot move the score.
+
+Every finding also carries an `action`, delete, fold or simplify, and the **elimination plan** (`-R`, and in `report.md`) orders them by lines freed. The loop is a fixpoint iteration: apply the top edit, re-run with `--baseline`, repeat until nothing moves. From Python, `Bloat.of(node)` and `Bloat.of(program)` give the same numbers as a value with `.waste`, `.tangle` and `.score`.
+
+### Bootstrapped on itself
+
+The first thing it was run on was vibepiler. Round one of the loop, measured with `--baseline`:
+
+| | before | after |
+|---|---|---|
+| removable lines shown by analysis | 71 | 34 |
+| of which proven | 13 | 3 |
+| bloat | 31% | 31% |
+
+What went: five dead helpers in the tree-sitter wrapper left over from the first implementation, a constant nothing read, two unused imports, the `extract` method that every language adapter had copied, and two copies of the "does this class inherit from a framework" check. What did not go, and became fixes to the tool instead: a module constant used only as a default argument was reported dead (the extractor skipped identifier defaults) and typer's decorated callback was called a stub (decorated stubs are registered with a framework on purpose). The score did not move because what is left is tangle, 55 functions over the complexity threshold, which is a rewrite rather than a deletion; the size line says so.
 
 ## Configuration
 
@@ -295,5 +367,8 @@ cg = g.call_graph()                     # nx.DiGraph of callables
 - Name-based resolution, no types. A language-server backend (pyright / tsserver via LSP) would raise the resolution rate; the resolver is isolated in `ir/builder.py` for that reason.
 - Python and JS/TS only, for now. Go, Rust and Java grammars are already available through the language pack.
 - Analysis only; an `--fix` mode for the mechanical findings (unused imports, dead symbols) is the obvious next step.
+- The bloat denominator is physical lines, so blank lines, comments and docstrings count; logical source lines would be fairer to terse code. Generated code is not yet excluded.
+- The elimination plan orders edits by lines freed without simulating them: inlining a wrapper raises its caller's complexity, merging duplicates can create a hub. A graph-level what-if (delete, contract, identify on the networkx graph, then re-score) is the next step for the plan.
+- Concepts are seed-stable but not edit-stable: one deletion can reshuffle communities, which is why they are reported and mapped but never scored.
 
 Design notes live in `docs/superpowers/specs/`.
