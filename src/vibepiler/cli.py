@@ -86,7 +86,7 @@ def _print_phase(n: int, name: str, msg: str) -> None:
 def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
     path: str = typer.Argument(".", help="Project root, or a remote repo: owner/repo[@ref], a GitHub URL, or any git URL."),
     out: Path = typer.Option(None, "-o", "--out", help="Output directory (default vibepiler-out/, or vibepiler-out/<repo> for remotes)."),
-    opt: int = typer.Option(None, "-O", "--opt", min=0, max=2, help="-O0 graph only, -O1 cheap passes, -O2 everything (default)."),
+    opt: int = typer.Option(None, "-O", "--opt", min=0, max=3, help="-O0 graph only, -O1 cheap passes, -O2 all structural passes (default), -O3 adds the embedding tier (needs vibepiler[semantic])."),
     warn: Optional[str] = typer.Option(None, "-W", "--warn", help="Minimum severity to print: all|warning|error (default warning). `-Wall` shows infos."),
     emit: str = typer.Option(",".join(EMITTERS), "--emit", help="Comma-separated outputs: json,dot,mermaid,html,md."),
     only: Optional[str] = typer.Option(None, "--only", help="Comma-separated pass names to run (others skipped)."),
@@ -120,7 +120,7 @@ def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
     def on_pass(p, diags, secs):  # noqa: ANN001
         if not quiet:
             n = len(diags)
-            console.print(f"      [dim]pass[/dim] {p.name:15} {n:4} finding{'s' if n != 1 else ''}  [dim]{secs * 1000:.0f} ms[/dim]")
+            console.print(f"      [dim]pass[/dim] {p.name:19} {n:4} finding{'s' if n != 1 else ''}  [dim]{secs * 1000:.0f} ms[/dim]")
 
     result = Compiler(root, cfg, on_phase=_print_phase).run(
         opt_level=opt,
@@ -131,6 +131,9 @@ def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
         on_pass=on_pass,
     )
     program = result.program
+    for key, m in program.metrics.items():
+        if isinstance(m, dict) and m.get("skipped"):
+            console.print(f"      [yellow]skipped[/yellow] {key.replace('_', '-')}: {m['skipped']}")
     shown = [d for d in program.diagnostics if d.severity >= min_sev]
     if not quiet and shown:
         console.print()
@@ -281,6 +284,32 @@ def paths(
 
     grow(tree, start, 0)
     console.print(tree)
+
+
+@app.command()
+def similar(
+    path: str = typer.Argument(".", help="Project root, owner/repo, or git URL."),
+    symbol: str = typer.Argument(..., help="Function or method, e.g. app.utils.sum_even"),
+    top: int = typer.Option(10, "-n", "--top", help="How many neighbours to show."),
+) -> None:
+    """Find the functions most similar in meaning to SYMBOL (embedding tier; needs vibepiler[semantic])."""
+    from vibepiler.semantic.similar import similar_symbols
+
+    root, _ = _resolve_source(path, None)
+    program = build_program(root)
+    start = _find_symbol(program, symbol)
+    try:
+        hits = similar_symbols(program, start, top=top)
+    except (RuntimeError, KeyError) as exc:
+        err_console.print(f"[red]error:[/red] {exc}")
+        raise typer.Exit(2)
+    table = Table(header_style="dim", title=f"closest to {program.graph.node(start).qualname}", title_style="bold")
+    table.add_column("similarity", justify="right")
+    table.add_column("symbol", style="cyan")
+    table.add_column("location", style="dim")
+    for node, score in hits:
+        table.add_row(f"{score:.0%}", node.qualname, node.location)
+    console.print(table)
 
 
 if __name__ == "__main__":

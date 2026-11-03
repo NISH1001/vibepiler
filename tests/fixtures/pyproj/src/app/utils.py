@@ -53,3 +53,28 @@ def reraise(x):
         return int(x)
     except Exception as e:
         raise
+
+
+def sum_even(xs):
+    total = 0
+    for x in xs:
+        if x % 2 == 0:
+            total += x
+    return total
+
+
+def even_total(values):
+    return sum(v for v in values if v % 2 == 0)
+
+
+def render_email(user, subject):
+    body = "Hello " + user + ", about " + subject
+    return "<html>" + body + "</html>"
+
+
+def send_email(address, html):
+    return ("mail", address, html)
+
+
+def email_subject(user):
+    return "Hello " + user + ", your report is ready"

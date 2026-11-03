@@ -15,6 +15,8 @@ from vibepiler.passes.diagnostic import Diagnostic
 from vibepiler.passes.duplicates import DuplicatesPass
 from vibepiler.passes.entry_points import EntryPointsPass
 from vibepiler.passes.hotspots import HotspotsPass
+from vibepiler.passes.responsibilities import ResponsibilitiesPass
+from vibepiler.passes.semantic_duplicates import SemanticDuplicatesPass
 from vibepiler.passes.unused_imports import UnusedImportsPass
 from vibepiler.passes.wrappers import WrappersPass
 
@@ -29,6 +31,8 @@ _PASSES: list[Pass] = [
     AbstractionPass(),
     BloatPass(),
     DuplicatesPass(),
+    SemanticDuplicatesPass(),
+    ResponsibilitiesPass(),
 ]
 
 
@@ -61,7 +65,7 @@ def run_passes(
     skip: list[str] | None = None,
     on_pass=None,  # noqa: ANN001  callback(pass, diags, seconds)
 ) -> list[Diagnostic]:
-    """Run the pass pipeline. -O0 builds the graph only; -O1 cheap passes; -O2 everything."""
+    """Run the pass pipeline. -O0 builds the graph only; -O1 cheap passes; -O2 adds duplicates; -O3 adds the embedding tier."""
     program.diagnostics = []
     program.metrics["_ran"] = set()
     if opt_level <= 0 and not only:

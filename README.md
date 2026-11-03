@@ -97,16 +97,17 @@ uv run pytest
 ## The CLI (deliberately compiler-shaped)
 
 ```
-vibepiler compile <path | owner/repo[@ref] | git url> [-O0|-O1|-O2] [-W all|warning|error]
+vibepiler compile <path | owner/repo[@ref] | git url> [-O0|-O1|-O2|-O3] [-W all|warning|error]
                          [--emit json,dot,mermaid,html,md] [-o out/] [--only pass,pass] [--skip pass]
                          [--ignore "glob,glob"] [--lang python,typescript] [--fail-on warning|error] [-q]
                          [--cache DIR] [--refresh]
 vibepiler graph   <path> [--level module|symbol] [--format dot|mermaid|json] [--packages]
 vibepiler paths   <path> --from <symbol> [--to <symbol>] [--depth N]
+vibepiler similar <path> <symbol> [-n 10]          # -O3 tier: nearest functions by meaning
 vibepiler passes
 ```
 
-- `-O0` builds the graph only. `-O1` runs the linear passes. `-O2` (default) adds the quadratic ones (duplicate detection).
+- `-O0` builds the graph only. `-O1` runs the linear passes. `-O2` (default) adds the quadratic ones (duplicate detection). `-O3` adds the embedding tier (see below).
 - `-W` is the minimum severity printed to the terminal. `-Wall` shows `info` findings. Everything is always in `ir.json`/`report.md`.
 - `--fail-on warning` makes it usable as a CI gate.
 - `paths` prints execution pathways: the call tree from a symbol, or every shortest path between two symbols
@@ -201,8 +202,33 @@ Vibepiler never edits your code. Each pass is the analysis half of a compiler op
 | `abstraction` | devirtualization / indirection removal | Abstract classes with exactly one implementation (`single-implementation`), base classes with one subclass and no other use, abstract classes with none, classes with a single real method (`class-as-function`), all-static classes (`namespace-class`), helpers called exactly once from the same module (`single-use-helper`), deep inheritance, tiny modules with one importer. Skips dataclasses, pydantic/ORM models, enums, exceptions. | warning / info |
 | `bloat` | link-time pruning | Dependencies declared in `pyproject.toml` / `requirements*.txt` / `package.json` but never imported (`unused-dependency`), imported packages not declared (`undeclared-dependency`), `except: pass` (`swallowed-exception`), try/except that only re-raises (`redundant-try`), log-and-reraise, stub functions. | warning / info |
 | `duplicates` | common-subexpression elimination | Functions with identical AST shape ignoring identifiers and literals (`duplicate-function`), and near-identical ones by 4-gram Jaccard similarity (`near-duplicate-function`). `-O2` only. | warning / info |
+| `semantic-duplicates` | value numbering (semantic CSE) | Functions that do the same job with different code, by embedding similarity. Only mutual nearest neighbours above the threshold are reported, so the list stays short and precise. `-O3` only. | warning / info |
+| `responsibilities` | function partitioning | Modules whose functions cluster into several unrelated groups by meaning (a module that is really three modules). `-O3` only. | info |
 
 The order is the order of impact for agent-written code: dead code and abstraction findings usually remove the most lines per decision; cycles, complexity and hotspots are the map you need to do that safely.
+
+## The semantic tier (`-O3`)
+
+Everything up to `-O2` is exact: names, scopes, AST shapes. `-O3` adds the one thing that is not mechanical, *meaning*, with a small embedding model that runs locally in seconds.
+
+```bash
+# one-off
+uvx --from "vibepiler[semantic] @ git+https://github.com/NISH1001/vibepiler" vibepiler compile . -O3
+
+# installed
+uv tool install "vibepiler[semantic] @ git+https://github.com/NISH1001/vibepiler"
+vibepiler compile owner/repo -O3
+vibepiler similar . app.utils.sum_even      # the functions closest in meaning to one you point at
+```
+
+- **Backend**: [fastembed](https://github.com/qdrant/fastembed) (ONNX runtime, no PyTorch, ~60 MB install). **Model**: `BAAI/bge-small-en-v1.5`, 33M parameters, 384 dimensions, the strongest model of its size on MTEB; it is downloaded once (~130 MB) and embeds hundreds of functions per second on a laptop CPU. A 1,800-symbol repo takes a few seconds the first time and under a second after that, because vectors are cached by content hash in `~/.cache/vibepiler/embeddings/`.
+- **What gets embedded**: each function or method's source (signature and body). Tests and nested closures are skipped, since they are repetitive by design.
+- **`semantic-duplicates`**: two functions are reported only when each is the other's nearest neighbour *and* their cosine similarity is above `thresholds.semantic_similarity` (default 0.88). That mutual-nearest-neighbour rule is what keeps the output honest: a 1,800-function repo has 1.6 million pairs, and a plain threshold would list thousands. Pairs the structural pass already reported are left out; same-named methods on different classes (interface implementations) and dunder methods are ignored.
+- **`responsibilities`**: within each module, functions are greedily clustered at `thresholds.responsibility_similarity` (default 0.70). A module with two or more clusters of three or more functions is reported with the groups spelled out.
+- **Swap the model** with `embedding_model = "..."` in the config. `jinaai/jina-embeddings-v2-base-code` (code-specialized, 160M) is a good step up when you can afford a few more seconds.
+- Without the extra installed, `-O3` runs everything else and prints one line telling you what to install; it never fails the build.
+
+What it does and does not do: an embedding cannot tell `parse` from `dump`, so inverse operations will occasionally pair up. It is also not used anywhere exactness matters; call resolution, reachability and dead code stay deterministic.
 
 ## Configuration
 
@@ -215,6 +241,7 @@ languages = ["python"]              # default: all detected
 opt_level = 2
 entry_patterns = ["*.lambda_handler", "jobs/*"]   # extra roots by qualname or file glob
 treat_exports_as_roots = false      # default: only JS/TS entry modules (index, pages/, app/, ...)
+embedding_model = "BAAI/bge-small-en-v1.5"   # -O3; any fastembed model name
 
 [tool.vibepiler.thresholds]
 complexity = 10
@@ -225,6 +252,8 @@ duplicate_min_nodes = 25
 near_duplicate_similarity = 0.85
 god_module_fan = 10
 single_use_helper_max_loc = 8
+semantic_similarity = 0.88          # -O3
+responsibility_similarity = 0.70    # -O3
 ```
 
 ## Using it from Python

@@ -19,6 +19,8 @@ class Thresholds:
     god_module_fan: int = 10  # fan-in AND fan-out above this => god module
     hotspot_top_n: int = 10
     single_use_helper_max_loc: int = 8
+    semantic_similarity: float = 0.88  # -O3: cosine similarity for semantic duplicates
+    responsibility_similarity: float = 0.70  # -O3: symbols closer than this belong to the same concern
 
 
 @dataclass
@@ -30,6 +32,7 @@ class Config:
     entry_patterns: list[str] = field(default_factory=list)  # extra glob/regex of entry qualnames
     thresholds: Thresholds = field(default_factory=Thresholds)
     use_gitignore: bool = True
+    embedding_model: str = "BAAI/bge-small-en-v1.5"  # -O3 backend model (fastembed)
 
     @classmethod
     def load(cls, root: Path, **overrides: Any) -> Config:
