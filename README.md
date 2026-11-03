@@ -74,16 +74,43 @@ Remote repos are shallow-cloned into `~/.cache/vibepiler/repos/` and reused on t
 
 ### Reading the result
 
-1. **`report.html` → Overview**: the "what can go" tiles and the entry points. Click an entry point to watch execution trace outward from it.
-2. **Findings tab** (or `report.md`): work top-down. `dead-code`, `duplicates`, `wrappers` and `abstraction` findings remove the most lines per decision; `cycles`, `complexity` and `hotspots` tell you what is risky to touch.
-3. **Link tab**: how much of the call graph was proven. A low "linked" percentage means lots of dynamic dispatch; dead-code results are still safe (they are conservative), but there will be fewer of them.
-4. Hand `ir.json` or `report.md` to your coding agent and ask it to act on the warnings; every finding carries the file, line and a concrete suggestion.
+1. **The size line** at the top of the terminal output and of `report.html`: `waste` is lines that could go, `tangle` is structure harder than its job, `bloat` combines them. Lead with the lines, not the percentage.
+2. **`report.html` → Overview**: the "what can go" tiles, the entry points, and "Biggest wins". Orbs with a red wedge are modules with removable lines; click one for its findings and its own bloat block.
+3. **Findings tab** (or `report.md`): filter by pass and by finding type; the graph lights up the matches and "only flagged" isolates them. `dead-code`, `duplicates`, `wrappers` and `abstraction` remove the most lines per decision; `cycles`, `complexity` and `hotspots` tell you what is risky to touch.
+4. **Concepts tab** (`-O3`): the codebase grouped by meaning, with scattered concerns and mixed modules named.
+5. **Link tab**: how much of the call graph was proven. A low "linked" percentage means dynamic dispatch; dead-code results stay safe (they are conservative), but there are fewer of them and the size line says how many lines are alive only by name.
 
-### Use it as a CI gate
+### Five ways to use it
+
+**1. Audit a repo you did not write.** One command, no install, read the size line and the Findings tab.
 
 ```bash
-vibepiler compile . --fail-on warning -q      # exit code 1 if any warning-level finding exists
+uvx --from git+https://github.com/NISH1001/vibepiler vibepiler compile owner/repo -O3
 ```
+
+**2. Shrink a codebase with the elimination loop.** `-R` prints the plan, one edit per line with the lines it frees and how sure the tool is. Apply the top one, re-run against the previous `ir.json`, repeat until nothing moves.
+
+```bash
+vibepiler compile . -R -q                                   # the plan
+# ...apply the top remark...
+vibepiler compile . -R -q --baseline vibepiler-out/ir.json  # what moved
+```
+
+**3. Let your coding agent do the loop.** Every remark carries the file, the line, the action and a suggestion, so the plan is a to-do list an agent can execute. A prompt that works:
+
+> Run `vibepiler compile . -R -q`. Apply the first remark that is `proven` or `inferred`, run the tests, then re-run vibepiler with `--baseline` and show me what moved. Stop when the plan is empty or a remark looks wrong, and tell me which.
+
+The tool never rewrites code itself; the agent or you do, and the next run checks the result.
+
+**4. Gate it in CI.** Fail on severity, or on the score:
+
+```bash
+vibepiler compile . --fail-on warning -q
+vibepiler compile . --fail-on bloat>0.25 -q
+vibepiler size .                                   # the per-folder size report, for a PR comment
+```
+
+**5. Script it.** `ir.json` holds the whole graph, every finding and every metric; the Python API below gives the same objects in-process, including `Bloat.of(node)`.
 
 ## Develop on it
 
