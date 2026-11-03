@@ -237,6 +237,7 @@ class BloatScorePass(Pass):
         repo = aggregate(source)
         repo["removable_loc"] = sum(used[m.id] for m in source)
         repo["model_loc"] = sum(model_used[m.id] for m in source)
+        repo["unverified_loc"] = float((program.metrics.get("entry_points") or {}).get("kept_by_name", {}).get("loc", 0))  # alive only by name
         repo["tests"] = aggregate(tests)
         repo["folders"] = sorted(({"path": k, **aggregate(v)} for k, v in folders.items()), key=lambda r: (-r["removable_loc"], r["path"]))
         test_ids = {m.id for m in tests}

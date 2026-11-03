@@ -170,7 +170,7 @@ def _size_line(b: dict) -> str:
     c = b.get("conditions", {})
     stamp = ", ".join(x for x in [f"-O{c.get('opt_level')}" if c.get("opt_level") is not None else "", f"{c['linked']:.0%} linked" if c.get("linked") is not None else "", c.get("model") or ""] if x)
     return (
-        f"[bold]waste[/bold] {b['waste']:.0%} [dim]({b['removable_loc']:.0f} of {b['loc']} lines" + (f"; {conf}" if conf else "") + (f"; +{b['model_loc']:.0f} if the semantic pairs merge" if b.get("model_loc") else "") + ")[/dim]   "
+        f"[bold]waste[/bold] {b['waste']:.0%} [dim]({b['removable_loc']:.0f} of {b['loc']} lines" + (f"; {conf}" if conf else "") + (f"; +{b['model_loc']:.0f} if the semantic pairs merge" if b.get("model_loc") else "") + (f"; {b['unverified_loc']:.0f} alive only by name" if b.get("unverified_loc") else "") + ")[/dim]   "
         f"[bold]tangle[/bold] {b['tangle']:.2f}" + (f" [dim]({reasons})[/dim]" if reasons else "") + "   "
         f"[bold]bloat[/bold] {b['score']:.0%}" + (f"   [dim]\\[{stamp}][/dim]" if stamp else "")
     )

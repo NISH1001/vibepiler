@@ -80,8 +80,20 @@ class EntryPointsPass(Pass):
             n.attrs["reachable"] = n.id in reachable
 
         symbols = [n for n in g.nodes() if n.kind not in (NodeKind.MODULE, NodeKind.PACKAGE)]
+        # alive only by name: no resolved edge reaches them; an unresolved call somewhere just used the same name.
+        # Dead-code honours that (conservative), the bloat score reports it as the unverified band.
+        kept = [
+            n
+            for n in symbols
+            if n.id in reachable and not n.attrs.get("is_root") and not is_dunder(n.name) and n.name in used_names
+            and not any(e.src in reachable for e in g.in_edges(n.id, FLOW_EDGES))
+            and not (n.module and g.node(n.module).attrs.get("is_test"))
+        ]
+        for n in kept:
+            n.attrs["alive_by_name"] = True
         program.metrics["entry_points"] = {
             "count": len(roots),
+            "kept_by_name": {"symbols": len(kept), "loc": sum(n.loc for n in kept)},
             "roots": [
                 {"id": r, "kinds": g.node(r).attrs["entry"], "file": g.node(r).file, "line": g.node(r).start_line, "qualname": g.node(r).qualname}
                 for r in sorted(roots)

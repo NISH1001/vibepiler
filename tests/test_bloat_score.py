@@ -137,3 +137,14 @@ def test_a_tangled_module_with_nothing_to_delete_says_so(tmp_path):
     d = next(d for d in prog.diagnostics if d.code == "bloated-module" and d.file == "knot.py")
     assert "nothing to delete" in d.message and "high-complexity" in d.message and "removable lines" not in d.message
     assert d.severity.label == "info" and d.data["action"] == "simplify"
+
+
+def test_symbols_alive_only_by_name_are_counted_as_the_unverified_band(tmp_path):
+    (tmp_path / "shapes.py").write_text("class Box:\n    def render(self):\n        return 1\n\n    def unused(self):\n        return 2\n")
+    (tmp_path / "main.py").write_text("from shapes import Box\n\n\ndef draw(obj):\n    return obj.render()\n\n\nif __name__ == '__main__':\n    draw(Box())\n")
+    prog = build_program(tmp_path)
+    run_passes(prog, opt_level=2)
+    assert prog.graph.node("sym:shapes.py::Box.render").attrs.get("alive_by_name") is True  # obj's type is unknown; only the name matched
+    assert prog.metrics["entry_points"]["kept_by_name"] == {"symbols": 1, "loc": 2}
+    assert prog.metrics["bloat_score"]["unverified_loc"] == 2.0
+    assert "Box.unused" in {d.data["qualname"] for d in prog.diagnostics if d.code == "dead-symbol"}
