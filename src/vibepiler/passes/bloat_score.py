@@ -281,17 +281,29 @@ class BloatScorePass(Pass):
                 continue
             causes: Counter = Counter()
             for p in plan:
-                if p["file"] == m.file:
+                if p["file"] == m.file and p["confidence"] != "model":
                     causes[p["code"]] += p["lines"]
             top = ", ".join(f"{c} {v:.0f}" for c, v in causes.most_common(3))
+            knots: Counter = Counter()
+            for n in [m, *g.children(m.id)]:
+                for t, code in tangles.get(n.id, []):
+                    if t > 0:
+                        knots[code] += 1
+            knot = ", ".join(f"{c} ×{k}" for c, k in knots.most_common(3))
+            if b["removable_loc"] > 0:
+                msg = f"`{m.name}`: {b['removable_loc']:.0f} removable lines of {m.loc} ({b['waste']:.0%} waste" + (f": {top}" if top else "") + f"); tangle {b['tangle']:.2f}" + (f" ({knot})" if knot else "") + f"; bloat {b['score']:.0%}"
+                sev, fix = Severity.WARNING, "Work the elimination plan from the top: delete what is dead, fold what is duplicated or wrapped, then split what is tangled."
+            else:
+                msg = f"`{m.name}`: nothing to delete, but tangled {b['tangle']:.2f}" + (f" ({knot})" if knot else "") + f"; bloat {b['score']:.0%}"
+                sev, fix = Severity.INFO, "No lines to free here; the bloat is structure. Split the tangled functions, starting with the most complex."
             diags.append(
                 self.diag(
                     "bloated-module",
-                    Severity.WARNING,
-                    f"`{m.name}`: {b['removable_loc']:.0f} removable lines of {m.loc} ({b['waste']:.0%} waste" + (f": {top}" if top else "") + f"); tangle {b['tangle']:.2f}; bloat {b['score']:.0%}",
+                    sev,
+                    msg,
                     node=m,
-                    suggestion="Work the elimination plan from the top: delete what is dead, fold what is duplicated or wrapped, then split what is tangled.",
-                    action="fold",
+                    suggestion=fix,
+                    action="fold" if b["removable_loc"] > 0 else "simplify",
                     confidence="inferred",
                     **{k: round(v, 3) for k, v in b.items()},
                 )

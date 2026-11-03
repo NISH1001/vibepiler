@@ -126,3 +126,14 @@ def test_dead_module_constants_count_toward_the_module(tmp_path):
     mod = prog.graph.node("mod:util.py")
     dead_vars = [d for d in prog.diagnostics if d.code == "dead-symbol" and d.data.get("kind") == "variable"]
     assert mod.attrs["bloat"]["removable_loc"] >= (1 if dead_vars else 0)
+
+
+def test_a_tangled_module_with_nothing_to_delete_says_so(tmp_path):
+    body = "".join(f"    if x == {i}:\n        return {i}\n" for i in range(14)) + "    return -1\n"
+    (tmp_path / "knot.py").write_text(f"def classify(x):\n{body}")
+    (tmp_path / "main.py").write_text("from knot import classify\n\nif __name__ == '__main__':\n    classify(3)\n")
+    prog = build_program(tmp_path)
+    run_passes(prog, opt_level=2)
+    d = next(d for d in prog.diagnostics if d.code == "bloated-module" and d.file == "knot.py")
+    assert "nothing to delete" in d.message and "high-complexity" in d.message and "removable lines" not in d.message
+    assert d.severity.label == "info" and d.data["action"] == "simplify"
