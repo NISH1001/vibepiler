@@ -27,6 +27,10 @@ structure can be recovered mechanically and analyzed like a program.
 
 Languages: **Python**, **JavaScript/TypeScript** (incl. JSX/TSX). Adding a language means adding one adapter file.
 
+![The program graph of vibepiler itself: modules as orbs sized by lines, a red wedge for the share of lines that could go, traffic moving along import and call edges, the size line in the header](docs/img/report-graph.png)
+
+*`report.html` on vibepiler itself. Orbs are modules sized by lines; a red wedge is the share of a module's lines that could go; dots are import and call traffic; the header carries the size line: waste, tangle, bloat.*
+
 ## Quick start
 
 You need [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`). Nothing else: no clone, no install step.
@@ -75,7 +79,9 @@ Remote repos are shallow-cloned into `~/.cache/vibepiler/repos/` and reused on t
 ### Reading the result
 
 1. **The size line** at the top of the terminal output and of `report.html`: `waste` is lines that could go, `tangle` is structure harder than its job, `bloat` combines them. Lead with the lines, not the percentage.
-2. **`report.html` → Overview**: the "what can go" tiles, the entry points, and "Biggest wins". Orbs with a red wedge are modules with removable lines; click one for its findings and its own bloat block.
+2. **`report.html` → Overview**: the "what can go" tiles, the entry points, and "Biggest wins". Orbs with a red wedge are modules with removable lines; click one for its findings and its own bloat block. *Trace* follows execution outward from any node:
+
+   ![A trace from the CLI module: reached modules lit amber, dashed paths with moving particles, the rest dimmed](docs/img/report-trace.png)
 3. **Findings tab** (or `report.md`): filter by pass and by finding type; the graph lights up the matches and "only flagged" isolates them. `dead-code`, `duplicates`, `wrappers` and `abstraction` remove the most lines per decision; `cycles`, `complexity` and `hotspots` tell you what is risky to touch.
 4. **Concepts tab** (`-O3`): the codebase grouped by meaning, with scattered concerns and mixed modules named.
 5. **Link tab**: how much of the call graph was proven. A low "linked" percentage means dynamic dispatch; dead-code results stay safe (they are conservative), but there are fewer of them and the size line says how many lines are alive only by name.
@@ -289,6 +295,10 @@ What the tier produces, concretely:
 2. **`responsibilities`**: modules whose functions fall into several unrelated groups, each group labelled by the words its names share (`{resolve · import} ×6, {emit · html} ×4`).
 3. **`concepts`**: the whole codebase partitioned by meaning. Every function is linked to its nearest neighbours by cosine similarity, communities in that graph (Louvain, fixed seed) become concepts, each labelled from identifier words and placed on a 2-D map of the concept centroids. The **Concepts** tab of the viewer is that map: distance is similarity of meaning, size is how many functions, lines are calls between concepts, amber means a concept spread over several modules with no home (a *scattered concern*, the mirror image of a mixed module). An interface implemented in every module, such as a `run` on every pass, is recognised as a pattern, not scattering.
 
+![The Concepts tab: functions clustered by meaning on a 2-D map, one concept selected with its modules and members listed](docs/img/report-concepts.png)
+
+*The Concepts tab on vibepiler itself. Each dot is a concept; amber ones are spread over several modules with no home. The selected concept, "visit · extractor · hints", is the tree-walking code shared by the two language adapters.*
+
 The map is projected with PCA by default. Install `vibepiler[map]` to project with UMAP instead (seeded, so the map is the same on every run); it is a separate extra because umap-learn pulls in scikit-learn, scipy and numba, about 150 MB, and the rest of the tool should keep installing in seconds.
 
 What it does and does not do: an embedding cannot tell `parse` from `dump`, so inverse operations will occasionally pair up. It is also not used anywhere exactness matters; call resolution, reachability and dead code stay deterministic, and lines the model thinks could merge are kept out of the bloat score.
@@ -333,7 +343,11 @@ Every finding also carries an `action`, delete, fold or simplify, and the **elim
 
 ### Bootstrapped on itself
 
-The first thing it was run on was vibepiler. Three rounds of the loop, each measured with `--baseline`:
+The first thing it was run on was vibepiler. Four rounds of the loop, each measured with `--baseline`:
+
+![Bloat and tangle over the four bootstrap rounds, and the removable lines per round](docs/img/bootstrap.png)
+
+*Left: bloat and tangle, two unitless shares on one axis. Right: the lines the analysis could show removable. Vector versions for papers: [`docs/img/bootstrap.svg`](docs/img/bootstrap.svg), [`docs/img/bootstrap.pdf`](docs/img/bootstrap.pdf); regenerate with `uv run --with matplotlib python scripts/bootstrap_figure.py`.*
 
 | | start | round 1 | round 2 | round 3 | round 4 |
 |---|---|---|---|---|---|
