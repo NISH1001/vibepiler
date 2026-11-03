@@ -1,0 +1,79 @@
+"""Shared presentation helpers."""
+
+from __future__ import annotations
+
+from collections import defaultdict
+
+from vibepiler.ir.model import EdgeKind, Node, NodeKind
+from vibepiler.ir.program import Program
+from vibepiler.passes.diagnostic import Diagnostic, Severity
+
+KIND_COLORS = {
+    NodeKind.MODULE: "#4C78A8",
+    NodeKind.PACKAGE: "#9D9D9D",
+    NodeKind.CLASS: "#F58518",
+    NodeKind.FUNCTION: "#54A24B",
+    NodeKind.METHOD: "#72B7B2",
+    NodeKind.VARIABLE: "#B279A2",
+}
+EDGE_STYLES = {
+    EdgeKind.IMPORTS: ("#4C78A8", "solid"),
+    EdgeKind.CALLS: ("#54A24B", "solid"),
+    EdgeKind.REFERENCES: ("#B279A2", "dashed"),
+    EdgeKind.INHERITS: ("#F58518", "bold"),
+    EdgeKind.CONTAINS: ("#CCCCCC", "dotted"),
+}
+SEVERITY_ORDER = [Severity.ERROR, Severity.WARNING, Severity.INFO]
+
+
+def diagnostics_by_node(program: Program) -> dict[str, list[Diagnostic]]:
+    out: dict[str, list[Diagnostic]] = defaultdict(list)
+    for d in program.diagnostics:
+        if d.node_id:
+            out[d.node_id].append(d)
+    return out
+
+
+def worst_severity(diags: list[Diagnostic]) -> Severity | None:
+    return max((d.severity for d in diags), default=None)
+
+
+def cycle_edges(program: Program) -> set[tuple[str, str]]:
+    g = program.graph
+    pairs: set[tuple[str, str]] = set()
+    for cyc in program.metrics.get("cycles", {}).get("cycles", []):
+        members = {f"mod:{f}" for f in cyc["modules"]}
+        for e in g.edges(EdgeKind.IMPORTS):
+            if e.src in members and e.dst in members:
+                pairs.add((e.src, e.dst))
+    return pairs
+
+
+def short_label(n: Node) -> str:
+    if n.kind is NodeKind.MODULE:
+        return n.name
+    if n.kind is NodeKind.PACKAGE:
+        return f"[{n.name}]"
+    return n.qualname
+
+
+def summarize(program: Program) -> dict:
+    g = program.graph
+    counts = {s.label: 0 for s in SEVERITY_ORDER}
+    for d in program.diagnostics:
+        counts[d.severity.label] += 1
+    by_pass: dict[str, int] = defaultdict(int)
+    for d in program.diagnostics:
+        by_pass[d.pass_name] += 1
+    return {
+        "files": g.meta.get("files", 0),
+        "modules": len(g.nodes(NodeKind.MODULE)),
+        "symbols": g.meta.get("symbols", 0),
+        "packages": len(g.nodes(NodeKind.PACKAGE)),
+        "edges": len(g.edges()),
+        "loc": sum(m.attrs.get("loc", 0) for m in g.nodes(NodeKind.MODULE)),
+        "languages": g.meta.get("languages", {}),
+        "resolution": g.meta.get("resolution", {}),
+        "severity": counts,
+        "by_pass": dict(by_pass),
+    }

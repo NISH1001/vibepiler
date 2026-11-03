@@ -1,0 +1,4 @@
+[project]
+name = "pyproj"
+version = "0.1.0"
+dependencies = ["requests", "numpy", "click>=8"]

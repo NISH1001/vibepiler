@@ -1,0 +1,14 @@
+{
+  "name": "jsproj",
+  "version": "1.0.0",
+  "dependencies": {
+    "express": "^4.19.0",
+    "lodash": "^4.17.21",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0"
+  },
+  "devDependencies": {
+    "vitest": "^1.6.0",
+    "typescript": "^5.4.0"
+  }
+}
