@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections import Counter
+
 from vibepiler.ir.model import EdgeKind, Node, NodeKind
 from vibepiler.ir.program import Program
 from vibepiler.passes.base import Pass
@@ -17,6 +19,9 @@ def _bases(n: Node) -> list[str]:
     return list(n.attrs.get("bases", []))
 
 
+COMPOSED_STEPS = 3  # a caller with this many single-use helpers is decomposed on purpose
+
+
 class AbstractionPass(Pass):
     name = "abstraction"
     description = "Interfaces with one implementation, classes that are really functions, single-use helpers, deep inheritance, tiny modules."
@@ -30,74 +35,99 @@ class AbstractionPass(Pass):
         diags: list[Diagnostic] = []
 
         for cls in g.nodes(NodeKind.CLASS):
-            subclasses = [g.node(e.src) for e in g.in_edges(cls.id, EdgeKind.INHERITS)]
-            methods = [c for c in g.children(cls.id) if c.kind is NodeKind.METHOD]
-            abstract_like = self._is_abstract_like(cls, methods)
-            direct_uses = [e for e in g.in_edges(cls.id, (EdgeKind.CALLS, EdgeKind.REFERENCES))]
-            if abstract_like and len(subclasses) == 1:
-                diags.append(
-                    self.diag(
-                        "single-implementation",
-                        Severity.WARNING,
-                        f"abstract class `{cls.qualname}` has exactly one implementation (`{subclasses[0].qualname}`)",
-                        node=cls,
-                        suggestion=f"Delete `{cls.name}` and use `{subclasses[0].name}` directly; add the interface back when a second implementation exists.",
-                        implementations=[s.qualname for s in subclasses],
-                    )
+            diags += self._check_class(program, cls)
+        diags += self._single_use_helpers(program)
+        diags += self._tiny_modules(program)
+        return diags
+
+    def _check_class(self, program: Program, cls: Node) -> list[Diagnostic]:
+        g = program.graph
+        subclasses = [g.node(e.src) for e in g.in_edges(cls.id, EdgeKind.INHERITS)]
+        methods = [c for c in g.children(cls.id) if c.kind is NodeKind.METHOD]
+        abstract_like = self._is_abstract_like(cls, methods)
+        direct_uses = [e for e in g.in_edges(cls.id, (EdgeKind.CALLS, EdgeKind.REFERENCES))]
+        return self._interfaces(program, cls, subclasses, abstract_like, direct_uses) + self._shape(cls, subclasses, methods) + self._depth(program, cls)
+
+    def _interfaces(self, program: Program, cls: Node, subclasses: list[Node], abstract_like: bool, direct_uses: list) -> list[Diagnostic]:
+        """An interface with one implementation, a base with one subclass, an interface nobody implements."""
+        diags: list[Diagnostic] = []
+        if abstract_like and len(subclasses) == 1:
+            diags.append(
+                self.diag(
+                    "single-implementation",
+                    Severity.WARNING,
+                    f"abstract class `{cls.qualname}` has exactly one implementation (`{subclasses[0].qualname}`)",
+                    node=cls,
+                    suggestion=f"Delete `{cls.name}` and use `{subclasses[0].name}` directly; add the interface back when a second implementation exists.",
+                    implementations=[s.qualname for s in subclasses],
                 )
-            elif not abstract_like and len(subclasses) == 1 and not direct_uses and not self._is_data_class(cls) and not program.graph.has_external_base(cls.id):
+            )
+        elif not abstract_like and len(subclasses) == 1 and not direct_uses and not self._is_data_class(cls) and not program.graph.has_external_base(cls.id):
+            diags.append(
+                self.diag(
+                    "single-subclass",
+                    Severity.INFO,
+                    f"`{cls.qualname}` exists only to be subclassed by `{subclasses[0].qualname}`",
+                    node=cls,
+                    suggestion="Merge the two classes unless the split is intentional.",
+                    implementations=[s.qualname for s in subclasses],
+                )
+            )
+        if abstract_like and not subclasses and not direct_uses and not cls.attrs.get("is_root"):
+            diags.append(self.diag("unimplemented-interface", Severity.WARNING, f"abstract class `{cls.qualname}` has no implementation", node=cls, suggestion="Delete it."))
+        return diags
+
+    def _shape(self, cls: Node, subclasses: list[Node], methods: list[Node]) -> list[Diagnostic]:
+        """A class that is really a function, or a namespace of static methods."""
+        diags: list[Diagnostic] = []
+        # class that is really a function
+        if (
+            not _bases(cls)
+            and not subclasses
+            and not self._is_data_class(cls)
+            and not cls.attrs.get("decorators")
+            and methods
+        ):
+            real = [m for m in methods if not is_dunder(m.name)]
+            static = [m for m in real if any(d in ("staticmethod", "classmethod") for d in m.attrs.get("decorators", []))]
+            has_state = any(m.name in ("__init__", "constructor") for m in methods)
+            if len(real) == 1 and not any("property" in d for d in real[0].attrs.get("decorators", [])):
                 diags.append(
                     self.diag(
-                        "single-subclass",
+                        "class-as-function",
                         Severity.INFO,
-                        f"`{cls.qualname}` exists only to be subclassed by `{subclasses[0].qualname}`",
+                        f"class `{cls.qualname}` has a single method `{real[0].name}`" + (" plus a constructor" if has_state else ""),
                         node=cls,
-                        suggestion="Merge the two classes unless the split is intentional.",
-                        implementations=[s.qualname for s in subclasses],
+                        suggestion=f"Replace it with a function `{real[0].name}(...)`" + (" that takes what the constructor stored." if has_state else "."),
+                        method=real[0].qualname,
                     )
                 )
-            if abstract_like and not subclasses and not direct_uses and not cls.attrs.get("is_root"):
-                diags.append(self.diag("unimplemented-interface", Severity.WARNING, f"abstract class `{cls.qualname}` has no implementation", node=cls, suggestion="Delete it."))
-
-            # class that is really a function
-            if (
-                not _bases(cls)
-                and not subclasses
-                and not self._is_data_class(cls)
-                and not cls.attrs.get("decorators")
-                and methods
-            ):
-                real = [m for m in methods if not is_dunder(m.name)]
-                static = [m for m in real if any(d in ("staticmethod", "classmethod") for d in m.attrs.get("decorators", []))]
-                has_state = any(m.name in ("__init__", "constructor") for m in methods)
-                if len(real) == 1 and not any("property" in d for d in real[0].attrs.get("decorators", [])):
-                    diags.append(
-                        self.diag(
-                            "class-as-function",
-                            Severity.INFO,
-                            f"class `{cls.qualname}` has a single method `{real[0].name}`" + (" plus a constructor" if has_state else ""),
-                            node=cls,
-                            suggestion=f"Replace it with a function `{real[0].name}(...)`" + (" that takes what the constructor stored." if has_state else "."),
-                            method=real[0].qualname,
-                        )
+            elif real and len(static) == len(real) and not has_state:
+                diags.append(
+                    self.diag(
+                        "namespace-class",
+                        Severity.INFO,
+                        f"class `{cls.qualname}` only holds {len(real)} static methods",
+                        node=cls,
+                        suggestion="Use module-level functions instead; the module is already a namespace.",
                     )
-                elif real and len(static) == len(real) and not has_state:
-                    diags.append(
-                        self.diag(
-                            "namespace-class",
-                            Severity.INFO,
-                            f"class `{cls.qualname}` only holds {len(real)} static methods",
-                            node=cls,
-                            suggestion="Use module-level functions instead; the module is already a namespace.",
-                        )
-                    )
+                )
+        return diags
 
-            depth = self._inheritance_depth(program, cls)
-            cls.attrs["inheritance_depth"] = depth
-            if depth >= 3:
-                diags.append(self.diag("deep-inheritance", Severity.INFO, f"`{cls.qualname}` sits {depth} levels deep in an inheritance chain", node=cls, depth=depth))
+    def _depth(self, program: Program, cls: Node) -> list[Diagnostic]:
+        diags: list[Diagnostic] = []
+        depth = self._inheritance_depth(program, cls)
+        cls.attrs["inheritance_depth"] = depth
+        if depth >= 3:
+            diags.append(self.diag("deep-inheritance", Severity.INFO, f"`{cls.qualname}` sits {depth} levels deep in an inheritance chain", node=cls, depth=depth))
+        return diags
 
-        # single-use helpers
+    def _single_use_helpers(self, program: Program) -> list[Diagnostic]:
+        """A helper called exactly once is indirection, unless its caller is composed of such steps on purpose."""
+        g = program.graph
+        th = program.config.thresholds
+        diags: list[Diagnostic] = []
+        cands: list[tuple[Node, Node]] = []
         for fn in g.nodes(NodeKind.FUNCTION):
             if fn.attrs.get("is_root") or fn.attrs.get("decorators") or fn.attrs.get("recursive") or not fn.attrs.get("reachable"):
                 continue
@@ -110,6 +140,11 @@ class AbstractionPass(Pass):
             caller = g.node(calls[0].src)
             if caller.module != fn.module or fn.loc > th.single_use_helper_max_loc:
                 continue
+            cands.append((fn, caller))
+        per_caller = Counter(c.id for _, c in cands)
+        for fn, caller in cands:
+            if per_caller[caller.id] >= COMPOSED_STEPS:
+                continue  # a function made of named steps: decomposition, not indirection
             diags.append(
                 self.diag(
                     "single-use-helper",
@@ -121,8 +156,11 @@ class AbstractionPass(Pass):
                     loc=fn.loc,
                 )
             )
+        return diags
 
-        # tiny modules
+    def _tiny_modules(self, program: Program) -> list[Diagnostic]:
+        g = program.graph
+        diags: list[Diagnostic] = []
         for m in g.nodes(NodeKind.MODULE):
             syms = [c for c in g.children(m.id)]
             importers = {e.src for e in g.in_edges(m.id, EdgeKind.IMPORTS) if not e.attrs.get("implicit")}

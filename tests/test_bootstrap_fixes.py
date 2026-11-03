@@ -38,3 +38,12 @@ def test_bloat_is_also_a_value(tmp_path):
     assert repo is not None and 0 < repo.waste <= 1 and repo.score == 1 - (1 - repo.waste) * (1 - repo.tangle)
     dead = Bloat.of(prog.graph.node("sym:main.py::dead"))
     assert dead.waste == 1.0 and dead.score == 1.0 and "bloat 100%" in str(dead)
+
+
+def test_a_function_made_of_named_steps_is_not_indirection(tmp_path):
+    steps = "".join(f"def _step{i}(x):\n    return x + {i}\n\n\n" for i in range(3))
+    (tmp_path / "main.py").write_text(f"{steps}def _lonely(x):\n    return x * 2\n\n\ndef build(x):\n    x = _step0(x)\n    x = _step1(x)\n    x = _step2(x)\n    return x\n\n\ndef other(x):\n    return _lonely(x)\n\n\nif __name__ == '__main__':\n    build(1)\n    other(1)\n")
+    prog = build_program(tmp_path)
+    run_passes(prog, opt_level=2)
+    helpers = {d.data["qualname"] for d in prog.diagnostics if d.code == "single-use-helper"}
+    assert helpers == {"_lonely"}  # the three steps of build() are decomposition, not indirection
