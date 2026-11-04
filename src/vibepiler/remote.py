@@ -9,7 +9,7 @@ import subprocess
 from pathlib import Path
 
 _SHORTHAND = re.compile(r"^(?P<owner>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+?)(?:\.git)?(?:@(?P<ref>[^@/]+))?$")
-_GITHUB_WEB = re.compile(r"^(?:https?://)?(?:www\.)?github\.com/(?P<owner>[^/]+)/(?P<repo>[^/#?]+?)(?:\.git)?(?:/(?:tree|blob|commit)/(?P<ref>[^/]+)(?:/.*)?)?/?$")
+_GITHUB_WEB = re.compile(r"^(?:https?://)?(?:www\.)?github\.com/(?P<owner>[^/]+)/(?P<repo>[^/#?]+?)(?:\.git)?(?:/(?:tree|blob|commit)/(?P<ref>[^/]+)(?:/(?P<sub>.*?))?)?/?$")
 
 
 def default_cache() -> Path:
@@ -20,7 +20,12 @@ def default_cache() -> Path:
 def parse_remote(spec: str) -> tuple[str, str | None] | None:
     """Return (git url, ref) when `spec` names a remote repository, else None (it is a local path)."""
     spec = spec.strip()
-    if not spec or Path(spec).exists():
+    if not spec or "\n" in spec:
+        return None
+    try:
+        if Path(spec).exists():
+            return None
+    except (OSError, ValueError):  # too long for a path, or an embedded NUL: not a path, and not a repo either
         return None
     if spec.startswith("git@") or "://" in spec:
         m = _GITHUB_WEB.match(spec)
@@ -34,6 +39,12 @@ def parse_remote(spec: str) -> tuple[str, str | None] | None:
     if m and not spec.startswith((".", "/", "~")):
         return f"https://github.com/{m['owner']}/{m['repo']}", m["ref"]
     return None
+
+
+def remote_subpath(spec: str) -> str | None:
+    """The folder or file a GitHub link points into (`.../tree/main/backend` -> "backend"), else None."""
+    m = _GITHUB_WEB.match(spec.strip())
+    return (m["sub"] or None) if m else None
 
 
 def repo_name(url: str) -> str:

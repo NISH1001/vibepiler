@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import networkx as nx
 import typer
@@ -21,7 +21,7 @@ from vibepiler.ir.model import EdgeKind, NodeKind
 from vibepiler.ir.program import Program
 from vibepiler.passes.diagnostic import Severity
 from vibepiler.passes.registry import all_passes, parse_gate, run_passes
-from vibepiler.remote import default_cache, fetch_remote, parse_remote, repo_name
+from vibepiler.remote import default_cache, fetch_remote, parse_remote, remote_subpath, repo_name
 
 app = typer.Typer(
     name="vibepiler",
@@ -74,16 +74,42 @@ def _resolve_source(path: str, cache: Path | None, refresh: bool = False) -> tup
     return root, repo_name(url)
 
 
+def _split(values: list[str] | None) -> list[str]:
+    """Repeated and comma-separated option values, flattened: `--exclude a,b --exclude c` -> [a, b, c]."""
+    return [p.strip() for v in values or [] for p in v.split(",") if p.strip()]
+
+
+def _scoped_config(root: Path, spec: str, paths: list[str] | None, exclude: list[str] | None, **overrides) -> Config:  # noqa: ANN003
+    """The project's config plus what this command line names: the paths to read (and a GitHub link's folder) and the exclusions."""
+    cfg = Config.load(root, **overrides)
+    cfg.include += [*filter(None, [remote_subpath(spec)]), *(paths or [])]
+    cfg.exclude += _split(exclude)
+    if cfg.include and not root.is_dir():
+        err_console.print(f"[red]error:[/red] paths after the source need a folder or a repo to look inside; {root} is a file")
+        raise typer.Exit(2)
+    return cfg
+
+
+def _run(compiler: Compiler, **run):  # noqa: ANN003, ANN202
+    """Run, turning a named path that is not there into a clean error rather than a traceback."""
+    try:
+        return compiler.run(**run)
+    except (FileNotFoundError, ValueError) as exc:
+        err_console.print(f"[red]error:[/red] {exc}")
+        raise typer.Exit(2)
+
+
 @app.command()
 def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
-    path: str = typer.Argument(".", help="Project root, or a remote repo: owner/repo[@ref], a GitHub URL, or any git URL."),
+    path: str = typer.Argument(".", help="Project root, or a remote repo: owner/repo[@ref], a GitHub URL (a /tree/<ref>/<folder> link compiles that folder), or any git URL."),
+    paths: Optional[List[str]] = typer.Argument(None, help="Folders or files inside the source to compile (default: all of it), e.g. backend/ services/."),
     out: Path = typer.Option(None, "-o", "--out", help="Output directory (default vibepiler-out/, or vibepiler-out/<repo> for remotes)."),
     opt: int = typer.Option(None, "-O", "--opt", min=0, max=3, help="-O0 graph only, -O1 cheap passes, -O2 all structural passes (default), -O3 adds the embedding tier (needs vibepiler[semantic])."),
     warn: Optional[str] = typer.Option(None, "-W", "--warn", help="Minimum severity to print: all|warning|error (default warning). `-Wall` shows infos."),
     emit: str = typer.Option(",".join(EMITTERS), "--emit", help="Comma-separated outputs: json,dot,mermaid,html,md."),
     only: Optional[str] = typer.Option(None, "--only", help="Comma-separated pass names to run (others skipped)."),
     skip: Optional[str] = typer.Option(None, "--skip", help="Comma-separated pass names to skip."),
-    ignore: Optional[str] = typer.Option(None, "--ignore", help="Extra gitignore-style patterns, comma-separated."),
+    exclude: Optional[List[str]] = typer.Option(None, "--exclude", "--ignore", help="Gitignore-style patterns to leave out, comma-separated or repeated (--ignore is the old name)."),
     lang: Optional[str] = typer.Option(None, "--lang", help="Restrict to languages: python,javascript,typescript."),
     fail_on: Optional[str] = typer.Option(None, "--fail-on", help="Exit 1 if any finding is at/above this severity (warning|error), or if the repo's bloat exceeds a value: bloat>0.25."),
     remarks: bool = typer.Option(False, "-R", "--remarks", help="Print missed-optimization remarks: the elimination plan, one line per edit with the lines it frees."),
@@ -100,23 +126,22 @@ def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
     langs = [x.strip() for x in lang.split(",")] if lang else None
     if langs and (bad_langs := [x for x in langs if x not in available()]):
         raise typer.BadParameter(f"unknown language(s) {bad_langs}; choose from {', '.join(available())}")
-    cfg = Config.load(root, languages=langs)
-    if ignore:
-        cfg.ignore += [p.strip() for p in ignore.split(",") if p.strip()]
+    cfg = _scoped_config(root, path, paths, exclude, languages=langs)
     min_sev = _parse_warn(warn)
     emits = tuple(e.strip() for e in emit.split(",") if e.strip())
     bad = [e for e in emits if e not in EMITTERS]
     if bad:
         raise typer.BadParameter(f"unknown --emit {bad}; choose from {', '.join(EMITTERS)}")
 
-    console.print(f"[bold]vibepiler[/bold] {__version__} compiling [cyan]{root}[/cyan]")
+    console.print(f"[bold]vibepiler[/bold] {__version__} compiling [cyan]{root}[/cyan]" + (f" [dim]({', '.join(cfg.include)})[/dim]" if cfg.include else ""))
 
     def on_pass(p, diags, secs):  # noqa: ANN001
         if not quiet:
             n = len(diags)
             console.print(f"      [dim]pass[/dim] {p.name:19} {n:4} finding{'s' if n != 1 else ''}  [dim]{secs * 1000:.0f} ms[/dim]")
 
-    result = Compiler(root, cfg, on_phase=print_phase).run(
+    result = _run(
+        Compiler(root, cfg, on_phase=print_phase),
         opt_level=opt,
         emit=emits,
         out_dir=out,
@@ -153,14 +178,16 @@ def _gate(program: Program, fail_on: str) -> None:
 @app.command()
 def size(
     path: str = typer.Argument(".", help="Project root, or a remote repo: owner/repo[@ref], a GitHub URL, or any git URL."),
+    paths: Optional[List[str]] = typer.Argument(None, help="Folders or files inside the source to size (default: all of it)."),
     opt: int = typer.Option(None, "-O", "--opt", min=1, max=3, help="Which passes feed the score (default from config, usually -O2)."),
     top: int = typer.Option(15, "--top", help="How many remarks to print."),
+    exclude: Optional[List[str]] = typer.Option(None, "--exclude", "--ignore", help="Gitignore-style patterns to leave out, comma-separated or repeated."),
     cache: Optional[Path] = typer.Option(None, "--cache", help="Where remote repos are cloned (default ~/.cache/vibepiler)."),
 ) -> None:
     """The size report: waste, tangle and bloat per folder, like `size` on a binary, plus the top remarks."""
     root, _ = _resolve_source(path, cache)
-    cfg = Config.load(root)
-    program = Compiler(root, cfg).run(opt_level=opt, emit=()).program
+    cfg = _scoped_config(root, path, paths, exclude)
+    program = _run(Compiler(root, cfg), opt_level=opt, emit=()).program
     b = program.metrics.get("bloat_score")
     if not b:
         console.print("[yellow]no passes ran, nothing to size[/yellow]")
@@ -198,17 +225,20 @@ def passes() -> None:
 @app.command()
 def graph(
     path: str = typer.Argument(".", help="Project root, owner/repo, or git URL."),
+    paths: Optional[List[str]] = typer.Argument(None, help="Folders or files inside the source to graph (default: all of it)."),
     level: str = typer.Option("module", "--level", help="module | symbol"),
     fmt: str = typer.Option("dot", "--format", help="dot | mermaid | json"),
     packages: bool = typer.Option(False, "--packages/--no-packages", help="Include external packages."),
-    ignore: Optional[str] = typer.Option(None, "--ignore"),
+    exclude: Optional[List[str]] = typer.Option(None, "--exclude", "--ignore", help="Gitignore-style patterns to leave out."),
 ) -> None:
     """Print the dependency / call graph in DOT, Mermaid or JSON."""
     root, _ = _resolve_source(path, None)
-    cfg = Config.load(root)
-    if ignore:
-        cfg.ignore += ignore.split(",")
-    program = build_program(root, config=cfg)
+    cfg = _scoped_config(root, path, paths, exclude)
+    try:
+        program = build_program(root, config=cfg)
+    except (FileNotFoundError, ValueError) as exc:
+        err_console.print(f"[red]error:[/red] {exc}")
+        raise typer.Exit(2)
     run_passes(program, opt_level=1, only=["entry-points", "cycles"])
     if fmt == "dot":
         typer.echo(emit_dot(program, level=level, include_packages=packages))

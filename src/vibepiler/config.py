@@ -25,7 +25,8 @@ class Thresholds:
 
 @dataclass
 class Config:
-    ignore: list[str] = field(default_factory=list)
+    include: list[str] = field(default_factory=list)  # folders/files under the root to read; empty = all of it
+    exclude: list[str] = field(default_factory=list)  # gitignore-style patterns cut out of what is read ("ignore" in old configs)
     languages: list[str] | None = None
     opt_level: int = 2
     treat_exports_as_roots: bool | None = None  # None = per-language default
@@ -54,6 +55,7 @@ class Config:
                     break
         cfg = cls()
         thresholds = data.pop("thresholds", {})
+        data["exclude"] = [*data.pop("ignore", []), *data.get("exclude", [])]  # `ignore` is the old name
         for k, v in data.items():
             if hasattr(cfg, k):
                 setattr(cfg, k, v)

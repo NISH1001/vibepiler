@@ -5,16 +5,16 @@ from typing import TYPE_CHECKING
 __version__ = "0.1.2"
 
 if TYPE_CHECKING:
-    from vibepiler.compiler import compile  # noqa: F401 - `vibepiler.compile(source, ...)`
+    from vibepiler.compiler import Compiler, compile  # noqa: F401 - `vibepiler.compile(source, ...)`, `vibepiler.Compiler(source)`
 
 
 def __getattr__(name: str):  # noqa: ANN202 - PEP 562: `vibepiler.compile` without importing the driver at package import
-    if name == "compile":
-        from vibepiler.compiler import compile
+    if name in ("compile", "Compiler"):
+        from vibepiler import compiler
 
-        return compile
+        return getattr(compiler, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def __dir__() -> list[str]:
-    return sorted([*globals(), "compile"])
+    return sorted([*globals(), "compile", "Compiler"])

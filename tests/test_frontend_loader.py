@@ -29,7 +29,7 @@ def test_discover_respects_gitignore():
 
 
 def test_discover_accepts_extra_ignore_globs():
-    paths = rel_paths(discover(FIX, ignore=["tests/**"]))
+    paths = rel_paths(discover(FIX, exclude=["tests/**"]))
     assert not any(p.startswith("tests/") for p in paths)
 
 
