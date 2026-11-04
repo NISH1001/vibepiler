@@ -119,6 +119,8 @@ def run_passes(
         kept = []
         for d in diags:
             if is_accepted(d, program.config.accept):
+                if d.node_id and program.graph.has_node(d.node_id):
+                    program.graph.node(d.node_id).attrs["accepted"] = True
                 accepted.append({"code": d.code, "qualname": d.data.get("qualname", ""), "file": d.file})
             else:
                 kept.append(d)

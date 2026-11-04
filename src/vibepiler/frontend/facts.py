@@ -68,7 +68,7 @@ class CallSite:
     args: int = 0
 
 
-RefContext = Literal["decorator", "argument", "base", "jsx", "export", "name", "type"]
+RefContext = Literal["decorator", "argument", "base", "jsx", "export", "name", "type", "store"]  # store: an assignment target, not a read
 
 
 @dataclass(slots=True)

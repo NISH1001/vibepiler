@@ -195,3 +195,16 @@ def test_bloat_flags_undeclared_dependency_but_not_local_or_stdlib_modules(tmp_p
     diags = run_pass("bloat", prog)
     undeclared = {d.data["package"] for d in codes(diags, "undeclared-dependency")}
     assert undeclared == {"flask"}
+
+
+def test_dead_code_stamps_the_verdict_on_the_node(program):
+    diags = run_pass("dead-code", program)
+    assert diags and all(program.graph.node(d.node_id).attrs.get("dead") == d.code for d in diags if d.node_id)
+
+
+def test_accepted_findings_stamp_their_node():
+    cfg = Config.load(FIX)
+    cfg.accept = ["dead-symbol:*"]
+    prog = build_program(FIX, config=cfg)
+    run_passes(prog, opt_level=1)
+    assert any(n.attrs.get("accepted") for n in prog.graph.nodes()) and not any(d.code == "dead-symbol" for d in prog.diagnostics)
