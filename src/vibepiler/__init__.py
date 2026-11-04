@@ -2,7 +2,7 @@
 
 from typing import TYPE_CHECKING
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 if TYPE_CHECKING:
     from vibepiler.compiler import compile  # noqa: F401 - `vibepiler.compile(source, ...)`
