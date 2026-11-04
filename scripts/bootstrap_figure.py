@@ -11,10 +11,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
-ROUNDS = ["start", "r1\ndelete", "r2\nsplit", "r3\nsplit", "r4\nfold"]
-BLOAT = [0.31, 0.31, 0.28, 0.26, 0.25]
-TANGLE = [0.30, 0.31, 0.27, 0.26, 0.25]
-WASTE_LINES = [71, 34, 41, 31, 18]
+ROUNDS = ["start", "r1\ndelete", "r2\nsplit", "r3\nsplit", "r4\nfold", "r5\nliveness"]
+BLOAT = [0.31, 0.31, 0.28, 0.26, 0.25, 0.23]
+TANGLE = [0.30, 0.31, 0.27, 0.26, 0.25, 0.23]
+WASTE_LINES = [71, 34, 41, 31, 18, 18]
 
 BLUE, ORANGE, AQUA = "#2a78d6", "#eb6834", "#1baf7a"  # categorical slots 1, 2, 3 of the reference palette
 INK, INK2, GRID = "#0b0b0b", "#52514e", "#dcdbd5"
@@ -33,10 +33,10 @@ def main() -> None:
     # A. two unitless scores on one axis: solid vs dashed and circle vs square, so colour is never the only cue
     ax.plot(x, BLOAT, color=BLUE, lw=2, marker="o", ms=5, label="bloat", zorder=3)
     ax.plot(x, TANGLE, color=ORANGE, lw=2, ls="--", marker="s", ms=4.5, label="tangle", zorder=3)
-    ax.annotate(f"bloat {BLOAT[-1]:.0%}", (4, BLOAT[-1]), xytext=(6, 6), textcoords="offset points", color=INK, fontsize=8)
-    ax.annotate(f"tangle {TANGLE[-1]:.2f}", (4, TANGLE[-1]), xytext=(6, -11), textcoords="offset points", color=INK, fontsize=8)
+    ax.annotate(f"bloat {BLOAT[-1]:.0%}", (len(ROUNDS) - 1, BLOAT[-1]), xytext=(6, 6), textcoords="offset points", color=INK, fontsize=8)
+    ax.annotate(f"tangle {TANGLE[-1]:.2f}", (len(ROUNDS) - 1, TANGLE[-1]), xytext=(6, -11), textcoords="offset points", color=INK, fontsize=8)
     ax.annotate(f"{BLOAT[0]:.0%}", (0, BLOAT[0]), xytext=(-4, 7), textcoords="offset points", color=INK, fontsize=8, ha="center")
-    ax.set_xlim(-0.35, 5.45)  # room for the end labels inside the panel
+    ax.set_xlim(-0.35, len(ROUNDS) + 0.45)  # room for the end labels inside the panel
     ax.set_ylim(0.20, 0.34)
     ax.set_yticks([0.20, 0.25, 0.30])
     ax.set_yticklabels(["0.20", "0.25", "0.30"])
@@ -64,7 +64,8 @@ def main() -> None:
     ax.set_axisbelow(True)
 
     fig.text(0.01, -0.06, "Each round: apply the top remarks of `vibepiler compile . -R`, re-run with --baseline. Round 1 deleted waste; rounds 2–3 split the most tangled functions; round 4 folded duplicates and accepted the judgment calls.\n"
-             "Tangle is the share-weighted noisy OR of per-function terms; bloat = 1 − (1 − waste)(1 − tangle). Measured at -O3, 54% of call sites linked.", fontsize=7, color=INK2, va="top")
+             "Round 5 added the liveness pass, whose own new code brought 55 removable lines, and worked them off.\n"
+             "Tangle is the share-weighted noisy OR of per-function terms; bloat = 1 − (1 − waste)(1 − tangle). Measured at -O3, 54–56% of call sites linked.", fontsize=7, color=INK2, va="top")
 
     out = Path(__file__).resolve().parents[1] / "docs" / "img"
     out.mkdir(parents=True, exist_ok=True)

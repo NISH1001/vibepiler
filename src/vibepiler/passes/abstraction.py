@@ -31,7 +31,6 @@ class AbstractionPass(Pass):
 
     def run(self, program: Program) -> list[Diagnostic]:
         g = program.graph
-        th = program.config.thresholds
         diags: list[Diagnostic] = []
 
         for cls in g.nodes(NodeKind.CLASS):

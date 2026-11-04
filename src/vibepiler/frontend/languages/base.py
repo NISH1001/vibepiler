@@ -8,6 +8,7 @@ cross-file linking happens in the IR builder, which is language-agnostic.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Callable
 
 from tree_sitter import Node
 
@@ -111,9 +112,13 @@ class LanguageSpec(ABC):
         return False
 
     # --- flow hooks, for the liveness dataflow (see frontend/flow.py) ------------------------
+    flow_shapes: dict[str, Callable] = {}  # node type -> the adapter function that builds its flow shape
+
     def classify(self, stmt: Node, sf: SourceFile) -> Flow:
         """The statement's flow shape. Unknown statements read every name they contain and define nothing."""
-        return Plain(stmt, [], self.names_in(stmt, sf))
+        n = stmt.named_children[0] if stmt.type == "expression_statement" and stmt.named_child_count == 1 else stmt
+        shape = self.flow_shapes.get(n.type)
+        return shape(self, stmt, n, sf) if shape else Plain(stmt, [], self.names_in(n, sf))
 
     def names_in(self, node: Node, sf: SourceFile) -> set[str]:
         return {sf.text(n) for n in walk(node) if n.type == "identifier"}

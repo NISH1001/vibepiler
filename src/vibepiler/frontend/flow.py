@@ -80,6 +80,17 @@ class Jump:
 Flow = Plain | Branch | Loop | Try | With | Jump
 
 
+def contains_any(node: Node, types: frozenset[str]) -> bool:
+    """True when `node` or anything under it has one of `types`."""
+    stack = [node]
+    while stack:
+        n = stack.pop()
+        if n.type in types:
+            return True
+        stack.extend(n.children)
+    return False
+
+
 def statements(block: Node | None) -> list[Node]:
     """The statements of a block, without comments."""
     return [c for c in block.named_children if c.type != "comment"] if block is not None else []

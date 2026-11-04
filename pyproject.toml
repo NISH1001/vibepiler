@@ -37,6 +37,7 @@ accept = [                                         # self-findings judged intent
     "near-duplicate-function:Diagnostic.to_dict",  # every to_dict is a dict literal of its fields
     "single-use-helper:*_id",                      # module_id/symbol_id/package_id define the id scheme in one place
     "single-use-helper:get_pass",
+    "single-subclass:*Flow",                         # PythonFlow / JavaScriptFlow keep each adapter file to one job: statements as flow shapes
 ]
 
 [tool.hatch.version]
