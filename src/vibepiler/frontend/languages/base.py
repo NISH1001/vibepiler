@@ -14,7 +14,7 @@ from tree_sitter import Node
 
 from dataclasses import dataclass
 
-from vibepiler.frontend.facts import FileFacts, ImportDef
+from vibepiler.frontend.facts import FileFacts, ImportDef, RefSite
 from vibepiler.frontend.flow import Flow, Plain
 from vibepiler.frontend.loader import SourceFile
 from vibepiler.frontend.parser import walk
@@ -33,6 +33,31 @@ def decorator_parts(dec: Node, call_type: str) -> tuple[Node | None, Node | None
     if expr is None:
         return None, None
     return expr, (expr.child_by_field_name("function") if expr.type == call_type else expr)
+
+
+class DecoratorWalk:
+    """What both extractors do with a decorator, written once: `call_type` is the grammar's name for a call."""
+
+    call_type: str
+
+    def visit_decorator(self, node: Node, scope: str | None) -> None:
+        expr, target = decorator_parts(node, self.call_type)
+        if expr is None:
+            return
+        chain = self.loose_chain_of(target) if target is not None else None
+        if chain is not None:
+            self.facts.refs.append(RefSite(chain=chain, line=self.spec.line(node), scope=scope, context="decorator"))
+        if expr.type == self.call_type:
+            args = expr.child_by_field_name("arguments")
+            if args is not None:
+                self.visit(args, scope, None)
+
+    def decorator_name(self, dec: Node) -> str:
+        expr, target = decorator_parts(dec, self.call_type)
+        if expr is None:
+            return ""
+        chain = self.loose_chain_of(target) if target is not None else None
+        return ".".join(chain) if chain else self.text(expr)
 
 
 class LanguageSpec(ABC):

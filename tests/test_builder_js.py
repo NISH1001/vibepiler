@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from vibepiler.ir.builder import build_program
-from vibepiler.ir.model import EdgeKind, NodeKind
+from vibepiler.ir.model import EdgeKind
 
 FIX = Path(__file__).parent / "fixtures" / "jsproj"
 

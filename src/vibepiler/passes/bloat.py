@@ -44,91 +44,103 @@ class BloatPass(Pass):
 
     # --- dependencies ----------------------------------------------------------
     def _dependencies(self, program: Program) -> list[Diagnostic]:
+        """Each manifest against the imports of the files it governs: declared but never imported, imported but never declared."""
         g = program.graph
         if g.meta.get("scope", "directory") != "directory":
             return []  # one file or a snippet cannot be held to a folder's manifest
         files = [n.file for n in g.nodes(NodeKind.MODULE) if n.file]
-        folders = {"", *(str(p) for f in files for p in PurePosixPath(f).parents if str(p) != ".")}
-        manifests = read_manifests(program.root, folders)
+        manifests = read_manifests(program.root, {"", *(str(p) for f in files for p in PurePosixPath(f).parents if str(p) != ".")})
         if not manifests:
             return []
+        imported = self._imported_packages(g)
+        # a standalone script may declare its own dependencies (PEP 723); those imports owe the manifest nothing
+        inline = {f.file.rel: deps for f in program.facts.values() if f.file.language == "python" and (deps := script_dependencies(f.file.source.decode("utf-8", "replace")))}
+        local_roots = {x.name.split(".")[0] for x in g.nodes(NodeKind.MODULE)} | {a.split(".")[0] for x in g.nodes(NodeKind.MODULE) for a in x.attrs.get("aliases", [])}
+        owners = {(lang, f): governing(manifests, lang, f) for lang, by_key in imported.items() for fs in by_key.values() for f in fs}
         diags: list[Diagnostic] = []
-        # which external packages are actually imported, per language
+        for m in manifests:
+            # only the imports of files this manifest governs: a frontend/ package.json answers for frontend/ alone
+            used = {k: own for k, fs in imported[m.language].items() if (own := {f for f in fs if any(o is m for o in owners[(m.language, f)])})}
+            diags += self._unused(m, used)
+            diags += self._undeclared(m, used, inline, local_roots)
+        return diags
+
+    @staticmethod
+    def _imported_packages(g) -> dict[str, dict[str, set[str]]]:  # noqa: ANN001
+        """Language -> external package (by its distribution name) -> the files that import it."""
         imported: dict[str, dict[str, set[str]]] = {"python": {}, "javascript": {}}
         for e in g.edges(EdgeKind.IMPORTS):
-            dst = g.node(e.dst)
-            src = g.node(e.src)
+            dst, src = g.node(e.dst), g.node(e.src)
             if dst.kind is not NodeKind.PACKAGE:
                 continue
             lang = "python" if src.language == "python" else "javascript"
             key = normalize_py(PY_IMPORT_TO_DIST.get(dst.name, dst.name)) if lang == "python" else (js_package_for_specifier(dst.name) or dst.name)
             imported[lang].setdefault(key, set()).add(src.file or "")
-        # a standalone script may declare its own dependencies (PEP 723); those imports owe the manifest nothing
-        inline = {f.file.rel: deps for f in program.facts.values() if f.file.language == "python" and (deps := script_dependencies(f.file.source.decode("utf-8", "replace")))}
+        return imported
 
-        owners: dict[tuple[str, str], list] = {}
-        for lang, by_key in imported.items():
-            for fs in by_key.values():
-                for f in fs:
-                    if (lang, f) not in owners:
-                        owners[(lang, f)] = governing(manifests, lang, f)
-        for m in manifests:
-            # only the imports of files this manifest governs: a frontend/ package.json answers for frontend/ alone
-            used = {k: own for k, fs in imported[m.language].items() if (own := {f for f in fs if any(o is m for o in owners[(m.language, f)])})}
-            declared = {**{k: ("dep", v) for k, v in m.dependencies.items()}, **{k: ("dev", v) for k, v in m.dev_dependencies.items()}}
-            for name, (group, spec) in sorted(declared.items()):
-                key = normalize_py(name) if m.language == "python" else name
-                if key in used:
-                    continue
-                if m.language == "python" and (key in PY_TOOL_PACKAGES or key.startswith(("pytest-", "types-", "sphinx-", "mkdocs-", "flake8-", "django-", "pre-commit"))):
-                    continue
-                if m.language == "javascript" and is_js_tool_package(name):
-                    continue
-                # a dependency may be imported under a different top-level name we do not know
-                if m.language == "python" and any(normalize_py(u).replace("-", "") == key.replace("-", "") for u in used):
-                    continue
-                diags.append(
-                    self.diag(
-                        "unused-dependency",
-                        Severity.WARNING if group == "dep" else Severity.INFO,
-                        f"`{name}` is declared in {m.file} but never imported",
-                        file=m.file,
-                        suggestion=f"Remove `{name}` from {m.file} (or it is a tool/plugin: add it to the ignore list).",
-                        package=name,
-                        group=group,
-                        spec=spec,
-                        qualname=name,
-                    )
+    @staticmethod
+    def _declared(m) -> dict[str, tuple[str, str]]:  # noqa: ANN001
+        return {**{k: ("dep", v) for k, v in m.dependencies.items()}, **{k: ("dev", v) for k, v in m.dev_dependencies.items()}}
+
+    @staticmethod
+    def _needs_no_import(m, name: str, key: str, used) -> bool:  # noqa: ANN001
+        """A tool or plugin (pytest, eslint, ...), or a dependency imported under a top-level name we do not know."""
+        if m.language == "javascript":
+            return is_js_tool_package(name)
+        if key in PY_TOOL_PACKAGES or key.startswith(("pytest-", "types-", "sphinx-", "mkdocs-", "flake8-", "django-", "pre-commit")):
+            return True
+        return any(normalize_py(u).replace("-", "") == key.replace("-", "") for u in used)
+
+    def _unused(self, m, used) -> list[Diagnostic]:  # noqa: ANN001
+        out = []
+        for name, (group, spec) in sorted(self._declared(m).items()):
+            key = normalize_py(name) if m.language == "python" else name
+            if key in used or self._needs_no_import(m, name, key, used):
+                continue
+            out.append(
+                self.diag(
+                    "unused-dependency",
+                    Severity.WARNING if group == "dep" else Severity.INFO,
+                    f"`{name}` is declared in {m.file} but never imported",
+                    file=m.file,
+                    suggestion=f"Remove `{name}` from {m.file} (or it is a tool/plugin: add it to the ignore list).",
+                    package=name,
+                    group=group,
+                    spec=spec,
+                    qualname=name,
                 )
-            declared_keys = set(declared)
-            for key, files in sorted(used.items()):
-                files = {f for f in files if key not in inline.get(f, ())}
-                if not files:
-                    continue
-                if m.language == "python":
-                    if is_py_stdlib(key) or key in declared_keys or any(k.replace("-", "") == key.replace("-", "") for k in declared_keys):
-                        continue
-                    # local module names we could not resolve as imports (e.g. `import utils` from a script dir)
-                    local_roots = {x.name.split(".")[0] for x in g.nodes(NodeKind.MODULE)}
-                    local_roots |= {a.split(".")[0] for x in g.nodes(NodeKind.MODULE) for a in x.attrs.get("aliases", [])}
-                    if key in local_roots:
-                        continue
-                else:
-                    if key in declared_keys or key.startswith("node:"):
-                        continue
-                diags.append(
-                    self.diag(
-                        "undeclared-dependency",
-                        Severity.WARNING,
-                        f"`{key}` is imported in {len(files)} file(s) but not declared in {m.file}",
-                        file=sorted(files)[0] if files else m.file,
-                        suggestion=f"Add `{key}` to {m.file}, or it is a transitive dependency you rely on by accident.",
-                        package=key,
-                        files=sorted(files),
-                        qualname=key,
-                    )
+            )
+        return out
+
+    @staticmethod
+    def _owes(m, key: str, declared: set[str], local_roots: set[str]) -> bool:  # noqa: ANN001
+        """Must this manifest declare `key`? Not the standard library, not a local module, not what it already declares."""
+        if m.language != "python":
+            return key not in declared and not key.startswith("node:")
+        if is_py_stdlib(key) or key in local_roots:  # local: a module name we could not resolve (`import utils` from a script dir)
+            return False
+        return key not in declared and not any(k.replace("-", "") == key.replace("-", "") for k in declared)
+
+    def _undeclared(self, m, used, inline: dict[str, set[str]], local_roots: set[str]) -> list[Diagnostic]:  # noqa: ANN001
+        out = []
+        declared = set(self._declared(m))
+        for key, importers in sorted(used.items()):
+            importers = {f for f in importers if key not in inline.get(f, ())}
+            if not importers or not self._owes(m, key, declared, local_roots):
+                continue
+            out.append(
+                self.diag(
+                    "undeclared-dependency",
+                    Severity.WARNING,
+                    f"`{key}` is imported in {len(importers)} file(s) but not declared in {m.file}",
+                    file=sorted(importers)[0],
+                    suggestion=f"Add `{key}` to {m.file}, or it is a transitive dependency you rely on by accident.",
+                    package=key,
+                    files=sorted(importers),
+                    qualname=key,
                 )
-        return diags
+            )
+        return out
 
     # --- exceptions ------------------------------------------------------------
     def _exceptions(self, program: Program) -> list[Diagnostic]:

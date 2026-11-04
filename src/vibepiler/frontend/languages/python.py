@@ -8,7 +8,7 @@ from pathlib import Path
 from tree_sitter import Node
 
 from vibepiler.frontend.facts import CallSite, EntryHint, FileFacts, ImportDef, RefSite, SymbolDef
-from vibepiler.frontend.languages.base import decorator_parts, ImportOption, LanguageSpec
+from vibepiler.frontend.languages.base import DecoratorWalk, ImportOption, LanguageSpec
 from vibepiler.frontend.languages.python_flow import PythonFlow
 from vibepiler.frontend.loader import SourceFile
 from vibepiler.ir.model import NodeKind
@@ -236,7 +236,9 @@ class PythonSpec(PythonFlow, LanguageSpec):
         return _Extractor(self, sf, facts)
 
 
-class _Extractor:
+class _Extractor(DecoratorWalk):
+    call_type = "call"
+
     def __init__(self, spec: PythonSpec, sf: SourceFile, facts: FileFacts) -> None:
         self.spec = spec
         self.sf = sf
@@ -356,18 +358,6 @@ class _Extractor:
         name = self.text(node)
         ctx = "type" if any(a.type == "type" for a in _ancestors(node, 3)) else "name"
         self.facts.refs.append(RefSite(chain=(name,), line=self.spec.line(node), scope=scope, context=ctx))
-
-    def visit_decorator(self, node: Node, scope: str | None) -> None:
-        expr, target = decorator_parts(node, "call")
-        if expr is None:
-            return
-        chain = self.loose_chain_of(target) if target is not None else None
-        if chain is not None:
-            self.facts.refs.append(RefSite(chain=chain, line=self.spec.line(node), scope=scope, context="decorator"))
-        if expr.type == "call":
-            args = expr.child_by_field_name("arguments")
-            if args is not None:
-                self.visit(args, scope, None)
 
     def visit_function(self, node: Node, scope: str | None, class_scope: str | None, decorators: list[Node]) -> None:
         name_node = node.child_by_field_name("name")
@@ -562,13 +552,6 @@ class _Extractor:
                 if nm is not None:
                     out.append(self.text(nm))
         return out
-
-    def decorator_name(self, dec: Node) -> str:
-        expr, target = decorator_parts(dec, "call")
-        if expr is None:
-            return ""
-        chain = self.loose_chain_of(target) if target is not None else None
-        return ".".join(chain) if chain else self.text(expr)
 
     def string_list(self, node: Node | None) -> list[str] | None:
         if node is None or node.type not in ("list", "tuple"):
