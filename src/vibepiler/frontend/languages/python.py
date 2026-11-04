@@ -8,6 +8,7 @@ from tree_sitter import Node
 
 from vibepiler.frontend.facts import CallSite, EntryHint, FileFacts, ImportDef, RefSite, SymbolDef
 from vibepiler.frontend.languages.base import decorator_parts, ImportOption, LanguageSpec
+from vibepiler.frontend.languages.python_flow import PythonFlow
 from vibepiler.frontend.loader import SourceFile
 from vibepiler.ir.model import NodeKind
 
@@ -48,7 +49,7 @@ _SKIP_IDENT_PARENTS = {
 }
 
 
-class PythonSpec(LanguageSpec):
+class PythonSpec(PythonFlow, LanguageSpec):
     name = "python"
     branch_types = frozenset({
         "if_statement", "elif_clause", "for_statement", "while_statement", "except_clause",
