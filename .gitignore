@@ -11,3 +11,4 @@ wheels/
 
 # vibepiler reports
 vibepiler-out/
+.superpowers/
