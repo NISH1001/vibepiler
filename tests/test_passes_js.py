@@ -39,7 +39,7 @@ def test_dead_exported_function_is_reported_as_unused_export(program):
     assert all(d.severity is Severity.INFO for d in unused)
     assert "internalHelper" in names(diags, "dead-symbol")
     for keep in ["add", "multiply", "double", "compute", "App", "Header", "UserService", "UserService.find", "BaseService.log", "shout"]:
-        assert keep not in names(diags), keep
+        assert keep not in names([d for d in diags if d.code != "test-only"]), keep  # not dead; some are reached only by tests
 
 
 def test_unreachable_module_is_reported(program):

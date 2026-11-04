@@ -49,6 +49,7 @@ class DeadCodePass(Pass):
             total_loc += n.loc
             by_file[n.file or ""] = by_file.get(n.file or "", 0) + n.loc
 
+        diags += self._test_only(g)
         for m in g.nodes(NodeKind.MODULE):
             if m.attrs.get("reachable") or m.attrs.get("is_root"):
                 continue
@@ -71,6 +72,31 @@ class DeadCodePass(Pass):
             "unreachable_modules": sum(1 for d in diags if d.code == "unreachable-module"),
         }
         return diags
+
+    def _test_only(self, g) -> list[Diagnostic]:  # noqa: ANN001
+        """Source code only tests reach: alive, so not dead, but nothing the program runs uses it. The outermost unit is
+        reported (a module, not each of its functions; a class, not each method). It claims no lines: look, then decide."""
+        out = []
+        for n in sorted(g.nodes(), key=lambda x: (x.file or "", x.start_line or 0)):
+            if not n.attrs.get("test_only") or n.kind is NodeKind.VARIABLE:
+                continue
+            parent = g.parent(n.id) if n.kind is not NodeKind.MODULE else None
+            if parent is not None and parent.attrs.get("test_only"):
+                continue
+            what = "module" if n.kind is NodeKind.MODULE else n.kind.value
+            out.append(
+                self.diag(
+                    "test-only",
+                    Severity.INFO,
+                    f"{what} `{n.qualname}` is used only by tests: nothing the program runs reaches it",
+                    node=n,
+                    suggestion="Delete it with its tests if it is a leftover; if it is a helper kept for the tests, move it next to them.",
+                    loc=n.loc,
+                    action="review",
+                    qualname=n.qualname,
+                )
+            )
+        return out
 
     @staticmethod
     def _kept_alive(g, n, used_names, dead_classes: set[str]) -> bool:  # noqa: ANN001

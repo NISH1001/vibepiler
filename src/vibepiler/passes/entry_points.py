@@ -36,8 +36,12 @@ class EntryPointsPass(Pass):
 
         used_names = g.meta.get("used_member_names", {})
         reachable = self._reach(g, roots, used_names)
+        # the same walk without the tests: source code that only tests reach is alive, but not by the program
+        in_tests = lambda n: bool(n.attrs.get("is_test") if n.kind is NodeKind.MODULE else n.module and g.node(n.module).attrs.get("is_test"))  # noqa: E731
+        shipped = self._reach(g, {r for r in roots if not in_tests(g.node(r))}, used_names)
         for n in g.nodes():
             n.attrs["reachable"] = n.id in reachable
+            n.attrs["test_only"] = n.id in reachable and n.id not in shipped and n.kind is not NodeKind.PACKAGE and not in_tests(n)
 
         symbols = [n for n in g.nodes() if n.kind not in (NodeKind.MODULE, NodeKind.PACKAGE)]
         # alive only by name: no resolved edge reaches them; an unresolved call somewhere just used the same name.

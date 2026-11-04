@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from tree_sitter import Node
@@ -32,6 +33,8 @@ def is_migration_file(rel: str) -> bool:
     """Alembic and Django migrations: the framework loads them by path, so nothing imports them and none of them is dead."""
     return bool(MIGRATION_DIRS & set(Path(rel).parts[:-1]))  # alembic/env.py and alembic/versions/*, */migrations/*
 
+
+DYNAMIC_IMPORTS = {"import_module", "__import__"}  # importlib.import_module("a.b"), __import__("a.b")
 
 ENTRY_FUNCTION_NAMES = {"main", "handler", "lambda_handler", "run", "serve", "cli", "app", "application"}
 
@@ -512,6 +515,9 @@ class _Extractor:
             chain = self.loose_chain_of(fn)
             if chain is not None:
                 self.facts.calls.append(CallSite(chain=chain, line=self.spec.line(node), scope=scope, args=nargs))
+                if chain[-1] in DYNAMIC_IMPORTS and (target := self.literal_module(args)):
+                    # import_module("a.b") / __import__("a.b") with a literal name is an import the program makes at run time
+                    self.facts.imports.append(ImportDef(module=target, line=self.spec.line(node), kind="side_effect", scope=scope))
                 # nested receivers like foo().bar(): visit the inner expression too
                 if chain[0] == "*":
                     inner = fn
@@ -526,6 +532,17 @@ class _Extractor:
         # generator/comprehension arguments etc. are handled by the generic visit above
 
     # --- helpers --------------------------------------------------------------
+    def literal_module(self, args: Node | None) -> str | None:
+        """The first argument when it is a plain absolute module name in a string literal (no f-string, no relative dots)."""
+        first = args.named_children[0] if args is not None and args.named_children else None
+        if first is None or first.type != "string" or any(c.type == "interpolation" for c in first.children):
+            return None
+        text = self.text(first)
+        if not text[:1] in ("'", '"'):
+            return None  # a prefixed literal: f"", b"", r""
+        name = text.strip("\"'")
+        return name if re.fullmatch(r"[A-Za-z_][\w]*(\.[A-Za-z_][\w]*)*", name) else None
+
     def is_main_guard(self, node: Node) -> bool:
         cond = node.child_by_field_name("condition")
         if cond is None:
