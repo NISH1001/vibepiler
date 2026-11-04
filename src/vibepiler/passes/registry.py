@@ -19,7 +19,7 @@ from vibepiler.passes.diagnostic import Diagnostic
 from vibepiler.passes.duplicates import DuplicatesPass
 from vibepiler.passes.entry_points import EntryPointsPass
 from vibepiler.passes.hotspots import HotspotsPass
-from vibepiler.passes.liveness import LivenessPass
+from vibepiler.passes.liveness import Liveness, LivenessPass
 from vibepiler.passes.metric import Metric
 from vibepiler.passes.responsibilities import ResponsibilitiesPass
 from vibepiler.passes.semantic_duplicates import SemanticDuplicatesPass
@@ -51,7 +51,7 @@ def all_passes() -> list[Pass]:
 
 def all_metrics() -> list[type[Metric]]:
     """Every score, in the order the size line prints them."""
-    return [Bloat]
+    return [Bloat, Liveness]
 
 
 def parse_gate(expr: str) -> tuple[type[Metric], str, float] | None:

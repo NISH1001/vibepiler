@@ -111,3 +111,53 @@ def test_javascript_unused_this_attribute():
 def test_augmented_assignment_mutates_in_place_and_is_never_a_dead_store():
     assert codes("def f(acc, x):\n    acc |= x\n") == []
     assert codes("function f(acc, x) { acc += x }", language="javascript") == []
+
+
+# ------------------------------------------------------------------ the metric
+from vibepiler.passes.liveness import Liveness  # noqa: E402
+from vibepiler.passes.registry import all_metrics  # noqa: E402
+
+KINDS0 = {"stores": 0, "params": 0, "attributes": 0, "symbols": 0, "imports": 0}
+
+
+def node(prog, name):
+    return next(x for x in prog.graph.nodes() if x.name == name)
+
+
+def test_function_liveness_counts_params_and_stores():
+    prog = run("def f(a, b):\n    x = a\n    y = 2\n    return x\n")
+    lv = Liveness.of(node(prog, "f"))
+    assert (lv.defined, lv.live, lv.dead["params"], lv.dead["stores"]) == (4, 2, 1, 1) and lv.value == 0.5
+
+
+def test_module_liveness_contains_its_functions_symbols_and_imports():
+    src = "import os\nimport sys\n\ndef f(a):\n    x = 1\n    return a\n\ndef g():\n    return sys.argv\n"
+    prog = run(src)
+    m = Liveness.of(next(x for x in prog.graph.nodes() if x.kind.value == "module"))
+    # f, g, os, sys and f's a and x: 6 definitions. Dead: the os import, the x store, and f and g themselves, since a
+    # snippet has no entry points and dead-code calls both dead symbols.
+    assert (m.defined, m.live) == (6, 2) and m.dead == {**KINDS0, "stores": 1, "imports": 1, "symbols": 2}
+
+
+def test_class_liveness_counts_methods_and_attributes():
+    prog = run("class C:\n    def __init__(self):\n        self.cache = {}\n        self.hits = 0\n    def get(self):\n        return self.hits\n")
+    lv = Liveness.of(node(prog, "C"))
+    assert (lv.defined, lv.dead["attributes"]) == (4, 1)  # __init__, get, cache, hits
+
+
+def test_repo_liveness_is_a_sum_not_a_mean_and_excludes_tests():
+    prog = Compiler(FIX).run(opt_level=1, emit=()).program
+    r = prog.metrics["liveness_score"]
+    assert r["defined"] == sum(f["defined"] for f in r["folders"]) and r["live"] == sum(f["live"] for f in r["folders"])
+    assert r["tests"]["defined"] > 0 and 0.0 <= r["value"] <= 1.0
+    assert Liveness.of(prog).value == r["value"]
+
+
+def test_the_fragment_names_only_nonzero_kinds():
+    assert str(Liveness(defined=10, live=8, dead={**KINDS0, "stores": 1, "params": 1})) == "live 80.0% (8 of 10 definitions; dead: 1 stores, 1 params)"
+    assert str(Liveness(defined=0, live=0, dead=dict(KINDS0))) == "live 100.0% (0 of 0 definitions; nothing dead)"
+
+
+def test_all_metrics_prints_bloat_then_live():
+    assert [m.label for m in all_metrics()] == ["bloat", "live"]
+    assert Liveness.better == "high" and Liveness(defined=10, live=8, dead=dict(KINDS0)).trips("<", 0.9)

@@ -4,10 +4,27 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from vibepiler.ir.model import NodeKind
+from vibepiler.ir.model import Node, NodeKind
 from vibepiler.ir.program import Program
 from vibepiler.passes.base import Pass
 from vibepiler.passes.diagnostic import Diagnostic, Severity
+
+
+REEXPORT_FILES = frozenset({"__init__.py", "index.js", "index.ts", "index.tsx", "index.jsx", "conftest.py"})
+
+
+def is_binding(rec: dict) -> bool:
+    """An import that binds a name a reader could use: not `*`, not a side-effect import, not `__future__`."""
+    return rec["local_name"] is not None and rec["kind"] not in ("wildcard", "side_effect") and rec["module"] != "__future__"
+
+
+def is_unused_import(m: Node, rec: dict) -> bool:
+    """The one rule for an unused import, shared by this pass and the liveness metric."""
+    if rec["used"] or not is_binding(rec) or Path(m.file or "").name in REEXPORT_FILES:
+        return False
+    if rec["local_name"] in set(m.attrs.get("__all__") or []):
+        return False
+    return not (rec["alias"] and rec["alias"] == rec["name"])  # `from x import y as y` is an explicit re-export
 
 
 class UnusedImportsPass(Pass):
@@ -19,18 +36,10 @@ class UnusedImportsPass(Pass):
     def run(self, program: Program) -> list[Diagnostic]:
         diags: list[Diagnostic] = []
         for m in program.graph.nodes(NodeKind.MODULE):
-            fname = Path(m.file or "").name
-            if fname in {"__init__.py", "index.js", "index.ts", "index.tsx", "index.jsx", "conftest.py"}:
-                continue
-            all_names = set(m.attrs.get("__all__") or [])
             for rec in m.attrs.get("imports", []):
-                if rec["used"] or rec["kind"] in ("wildcard", "side_effect"):
+                if not is_unused_import(m, rec):
                     continue
                 local = rec["local_name"]
-                if local is None or local in all_names or rec["module"] == "__future__":
-                    continue
-                if rec["alias"] and rec["alias"] == rec["name"]:
-                    continue  # explicit re-export `from x import y as y`
                 diags.append(
                     self.diag(
                         "unused-import",
