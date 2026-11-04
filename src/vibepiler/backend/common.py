@@ -75,6 +75,16 @@ def size_parts(b: dict) -> dict[str, str]:
     }
 
 
+def liveness_parts(lv: dict | None) -> dict[str, str]:
+    """The live fragment of the size line, plain text: {"live": "94.1%", "defs": "448 of 476 definitions; dead: ..."}."""
+    from vibepiler.passes.liveness import Liveness
+
+    m = Liveness.of(lv) if lv else None
+    if m is None:
+        return {}
+    return {"live": f"{m.value:.1%}", "defs": str(m).split("(", 1)[1].rstrip(")")}
+
+
 def summarize(program: Program) -> dict:
     g = program.graph
     counts = {s.label: 0 for s in SEVERITY_ORDER}

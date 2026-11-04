@@ -11,7 +11,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 
-from vibepiler.backend.common import size_parts
+from vibepiler.backend.common import liveness_parts, size_parts
 from vibepiler.ir.program import Program
 from vibepiler.passes.diagnostic import Severity
 
@@ -45,12 +45,17 @@ def print_phase(n: int, name: str, msg: str) -> None:
     console.print(f"[dim][{n}/4][/dim] [bold]{name:9}[/bold] {msg}")
 
 
-def size_line(b: dict) -> str:
-    p = size_parts(b)
-    return (
-        f"[bold]waste[/bold] {p['waste']} [dim]({p['lines']})[/dim]   [bold]tangle[/bold] {p['tangle']}" + (f" [dim]({p['reasons']})[/dim]" if p["reasons"] else "")
-        + f"   [bold]bloat[/bold] {p['bloat']}" + (f"   [dim]\\[{p['stamp']}][/dim]" if p["stamp"] else "")
-    )
+def size_line(m: dict) -> str:
+    """Every score on one line, like `size` prints text, data and bss: waste, tangle, bloat, then live, then the stamp."""
+    b, lv = m.get("bloat_score"), liveness_parts(m.get("liveness_score"))
+    out, stamp = "", ""
+    if b:
+        p = size_parts(b)
+        out = f"[bold]waste[/bold] {p['waste']} [dim]({p['lines']})[/dim]   [bold]tangle[/bold] {p['tangle']}" + (f" [dim]({p['reasons']})[/dim]" if p["reasons"] else "") + f"   [bold]bloat[/bold] {p['bloat']}"
+        stamp = f"   [dim]\\[{p['stamp']}][/dim]" if p["stamp"] else ""
+    if lv:
+        out += ("   " if out else "") + f"[bold]live[/bold] {lv['live']} [dim]({lv['defs']})[/dim]"
+    return out + stamp
 
 
 def print_remarks(program: Program, limit: int = 60) -> None:
@@ -68,30 +73,36 @@ def print_remarks(program: Program, limit: int = 60) -> None:
 def print_baseline(program: Program, path: Path) -> None:
     import json
 
+    from vibepiler.passes.liveness import Liveness
+
     try:
-        prev = json.loads(Path(path).read_text(encoding="utf-8"))["metrics"]["bloat_score"]
+        before = json.loads(Path(path).read_text(encoding="utf-8"))["metrics"]
+        prev = before["bloat_score"]
     except (OSError, ValueError, KeyError) as exc:
         console.print(f"[yellow]baseline {path}: no bloat score in it ({type(exc).__name__})[/yellow]")
         return
     cur = program.metrics.get("bloat_score")
     if not cur:
         return
+    moved = []
     dl = cur["removable_loc"] - prev["removable_loc"]
     db = cur["score"] - prev["score"]
-    if abs(dl) < 0.5 and abs(db) < 0.005 and abs(cur["tangle"] - prev["tangle"]) < 0.005:
-        console.print("[bold]since baseline[/bold]: no change")
-        return
-    console.print(
-        f"[bold]since baseline[/bold]: waste {prev['removable_loc']:.0f} → {cur['removable_loc']:.0f} lines ({dl:+.0f}), "
-        f"tangle {prev['tangle']:.2f} → {cur['tangle']:.2f}, bloat {prev['score']:.0%} → {cur['score']:.0%} ({db * 100:+.0f} pts)"
-    )
+    if abs(dl) >= 0.5 or abs(db) >= 0.005 or abs(cur["tangle"] - prev["tangle"]) >= 0.005:
+        moved.append(
+            f"waste {prev['removable_loc']:.0f} → {cur['removable_loc']:.0f} lines ({dl:+.0f}), "
+            f"tangle {prev['tangle']:.2f} → {cur['tangle']:.2f}, bloat {prev['score']:.0%} → {cur['score']:.0%} ({db * 100:+.0f} pts)"
+        )
+    was, now = Liveness.of(before.get("liveness_score") or {}), Liveness.of(program)
+    if was and now and now.moved(was):
+        moved.append(f"live {was.value:.1%} → {now.value:.1%} ({(now.value - was.value) * 100:+.1f} pts, {now.live - now.defined - (was.live - was.defined):+d} dead)")
+    console.print("[bold]since baseline[/bold]: " + ("; ".join(moved) if moved else "no change"))
 
 
 def print_summary(program: Program) -> None:
     m = program.metrics
-    if "bloat_score" in m:
+    if "bloat_score" in m or "liveness_score" in m:
         console.print()
-        console.print(size_line(m["bloat_score"]))
+        console.print(size_line(m))
     table = Table(title="what can go", show_lines=False, title_style="bold", header_style="dim")
     table.add_column("category")
     table.add_column("found")

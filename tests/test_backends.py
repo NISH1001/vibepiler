@@ -67,3 +67,21 @@ def test_html_viewer_has_a_living_graph_layer(program):
     assert '<canvas id="flow"' in html  # traffic overlay: particles travel along import/call edges
     assert "underlay-color" in html  # glow halos on live nodes
     assert "node.dead" in html and "prefers-reduced-motion" in html  # dead code is a ghost; motion is optional
+
+
+# ------------------------------------------------------------------ liveness beside bloat
+def test_size_line_prints_live_after_bloat(program):
+    from vibepiler.backend.terminal import size_line
+
+    s = size_line(program.metrics)
+    assert s.index("[bold]bloat") < s.index("[bold]live") and "definitions" in s
+
+
+def test_markdown_carries_the_live_number(program):
+    md = emit_markdown(program)
+    assert "**live " in md and "definitions" in md
+
+
+def test_html_carries_the_liveness_score_and_the_colour_switch(program):
+    html = emit_html(program)
+    assert '"liveness_score"' in html and 'id="t-colour"' in html and "livenessBlock" in html

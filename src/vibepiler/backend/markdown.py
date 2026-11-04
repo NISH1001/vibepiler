@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from vibepiler.backend.common import size_parts, summarize
+from vibepiler.backend.common import liveness_parts, size_parts, summarize
 from vibepiler.ir.program import Program
 from vibepiler.passes.diagnostic import Diagnostic
 from vibepiler.passes.registry import all_passes
@@ -33,12 +33,15 @@ def _summary(program: Program) -> list[str]:
     return lines
 
 
-def _size(b: dict) -> list[str]:
+def _size(m: dict) -> list[str]:
     """The size line and the per-folder table, like `size` on a binary."""
-    p = size_parts(b)
-    line = f"**waste {p['waste']}** ({p['lines']}) · **tangle {p['tangle']}**" + (f" ({p['reasons']})" if p["reasons"] else "") + f" · **bloat {p['bloat']}**" + (f" — measured at {p['stamp']}" if p["stamp"] else "") + f". `{b['formula']}`." + (f" {p['tests'].capitalize()}." if p["tests"] else "")
-    rows = [[f"`{f['path']}`", str(f["modules"]), str(f["loc"]), f"{f['score']:.0%}", f"{f['waste']:.0%}", f"{f['tangle']:.2f}"] for f in b["folders"][:15]]
-    return ["", line, "", _table(["folder", "modules", "lines", "bloat", "waste", "tangle"], rows)]
+    b = m["bloat_score"]
+    p, lv = size_parts(b), liveness_parts(m.get("liveness_score"))
+    live = f" · **live {lv['live']}** ({lv['defs']})" if lv else ""
+    line = f"**waste {p['waste']}** ({p['lines']}) · **tangle {p['tangle']}**" + (f" ({p['reasons']})" if p["reasons"] else "") + f" · **bloat {p['bloat']}**" + live + (f" — measured at {p['stamp']}" if p["stamp"] else "") + f". `{b['formula']}`." + (f" {p['tests'].capitalize()}." if p["tests"] else "")
+    live_by = {f["path"]: f for f in (m.get("liveness_score") or {}).get("folders", [])}
+    rows = [[f"`{f['path']}`", str(f["modules"]), str(f["loc"]), f"{f['score']:.0%}", f"{f['waste']:.0%}", f"{f['tangle']:.2f}", f"{live_by[f['path']]['value']:.1%}" if f["path"] in live_by else ""] for f in b["folders"][:15]]
+    return ["", line, "", _table(["folder", "modules", "lines", "bloat", "waste", "tangle", "live"], rows)]
 
 
 def _what_can_go(m: dict) -> list[str]:
@@ -121,7 +124,7 @@ def emit_markdown(program: Program, max_per_pass: int = 40) -> str:
     lines = [f"# Vibepiler report for `{program.root.name}`", ""]
     lines += _summary(program)
     if b:
-        lines += _size(b)
+        lines += _size(m)
     lines += _what_can_go(m)
     if "entry_points" in m:
         lines += _entry_points(m["entry_points"])
