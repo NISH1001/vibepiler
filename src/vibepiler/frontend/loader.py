@@ -155,22 +155,32 @@ def _read_gitignore(root: Path) -> list[str]:
 def discover(
     root: str | os.PathLike[str],
     *,
-    ignore: list[str] | None = None,
+    include: list[str] | None = None,
+    exclude: list[str] | None = None,
     languages: list[str] | None = None,
     use_gitignore: bool = True,
 ) -> list[SourceFile]:
-    """Walk `root` and return the parseable source files, sorted by path."""
+    """Walk `root` and return the parseable source files, sorted by path.
+
+    `include` names the folders and files under `root` to read (default: all of it); paths stay relative to `root`,
+    so its manifests and .gitignore still apply. `exclude` is gitignore-style patterns cut out of whatever is read."""
     root = Path(root).resolve()
+    starts: list[Path] = []
     if root.is_file():
-        files = [root]
+        starts = [root]
         root = root.parent
-    else:
-        files = None
+    for rel in include or []:
+        p = (root / rel).resolve()
+        if not p.is_relative_to(root):
+            raise ValueError(f"{rel}: outside {root}; include paths live inside the source")
+        if not p.exists():
+            raise FileNotFoundError(f"{rel}: no such file or directory under {root}")
+        starts.append(p)
 
     patterns = list(DEFAULT_IGNORES)
     if use_gitignore:
         patterns += _read_gitignore(root)
-    patterns += ignore or []
+    patterns += exclude or []
     spec = pathspec.GitIgnoreSpec.from_lines(patterns)
 
     wanted = set(languages) if languages else None
@@ -191,11 +201,8 @@ def discover(
             return
         out.append(SourceFile(path=p, rel=rel, language=lang, root=root, source=data))
 
-    if files is not None:
-        for p in files:
-            consider(p)
-    else:
-        for dirpath, dirnames, filenames in os.walk(root):
+    def walk_dir(top: Path) -> None:
+        for dirpath, dirnames, filenames in os.walk(top):
             d = Path(dirpath)
             rel_dir = d.relative_to(root).as_posix()
             # prune ignored directories early (big win for node_modules etc.)
@@ -207,5 +214,11 @@ def discover(
             dirnames[:] = sorted(keep)
             for name in sorted(filenames):
                 consider(d / name)
-    out.sort(key=lambda f: f.rel)
-    return out
+
+    for top in starts or [root]:
+        if top.is_file():
+            consider(top)
+        elif top == root or not spec.match_file(top.relative_to(root).as_posix() + "/"):
+            walk_dir(top)
+    unique = {f.rel: f for f in out}  # overlapping include paths read a file once
+    return sorted(unique.values(), key=lambda f: f.rel)

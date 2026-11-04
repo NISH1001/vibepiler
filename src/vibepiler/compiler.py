@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable
 
@@ -20,6 +20,7 @@ from vibepiler.passes.diagnostic import Diagnostic
 from vibepiler.passes.liveness import Liveness
 from vibepiler.passes.metric import Metric
 from vibepiler.passes.registry import all_metrics, run_passes
+from vibepiler.remote import fetch_remote, parse_remote, remote_subpath
 
 EMITTERS = ("json", "dot", "mermaid", "html", "md")
 PhaseCallback = Callable[[int, str, str], None]  # (phase number, phase name, message)
@@ -65,7 +66,9 @@ class CompileResult:
 
 
 class Compiler:
-    """`Compiler(source)`: a project directory, one source file, or a code string.
+    """`Compiler(source)`: a project directory, a remote repo (owner/repo[@ref], a GitHub or git URL), one source file,
+    or a code string. For a directory or a repo, `include` names the folders and files inside it to read (default:
+    all of it) and `exclude` cuts gitignore-style patterns out; both also chain: `Compiler(".").include("api/").exclude("**/gen/")`.
 
     A path must exist. A string that is not a path on disk is source code when it contains a newline, code-like
     characters, or parses cleanly in some grammar; `language` names its grammar (default: the grammar that parses
@@ -74,9 +77,22 @@ class Compiler:
 
     phases = ("frontend", "semantic", "optimize", "emit")
 
-    def __init__(self, source: str | Path, config: Config | None = None, on_phase: PhaseCallback | None = None, *, language: str | None = None) -> None:
+    def __init__(
+        self,
+        source: str | Path,
+        config: Config | None = None,
+        on_phase: PhaseCallback | None = None,
+        *,
+        language: str | None = None,
+        include: list[str] | None = None,
+        exclude: list[str] | None = None,
+    ) -> None:
         if language is not None and language not in available():
             raise ValueError(f"unknown language {language!r}; known: {available()}")
+        self.remote = parse_remote(source) if isinstance(source, str) else None
+        if self.remote is not None:  # cloned (or refreshed) into the cache, then compiled as the folder it is
+            include = [*(include or []), *filter(None, [remote_subpath(str(source))])]
+            source = fetch_remote(*self.remote, log=lambda _: None)
         self.kind, target = classify_source(source)
         self.language = language
         self.target = target if self.kind == "string" else target.resolve()
@@ -87,14 +103,29 @@ class Compiler:
             self._given = [source_from_string(str(source), language)]
         elif self.kind == "file":
             self._given = [source_from_file(self.target, self.root, language)]
-        self.config = config or (Config() if self.kind == "string" else Config.load(self.root))
+        cfg = config or (Config() if self.kind == "string" else Config.load(self.root))
+        self.config = replace(cfg, include=list(cfg.include), exclude=list(cfg.exclude))  # chaining never edits the caller's Config
         self.on_phase = on_phase or (lambda *_: None)
+        self.include(*(include or []))
+        self.exclude(*(exclude or []))
+
+    def include(self, *paths: str) -> Compiler:
+        """Read these folders or files of the source (relative to it) instead of all of it. Chains."""
+        if paths and self.kind != "directory":
+            raise ValueError(f"include needs a folder or a repo to look inside; this source is a {self.kind}")
+        self.config.include += [str(p) for p in paths]
+        return self
+
+    def exclude(self, *patterns: str) -> Compiler:
+        """Leave out paths matching these gitignore-style patterns. Chains."""
+        self.config.exclude += [str(p) for p in patterns]
+        return self
 
     def _sources(self) -> list[SourceFile]:
         if self._given is not None:
             return self._given
         langs = [self.language] if self.language else self.config.languages
-        return discover(self.target, ignore=self.config.ignore, languages=langs, use_gitignore=self.config.use_gitignore)
+        return discover(self.target, include=self.config.include, exclude=self.config.exclude, languages=langs, use_gitignore=self.config.use_gitignore)
 
     def run(
         self,
@@ -177,6 +208,15 @@ class Compiler:
         return path
 
 
-def compile(source: str | Path, *, config: Config | None = None, language: str | None = None, on_phase: PhaseCallback | None = None, **run) -> CompileResult:  # noqa: A001, ANN003 - the compiler metaphor, on purpose
+def compile(  # noqa: A001 - the compiler metaphor, on purpose
+    source: str | Path,
+    *,
+    config: Config | None = None,
+    language: str | None = None,
+    include: list[str] | None = None,
+    exclude: list[str] | None = None,
+    on_phase: PhaseCallback | None = None,
+    **run,  # noqa: ANN003
+) -> CompileResult:
     """One call: `Compiler(source, ...).run(...)`. `run` keywords: opt_level, emit, out_dir, only, skip, on_pass."""
-    return Compiler(source, config, on_phase, language=language).run(**run)
+    return Compiler(source, config, on_phase, language=language, include=include, exclude=exclude).run(**run)

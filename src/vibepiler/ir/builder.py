@@ -91,7 +91,7 @@ def build_program(root: str | Path, config: Config | None = None, files: list[So
     root = root if root == STRING_ROOT else root.resolve()  # a string program has no place on disk
     cfg = config or Config.load(root)
     if files is None:
-        files = discover(root, ignore=cfg.ignore, languages=cfg.languages, use_gitignore=cfg.use_gitignore)
+        files = discover(root, include=cfg.include, exclude=cfg.exclude, languages=cfg.languages, use_gitignore=cfg.use_gitignore)
     builder = _Builder(root, files, cfg, scope)
     return builder.build()
 
