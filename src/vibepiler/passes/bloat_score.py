@@ -133,8 +133,9 @@ class BloatScorePass(Pass):
         claims, tangles = self._claims_and_terms(program)
         used, model_used = self._allocate(g, claims)
         tangle = self._roll_up(g, modules, used, model_used, tangles)
-        source = [m for m in modules if not m.attrs.get("is_test")]
-        tests = [m for m in modules if m.attrs.get("is_test")]
+        modules_in_scope = [m for m in modules if m.attrs.get("in_scope", True)]  # named paths: score only them
+        source = [m for m in modules_in_scope if not m.attrs.get("is_test")]
+        tests = [m for m in modules_in_scope if m.attrs.get("is_test")]
         plan = self._plan(g, program.diagnostics, {m.id for m in tests})
         repo = self._repo(program, source, tests, used, model_used, tangle, tangles, plan)
         program.metrics["bloat_score"] = repo
@@ -298,7 +299,7 @@ class BloatScorePass(Pass):
             {
                 "removable_loc": sum(used[m.id] for m in source),
                 "model_loc": sum(model_used[m.id] for m in source),
-                "unverified_loc": float((program.metrics.get("entry_points") or {}).get("kept_by_name", {}).get("loc", 0)),  # alive only by name
+                "unverified_loc": float(sum(n.loc for n in g.nodes() if n.attrs.get("alive_by_name") and n.module and g.node(n.module).attrs.get("in_scope", True))),  # alive only by name
                 "tests": aggregate(tests),
                 "folders": sorted(({"path": k, **aggregate(v)} for k, v in folders.items()), key=lambda r: (-r["removable_loc"], r["path"])),
                 "formula": FORMULA,

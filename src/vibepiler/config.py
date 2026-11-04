@@ -27,6 +27,7 @@ class Thresholds:
 class Config:
     include: list[str] = field(default_factory=list)  # folders/files under the root to read; empty = all of it
     exclude: list[str] = field(default_factory=list)  # gitignore-style patterns cut out of what is read ("ignore" in old configs)
+    isolate: bool = False  # read only `include`; by default the whole source is read and only `include` is reported
     languages: list[str] | None = None
     opt_level: int = 2
     treat_exports_as_roots: bool | None = None  # None = per-language default

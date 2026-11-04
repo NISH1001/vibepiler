@@ -22,6 +22,7 @@ from vibepiler.passes.hotspots import HotspotsPass
 from vibepiler.passes.liveness import Liveness, LivenessPass
 from vibepiler.passes.metric import Metric
 from vibepiler.passes.responsibilities import ResponsibilitiesPass
+from vibepiler.passes.scope import is_scoped, keep, recount
 from vibepiler.passes.semantic_duplicates import SemanticDuplicatesPass
 from vibepiler.passes.unused_imports import UnusedImportsPass
 from vibepiler.passes.wrappers import WrappersPass
@@ -114,6 +115,7 @@ def run_passes(
         selected.append(p)
     timings: dict[str, float] = {}
     accepted: list[dict] = []
+    scoped = is_scoped(program)  # paths were named: the whole source was read, only they are reported
     for p in selected:
         t0 = time.perf_counter()
         diags = run_pass(p.name, program)
@@ -126,10 +128,12 @@ def run_passes(
                 accepted.append({"code": d.code, "qualname": d.data.get("qualname", ""), "file": d.file})
             else:
                 kept.append(d)
-        diags = kept
+        diags = [d for d in kept if keep(d, program.config.include)] if scoped else kept
         program.diagnostics.extend(diags)
         if on_pass is not None:
             on_pass(p, diags, timings[p.name])
+    if scoped:
+        recount(program)
     program.metrics["timings"] = timings
     program.metrics["accepted"] = accepted
     program.metrics.pop("_ran", None)

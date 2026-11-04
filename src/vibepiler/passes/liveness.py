@@ -256,6 +256,8 @@ class LivenessPass(Pass):
         source, tests = Liveness(), Liveness()
         folders: dict[str, list] = defaultdict(lambda: [0, Liveness()])
         for m in sorted(program.graph.nodes(NodeKind.MODULE), key=lambda m: m.file or ""):
+            if not m.attrs.get("in_scope", True):
+                continue  # read for its calls, not scored: the named paths are what this compile reports on
             lv = self._visit(program, m)
             if m.attrs.get("is_test"):
                 tests = tests + lv

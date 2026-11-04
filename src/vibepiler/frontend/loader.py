@@ -152,6 +152,27 @@ def _read_gitignore(root: Path) -> list[str]:
     return gi.read_text(encoding="utf-8", errors="replace").splitlines()
 
 
+def check_includes(root: Path, include: list[str] | None) -> None:
+    """Every named path must exist under `root`, and stay inside it."""
+    for rel in include or []:
+        p = (root / rel).resolve()
+        if not p.is_relative_to(root.resolve()):
+            raise ValueError(f"{rel}: outside {root}; include paths live inside the source")
+        if not p.exists():
+            raise FileNotFoundError(f"{rel}: no such file or directory under {root}")
+
+
+def in_scope(rel: str, include: list[str] | None) -> bool:
+    """Is a root-relative path inside one of the named paths? With none named, everything is."""
+    if not include:
+        return True
+    for p in include:
+        p = p.strip().removeprefix("./").rstrip("/")
+        if p in ("", ".") or rel == p or rel.startswith(p + "/"):
+            return True
+    return False
+
+
 def discover(
     root: str | os.PathLike[str],
     *,
@@ -169,13 +190,8 @@ def discover(
     if root.is_file():
         starts = [root]
         root = root.parent
-    for rel in include or []:
-        p = (root / rel).resolve()
-        if not p.is_relative_to(root):
-            raise ValueError(f"{rel}: outside {root}; include paths live inside the source")
-        if not p.exists():
-            raise FileNotFoundError(f"{rel}: no such file or directory under {root}")
-        starts.append(p)
+    check_includes(root, include)
+    starts += [(root / rel).resolve() for rel in include or []]
 
     patterns = list(DEFAULT_IGNORES)
     if use_gitignore:

@@ -28,7 +28,7 @@ from vibepiler.config import Config
 from vibepiler.frontend.facts import FileFacts, ImportDef
 from vibepiler.frontend.languages import get_language
 from vibepiler.frontend.languages.base import LanguageSpec
-from vibepiler.frontend.loader import STRING_ROOT, SourceFile, discover
+from vibepiler.frontend.loader import STRING_ROOT, SourceFile, check_includes, discover, in_scope
 from vibepiler.ir.graph import ProgramGraph
 from vibepiler.ir.model import CALLABLE_KINDS, Edge, EdgeKind, Node, NodeKind
 from vibepiler.ir.program import Program
@@ -85,13 +85,20 @@ def package_id(name: str) -> str:
     return f"pkg:{name}"
 
 
+def read_sources(root: Path, cfg: Config, languages: list[str] | None = None) -> list[SourceFile]:
+    """The files a compile reads. Named paths are always checked; isolated, only they are read, otherwise the whole
+    source is, so calls and entry points outside them are still seen (they are reported on, not read alone)."""
+    check_includes(root, cfg.include)
+    return discover(root, include=cfg.include if cfg.isolate else None, exclude=cfg.exclude, languages=languages or cfg.languages, use_gitignore=cfg.use_gitignore)
+
+
 def build_program(root: str | Path, config: Config | None = None, files: list[SourceFile] | None = None, scope: str = "directory") -> Program:
     """`scope` is what the caller handed over: "directory", "file" or "string"; passes that judge a whole project read it from `graph.meta`."""
     root = Path(root)
     root = root if root == STRING_ROOT else root.resolve()  # a string program has no place on disk
     cfg = config or Config.load(root)
     if files is None:
-        files = discover(root, include=cfg.include, exclude=cfg.exclude, languages=cfg.languages, use_gitignore=cfg.use_gitignore)
+        files = read_sources(root, cfg)
     builder = _Builder(root, files, cfg, scope)
     return builder.build()
 
@@ -154,6 +161,7 @@ class _Builder:
                     "aliases": facts.aliases,
                     "has_errors": bool(sf.tree.root_node.has_error),
                     "is_entry_module": spec.is_entry_module(sf.rel),
+                    "in_scope": in_scope(sf.rel, self.cfg.include),
                     **facts.attrs,
                 },
             )

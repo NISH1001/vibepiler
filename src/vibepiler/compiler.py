@@ -11,8 +11,8 @@ from typing import Any, Callable
 from vibepiler.backend import emit_dot, emit_html, emit_json, emit_markdown, emit_mermaid
 from vibepiler.config import Config
 from vibepiler.frontend.languages import available
-from vibepiler.frontend.loader import SourceFile, classify_source, discover, source_from_file, source_from_string
-from vibepiler.ir.builder import build_program
+from vibepiler.frontend.loader import SourceFile, classify_source, source_from_file, source_from_string
+from vibepiler.ir.builder import build_program, read_sources
 from vibepiler.ir.graph import ProgramGraph
 from vibepiler.ir.program import Program
 from vibepiler.passes.bloat_score import Bloat
@@ -69,6 +69,8 @@ class Compiler:
     """`Compiler(source)`: a project directory, a remote repo (owner/repo[@ref], a GitHub or git URL), one source file,
     or a code string. For a directory or a repo, `include` names the folders and files inside it to read (default:
     all of it) and `exclude` cuts gitignore-style patterns out; both also chain: `Compiler(".").include("api/").exclude("**/gen/")`.
+    By default the whole source is still read, so callers and entry points outside the included paths count, and
+    only the included paths are scored and reported; `isolate` reads the included paths alone.
 
     A path must exist. A string that is not a path on disk is source code when it contains a newline, code-like
     characters, or parses cleanly in some grammar; `language` names its grammar (default: the grammar that parses
@@ -86,6 +88,7 @@ class Compiler:
         language: str | None = None,
         include: list[str] | None = None,
         exclude: list[str] | None = None,
+        isolate: bool | None = None,
     ) -> None:
         if language is not None and language not in available():
             raise ValueError(f"unknown language {language!r}; known: {available()}")
@@ -108,12 +111,19 @@ class Compiler:
         self.on_phase = on_phase or (lambda *_: None)
         self.include(*(include or []))
         self.exclude(*(exclude or []))
+        if isolate is not None:
+            self.isolate(isolate)
 
     def include(self, *paths: str) -> Compiler:
         """Read these folders or files of the source (relative to it) instead of all of it. Chains."""
         if paths and self.kind != "directory":
             raise ValueError(f"include needs a folder or a repo to look inside; this source is a {self.kind}")
         self.config.include += [str(p) for p in paths]
+        return self
+
+    def isolate(self, on: bool = True) -> Compiler:
+        """Read only the included paths. Faster, but calls and entry points outside them are not seen. Chains."""
+        self.config.isolate = on
         return self
 
     def exclude(self, *patterns: str) -> Compiler:
@@ -124,8 +134,7 @@ class Compiler:
     def _sources(self) -> list[SourceFile]:
         if self._given is not None:
             return self._given
-        langs = [self.language] if self.language else self.config.languages
-        return discover(self.target, include=self.config.include, exclude=self.config.exclude, languages=langs, use_gitignore=self.config.use_gitignore)
+        return read_sources(self.target, self.config, [self.language] if self.language else None)
 
     def run(
         self,
@@ -215,8 +224,9 @@ def compile(  # noqa: A001 - the compiler metaphor, on purpose
     language: str | None = None,
     include: list[str] | None = None,
     exclude: list[str] | None = None,
+    isolate: bool | None = None,
     on_phase: PhaseCallback | None = None,
     **run,  # noqa: ANN003
 ) -> CompileResult:
     """One call: `Compiler(source, ...).run(...)`. `run` keywords: opt_level, emit, out_dir, only, skip, on_pass."""
-    return Compiler(source, config, on_phase, language=language, include=include, exclude=exclude).run(**run)
+    return Compiler(source, config, on_phase, language=language, include=include, exclude=exclude, isolate=isolate).run(**run)
