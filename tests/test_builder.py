@@ -142,3 +142,11 @@ def test_javascript_this_reads_are_counted():
 
     prog = Compiler("class C { constructor() { this.n = 0 } get() { return this.n } }", language="javascript").run(opt_level=0, emit=()).program
     assert prog.graph.meta["read_member_names"].get("n") == 1
+
+
+def test_every_middle_segment_of_a_chain_is_an_attribute_read():
+    from vibepiler.compiler import Compiler
+
+    prog = Compiler("class C:\n    def m(self):\n        self.idx.items.append(1)\n        self.a.b = 2\n        return self.model.embed\n").run(opt_level=0, emit=()).program
+    reads = prog.graph.meta["read_member_names"]
+    assert {"idx", "items", "append", "a", "model", "embed"} <= set(reads) and "b" not in reads

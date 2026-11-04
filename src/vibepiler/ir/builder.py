@@ -317,8 +317,7 @@ class _Builder:
             spec = self.specs[mid]
             for call in facts.calls:
                 self.stats["calls_total"] += 1
-                if len(call.chain) > 1:
-                    self.read_member_names[call.chain[-1]] += 1
+                self.read_member_names.update(call.chain[1:])  # a.b.c(): b and c are both read
                 src = self._scope_node(mid, call.scope)
                 res = self._resolve_chain(mid, call.scope, call.chain)
                 if res is None:
@@ -354,8 +353,7 @@ class _Builder:
                     if res.node_id != src and not self._is_own_class(mid, call.scope, call.chain, res.node_id):
                         self.graph.add_edge(Edge(src=src, dst=res.node_id, kind=EdgeKind.REFERENCES, line=call.line))
             for ref in facts.refs:
-                if len(ref.chain) > 1 and ref.context != "store":
-                    self.read_member_names[ref.chain[-1]] += 1
+                self.read_member_names.update(ref.chain[1:-1] if ref.context == "store" else ref.chain[1:])  # a.b.c = 1 reads b, stores c
                 if ref.context == "base":
                     continue  # covered by inherits edges
                 self.stats["refs_total"] += 1

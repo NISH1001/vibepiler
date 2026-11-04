@@ -16,10 +16,10 @@ def test_call_on_the_right_marks_rhs_has_call():
     assert spec.classify(stmts[0], sf).defs[0].rhs_has_call
 
 
-def test_augmented_assignment_uses_and_defines():
+def test_augmented_assignment_is_a_use_and_never_a_store():
     spec, sf, _, stmts = body("def f(x):\n    x += 1\n")
     p = spec.classify(stmts[0], sf)
-    assert p.uses == {"x"} and p.defs[0].name == "x"
+    assert p.uses == {"x"} and p.defs == []
 
 
 def test_tuple_target_shares_a_group():
