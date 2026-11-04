@@ -78,7 +78,7 @@ Remote repos are shallow-cloned into `~/.cache/vibepiler/repos/` and reused on t
 
 ### Reading the result
 
-1. **The size line** at the top of the terminal output and of `report.html`: `waste` is lines that could go, `tangle` is structure harder than its job, `bloat` combines them. Lead with the lines, not the percentage.
+1. **The size line** at the top of the terminal output and of `report.html`: `waste` is lines that could go, `tangle` is structure harder than its job, `bloat` combines them. `live` is the share of definitions (locals, parameters, attributes, symbols, imports) that something reads, with the dead ones counted by kind. Lead with the lines, not the percentage.
 2. **`report.html` → Overview**: the "what can go" tiles, the entry points, and "Biggest wins". Orbs with a red wedge are modules with removable lines; click one for its findings and its own bloat block. *Trace* follows execution outward from any node:
 
    ![A trace from the CLI module: reached modules lit amber, dashed paths with moving particles, the rest dimmed](docs/img/report-trace.png)
@@ -241,6 +241,7 @@ Vibepiler never edits your code. Each pass is the analysis half of a compiler op
 |---|---|---|---|
 | `entry-points` | program roots / reachability | Roots: main guards, CLI commands, routes, tasks, tests, framework hooks, exports of entry modules, your `entry_patterns`. Then forward reachability over calls/references/imports/inherits. Marks every node `reachable` and `is_root`. | (metrics only) |
 | `dead-code` | dead-code elimination | Symbols with no inbound call/reference and not reachable from any root (`dead-symbol`); symbols used only by dead code (`unreachable-symbol`); JS exports nothing imports (`unused-export`); modules nothing imports or runs (`unreachable-module`). Never flags dunders, roots, methods whose name is called anywhere, or overrides of external base classes. | warning / info |
+| `liveness` | liveness analysis / dead-store elimination | Inside every function body, a backward dataflow analysis to a fixpoint: stores no read reaches, whether never read or overwritten first (`dead-store`); trailing parameters never read (`unused-param`); statements after a return, raise, break or continue (`unreachable-code`); branches on a literal constant (`dead-branch`). Across the project: instance attributes written and never read by that name anywhere (`unused-attribute`). Exempts underscore names, destructuring siblings, placeholders before a read parameter, overrides, decorated functions, entry points, dunders, stubs, data classes and classes with an unknown base. | warning / info |
 | `unused-imports` | unused declarations | Import bindings never used in their file (respects `__all__`, `__init__`/`index` re-export files, `import x as x`). | info |
 | `cycles` | dependency analysis | Strongly connected components of the module import graph, with the weakest edge to break. | warning (error for 6+ modules) |
 | `complexity` | control-flow analysis | Cyclomatic complexity, length, nesting, parameter count per function; attaches the numbers to every function node. | warning / info |
@@ -364,6 +365,38 @@ Round four split the manifest reader, the dead-code pass and the concept builder
 
 What is left is honest: 59 functions over the complexity threshold, most of them tree-walkers that are long because the grammar is, and about 1,000 lines alive only by name because 54% of call sites link. The second number is the one a type-aware linker would move.
 
+## Liveness, the metric
+
+Bloat counts lines. Liveness counts names: of everything a unit defines, how much does anything read?
+
+```
+live(U) = definitions in U that reach a use / definitions in U          (1.0 when U defines nothing)
+```
+
+High is good: 1.0 means every definition is used. It prints beside bloat on the size line, in `vibepiler size`, in the report's meter and node panel, and the viewer's *colour* switch tints the module wedges by it instead of by waste, without moving anything.
+
+| level | definitions | a definition reaches a use when |
+|---|---|---|
+| function, method | its parameters and its stores to locals | the dataflow analysis says the name is live right after the store |
+| class | its methods and instance attributes, plus everything inside its methods | the method is reachable, referenced or kept by name; the attribute is read by that name somewhere in the project |
+| module | its top-level functions, classes, variables and imports, plus everything inside them | the symbol is reachable, referenced or kept by name; the import is used |
+| folder, repo | the sum of the modules' counts, tests apart | as above |
+
+The function level is the compiler's liveness analysis, solved backward over the body until nothing changes:
+
+```
+in[s]  = use[s] ∪ (out[s] − def[s])
+out[s] = ⋃ in[s′] over every successor s′ of s
+```
+
+A store to `v` at `s` is dead when `v` is not in `out[s]`. That one rule catches a value that is never read and one that is overwritten before anyone reads it. Branches join their arms, loops iterate until the live set settles, `return` and `raise` start from nothing, every statement in a `try` may jump to its handlers and its `finally`, and a name a nested function reads is live everywhere. When the analysis is unsure, the name is live; a function that calls `locals()` or `eval` is skipped. On Python the findings are checked against ruff's F841 and ARG rules in the test suite: everything ruff flags, vibepiler flags, and the only extras are the two cases ruff does not look for, values overwritten before a read and destructurings with no name read.
+
+```
+live 66.7% (72 of 108 definitions; dead: 9 stores, 1 params, 1 attributes, 23 symbols, 2 imports)
+```
+
+Gate on it like bloat, `--fail-on live<0.9`; `--baseline` prints how it moved; from Python, `result.liveness.value`. It sits beside bloat, not inside it, until a comparison of the two rankings shows it carries information waste does not.
+
 ## Configuration
 
 Optional `[tool.vibepiler]` in `pyproject.toml` (or a `vibepiler.toml`):
@@ -420,6 +453,8 @@ cg = g.call_graph()                     # nx.DiGraph of callables
 - **New pass**: subclass `Pass` in `src/vibepiler/passes/`, return `Diagnostic`s, append it to `passes/registry.py`. Passes may read the tree-sitter node behind any symbol via `program.symbol_def(node)`.
 
 ## Limitations and next steps
+
+- Liveness looks at locals, parameters and instance attributes. Class-level assignments and JavaScript class fields are not definitions yet, an augmented assignment (`x += 1`) is a read and never a dead store because it may mutate in place, and attributes are judged by name across the project, so a name read anywhere keeps every attribute of that name alive.
 
 - Name-based resolution, no types. A language-server backend (pyright / tsserver via LSP) would raise the resolution rate; the resolver is isolated in `ir/builder.py` for that reason.
 - Python and JS/TS only, for now. Go, Rust and Java grammars are already available through the language pack.
