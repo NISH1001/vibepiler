@@ -134,6 +134,10 @@ class LanguageSpec(ABC):
     def has_dynamic_scope(self, def_node: Node, sf: SourceFile) -> bool:
         return False
 
+    def attribute_reads(self, sf: SourceFile) -> list[str]:
+        """Every attribute name the file reads, whatever the receiver (`get().x`, `a[0].y`, `super().k`); stores excluded."""
+        return []
+
     def is_log_call(self, stmt: Node, sf: SourceFile) -> bool:
         call = self.statement_call(stmt, sf)
         if call is None:

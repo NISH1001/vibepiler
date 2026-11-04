@@ -16,6 +16,7 @@ SIDE_EFFECTS = frozenset({"call_expression", "await_expression", "new_expression
 PATTERNS = frozenset({"object_pattern", "array_pattern"})
 LOOPS = frozenset({"for_statement", "for_in_statement", "while_statement", "do_statement"})
 BREAKABLE = LOOPS | {"switch_statement"}
+JUMPS = frozenset({"return_statement", "throw_statement", "break_statement", "continue_statement"})
 
 
 class JavaScriptFlow:
@@ -78,6 +79,22 @@ class JavaScriptFlow:
                 return True
             stack.extend(n.children)
         return False
+
+    def attribute_reads(self, sf: SourceFile) -> list[str]:
+        out: list[str] = []
+        stack = [sf.tree.root_node]
+        while stack:
+            n = stack.pop()
+            stack.extend(n.children)
+            if n.type == "member_expression" and (prop := n.child_by_field_name("property")) is not None:
+                p = n.parent
+                if not (p is not None and p.type == "assignment_expression" and p.child_by_field_name("left") == n):
+                    out.append(sf.text(prop))
+            elif n.type == "shorthand_property_identifier_pattern":  # const { x } = this
+                out.append(sf.text(n))
+            elif n.type == "pair_pattern" and (key := n.child_by_field_name("key")) is not None:
+                out.append(sf.text(key))
+        return out
 
     # ----- targets -----------------------------------------------------------------------------
     def _targets(self, t: Node | None, stmt: Node, sf: SourceFile, defs: list[Def], uses: set[str], has_call: bool, group: int = 0) -> None:
@@ -149,13 +166,13 @@ class JavaScriptFlow:
             value = c.child_by_field_name("value")
             uses |= self.names_in(value, sf)
             own.append([s for s in c.named_children if s != value and s.type != "comment"])
-        # fallthrough: an arm runs into the cases after it until a `break` that leaves the switch
+        # fallthrough: an arm runs into the next case only while its statements do not end in a jump
         arms = []
         for i, c in enumerate(cases):
             run: list[Node] = []
             for rest in own[i:]:
                 run += rest
-                if any(s.type == "break_statement" and s.child_by_field_name("label") is None for s in rest):
+                if run and run[-1].type in JUMPS:
                     break
             arms.append((c, run))
         return Branch(stmt, uses, arms, any(c.type == "switch_default" for c in cases))
