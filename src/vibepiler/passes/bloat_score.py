@@ -46,8 +46,10 @@ ACTION: dict[str, str] = {
     "pass-through-wrapper": "fold", "thin-wrapper": "fold", "indirection-chain": "fold", "single-use-helper": "fold",
     "class-as-function": "fold", "namespace-class": "fold", "single-implementation": "fold", "single-subclass": "fold",
     "tiny-module": "fold",
+    "dead-store": "delete", "unused-param": "simplify", "unused-attribute": "delete", "unreachable-code": "delete", "dead-branch": "delete",
 }
-PROVEN = {"unused-import", "duplicate-function", "redundant-try", "unused-dependency"}
+PROVEN = {"unused-import", "duplicate-function", "redundant-try", "unused-dependency", "dead-store", "unused-param", "unreachable-code", "dead-branch"}
+SPAN = {"dead-store", "unreachable-code", "dead-branch", "unused-attribute"}  # the finding says how many lines it frees, in data["loc"]
 MODEL = {"near-duplicate-function", "semantic-duplicate"}
 WHOLE = {"dead-symbol", "unreachable-symbol", "unreachable-module", "stub-function", "unimplemented-interface", "single-implementation", "pass-through-wrapper", "thin-wrapper", "indirection-chain"}
 SHELL = {"class-as-function", "namespace-class", "single-subclass", "tiny-module"}  # the container minus what it contains
@@ -171,6 +173,9 @@ class BloatScorePass(Pass):
                     in_cycle.setdefault(mid, set()).update(ids)
             elif n is None:
                 continue
+            elif code in SPAN:
+                if d.data.get("loc"):
+                    claims.append((float(d.data["loc"]), n, d))
             elif (asked := self._lines_asked(code, n, contained)) is not None:
                 claims.append((asked, n, d))
             elif (term := self._term(code, n, d, th)) is not None:
