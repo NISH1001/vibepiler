@@ -262,3 +262,14 @@ def test_migrations_repeat_by_design_and_alembic_env_is_framework_run(tmp_path):
     prog = build_program(tmp_path)
     assert [d.message for d in run_pass("duplicates", prog) if d.code == "duplicate-function"] == []
     assert [d.message for d in run_pass("dead-code", prog) if (d.file or "").startswith("alembic")] == []
+
+
+def test_a_nested_pyproject_declares_its_own_folder_s_imports(tmp_path):
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "root"\nversion = "0"\ndependencies = ["click"]\n')
+    (tmp_path / "cli.py").write_text("import click\n")
+    (tmp_path / "backend" / "app").mkdir(parents=True)
+    (tmp_path / "backend" / "pyproject.toml").write_text('[project]\nname = "b"\nversion = "0"\ndependencies = ["fastapi"]\n')
+    (tmp_path / "backend" / "app" / "main.py").write_text("import fastapi\nimport httpx\n")
+    diags = run_pass("bloat", build_program(tmp_path))
+    assert [(d.data["package"], d.message.split(" in ")[-1]) for d in codes(diags, "undeclared-dependency")] == [("httpx", "backend/pyproject.toml")]
+    assert codes(diags, "unused-dependency") == []  # click is used by the root, fastapi by backend/
