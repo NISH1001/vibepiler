@@ -29,8 +29,9 @@ all ties and says nothing; waste is 18 lines spread over seven modules.
 
 ## Reading
 
-On gpython, 69 of its 79 dead definitions are whole symbols, which waste already charges in full. The body-level
-kinds the liveness pass adds (stores, parameters, attributes) are 7 of the 79. So on a real agent-written repo the
+On gpython, 84 of its 104 dead definitions are whole symbols, which waste already charges in full, and 11 more are
+unused imports. The body-level kinds the liveness pass adds are 9 of the 104: 2 stores, 7 parameters, no attributes.
+The repo is 98.3% live (6128 of 6232 definitions). So on a real agent-written repo the
 two rankings agree because the same dead functions drive both. Liveness does not yet carry information bloat lacks,
 by the decision rule in the design. **It stays beside bloat; no fold.**
 
