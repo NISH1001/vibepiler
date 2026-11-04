@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -12,37 +11,13 @@ from typing import Callable
 from vibepiler.backend import emit_dot, emit_html, emit_json, emit_markdown, emit_mermaid
 from vibepiler.config import Config
 from vibepiler.frontend.languages import available
-from vibepiler.frontend.loader import STRING_ROOT, SourceFile, discover, source_from_string
+from vibepiler.frontend.loader import SourceFile, classify_source, discover, source_from_file, source_from_string
 from vibepiler.ir.builder import build_program
 from vibepiler.ir.program import Program
 from vibepiler.passes.registry import run_passes
 
 EMITTERS = ("json", "dot", "mermaid", "html", "md")
 PhaseCallback = Callable[[int, str, str], None]  # (phase number, phase name, message)
-CODE_MARKS = "(){};="  # a string with one of these, or whitespace, is code rather than a path
-
-
-def classify_source(source: str | os.PathLike[str]) -> tuple[str, Path | None]:
-    """("directory" | "file", the path) or ("string", None). A path that is not on disk is an error, never a snippet."""
-    if isinstance(source, os.PathLike):
-        p = Path(source)
-        kind = "directory" if p.is_dir() else "file" if p.is_file() else None
-        if kind is None:
-            raise FileNotFoundError(f"{source}: no such file or directory")
-        return kind, p
-    if "\n" in source:
-        return "string", None
-    try:
-        p = Path(source)
-        if p.is_dir():
-            return "directory", p
-        if p.is_file():
-            return "file", p
-    except (OSError, ValueError):  # too long for a path, or an embedded NUL: it is code
-        return "string", None
-    if any(c.isspace() or c in CODE_MARKS for c in source):
-        return "string", None
-    raise FileNotFoundError(f"{source!r}: no such file or directory (a code string has a newline or code-like characters)")
 
 
 @dataclass
@@ -55,31 +30,32 @@ class CompileResult:
 class Compiler:
     """`Compiler(source)`: a project directory, one source file, or a code string.
 
-    A path must exist. A string that is not a path on disk is source code when it contains a newline or
-    code-like characters; `language` names its grammar (default: the grammar that parses it with the fewest
-    errors). For a path, `language` restricts discovery to that language.
+    A path must exist. A string that is not a path on disk is source code when it contains a newline, code-like
+    characters, or parses cleanly in some grammar; `language` names its grammar (default: the grammar that parses
+    it with the fewest errors). For a directory, `language` restricts discovery; for a file, it must match.
     """
 
     phases = ("frontend", "semantic", "optimize", "emit")
 
-    def __init__(self, source: str | os.PathLike[str], config: Config | None = None, on_phase: PhaseCallback | None = None, *, language: str | None = None) -> None:
+    def __init__(self, source: str | Path, config: Config | None = None, on_phase: PhaseCallback | None = None, *, language: str | None = None) -> None:
         if language is not None and language not in available():
             raise ValueError(f"unknown language {language!r}; known: {available()}")
         self.kind, target = classify_source(source)
         self.language = language
+        self.target = target if self.kind == "string" else target.resolve()
+        self.root = self.target.parent if self.kind == "file" else self.target
+        # a snippet or a named file is fixed here, so a bad language or extension fails before any work; a directory is walked at run time
+        self._given: list[SourceFile] | None = None
         if self.kind == "string":
-            self.root, self.target = STRING_ROOT, STRING_ROOT
-            self._snippet: SourceFile | None = source_from_string(str(source), language)
-        else:
-            self.target = target.resolve()  # type: ignore[union-attr]
-            self.root = self.target if self.kind == "directory" else self.target.parent
-            self._snippet = None
-        self.config = config or Config.load(self.root)
+            self._given = [source_from_string(str(source), language)]
+        elif self.kind == "file":
+            self._given = [source_from_file(self.target, self.root, language)]
+        self.config = config or (Config() if self.kind == "string" else Config.load(self.root))
         self.on_phase = on_phase or (lambda *_: None)
 
     def _sources(self) -> list[SourceFile]:
-        if self._snippet is not None:
-            return [self._snippet]
+        if self._given is not None:
+            return self._given
         langs = [self.language] if self.language else self.config.languages
         return discover(self.target, ignore=self.config.ignore, languages=langs, use_gitignore=self.config.use_gitignore)
 
@@ -104,7 +80,7 @@ class Compiler:
         self.on_phase(1, "frontend", f"parsed {len(files)} files (" + ", ".join(f"{k}: {v}" for k, v in sorted(langs.items())) + ")")
 
         t = time.perf_counter()
-        program = build_program(self.root, config=self.config, files=files)
+        program = build_program(self.root, config=self.config, files=files, scope=self.kind)
         timings["semantic"] = time.perf_counter() - t
         meta = program.graph.meta
         res = meta.get("resolution", {})
@@ -164,6 +140,6 @@ class Compiler:
         return path
 
 
-def compile(source: str | os.PathLike[str], *, config: Config | None = None, language: str | None = None, on_phase: PhaseCallback | None = None, **run) -> CompileResult:  # noqa: A001, ANN003 - the compiler metaphor, on purpose
+def compile(source: str | Path, *, config: Config | None = None, language: str | None = None, on_phase: PhaseCallback | None = None, **run) -> CompileResult:  # noqa: A001, ANN003 - the compiler metaphor, on purpose
     """One call: `Compiler(source, ...).run(...)`. `run` keywords: opt_level, emit, out_dir, only, skip, on_pass."""
     return Compiler(source, config, on_phase, language=language).run(**run)
