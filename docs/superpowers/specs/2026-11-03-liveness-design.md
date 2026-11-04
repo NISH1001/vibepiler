@@ -391,6 +391,36 @@ Bloat values are byte-identical before and after this branch.
   wrong is a bug in a rule above; fix the rule, not the code it pointed at. Then the two
   rankings for the fold decision.
 
+## Part 5: the typed result
+
+`CompileResult` is a dataclass today with `program`, `outputs` and `timings`, and `program.metrics`
+is a plain dict of per-pass dicts with different shapes. With `Metric` in place the result gains a
+typed layer over the scores and shortcuts to what every caller reaches for. No pydantic; the
+codebase is dataclasses throughout and the install stays light.
+
+```python
+@dataclass
+class CompileResult:
+    program: Program
+    outputs: dict[str, Path]        # backend name -> file written
+    timings: dict[str, float]       # phase -> seconds
+
+    scores: dict[str, Metric]       # label -> value: result.scores["live"].value; built from all_metrics()
+    bloat: Bloat | None             # the same object as scores["bloat"]
+    liveness: Liveness | None       # the same object as scores["live"]
+    diagnostics: list[Diagnostic]   # program.diagnostics
+    graph: ProgramGraph             # program.graph
+    metrics: dict[str, Any]         # program.metrics, the raw per-pass numbers, documented as the untyped layer
+    def to_dict(self) -> dict: ...  # the ir.json payload
+```
+
+`scores`, `bloat`, `liveness`, `diagnostics`, `graph` and `metrics` are properties over `program`,
+not copies, so they never drift from it. A score is `None` when its pass did not run (`-O0`).
+`vibepiler.compile(source, ...)` returns the same object. The README's "Using it from Python"
+shows `result.bloat.waste`, `result.liveness.value` and `result.scores` next to the existing
+graph examples. The pipeline stays synchronous: the work is CPU-bound and a full run on vibepiler
+itself takes about a quarter of a second, so there is nothing to hide behind an `await`.
+
 ## Constraints
 
 - Default install stays light: no new runtime dependency. ruff is dev-only.
@@ -423,6 +453,8 @@ Bloat values are byte-identical before and after this branch.
 - `unused-param` charges no lines and is after-used only.
 - A dead store with a call on the right-hand side charges nothing and says simplify.
 - The viewer's colour-by switch changes tint only.
+- The result stays a dataclass with typed properties over `program`; no pydantic, no async (the
+  user asked about both; the reasons are in Part 5).
 
 ## Left to the builder
 
