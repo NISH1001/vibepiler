@@ -166,7 +166,7 @@ class LivenessPass(Pass):
         if cls is None or cls.kind is not NodeKind.CLASS:
             return False
         g = program.graph
-        return g.has_external_base(cls.id) or _overrides(g, cls.id, fn.name) or _overridden(g, cls.id, fn.name) or _implements(program, cls)
+        return g.has_external_base(cls.id) or defined_along(g, cls.id, fn.name, "up") or defined_along(g, cls.id, fn.name, "down") or _implements(program, cls)
 
     # ----- 2. findings ---------------------------------------------------------------------------
     def _store_findings(self, fn: Node, a: Analysed) -> list[Diagnostic]:
@@ -279,29 +279,21 @@ class LivenessPass(Pass):
 
 
 
-def _overrides(g: ProgramGraph, cls_id: str, name: str, depth: int = 0) -> bool:
-    """True when a resolved base class, at any depth, defines a member called `name`."""
-    if depth > 10:
-        return False
-    for e in g.out_edges(cls_id, EdgeKind.INHERITS):
-        base = g.node(e.dst)
-        if base.kind is NodeKind.CLASS and (any(c.name == name for c in g.children(base.id)) or _overrides(g, base.id, name, depth + 1)):
-            return True
-    return False
-
-
-def _overridden(g: ProgramGraph, cls_id: str, name: str, depth: int = 0) -> bool:
-    """True when a subclass, at any depth, defines a member called `name`: the parameter is part of a polymorphic signature."""
-    if depth > 10:
-        return False
-    for e in g.in_edges(cls_id, EdgeKind.INHERITS):
-        sub = g.node(e.src)
-        if sub.kind is NodeKind.CLASS and (any(c.name == name for c in g.children(sub.id)) or _overridden(g, sub.id, name, depth + 1)):
-            return True
-    return False
 
 
 def _implements(program: Program, cls: Node) -> bool:
     """A TypeScript class that `implements` an interface: its method signatures are the interface's."""
     sd = program.symbol_def(cls)
     return sd is not None and sd.node is not None and contains_any(sd.node, frozenset({"implements_clause"}))
+
+
+def defined_along(g: ProgramGraph, cls_id: str, name: str, direction: str, depth: int = 0) -> bool:
+    """True when a class above ("up": an override) or below ("down": overridden) `cls_id`, at any depth, defines `name`."""
+    if depth > 10:
+        return False
+    edges = g.out_edges(cls_id, EdgeKind.INHERITS) if direction == "up" else g.in_edges(cls_id, EdgeKind.INHERITS)
+    for e in edges:
+        other = g.node(e.dst if direction == "up" else e.src)
+        if other.kind is NodeKind.CLASS and (any(c.name == name for c in g.children(other.id)) or defined_along(g, other.id, name, direction, depth + 1)):
+            return True
+    return False
