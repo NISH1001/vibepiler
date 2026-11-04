@@ -52,16 +52,16 @@ Name folders or files after the source to report on just those parts, and leave 
 
 ```bash
 # two folders of a GitHub repo, without its migrations
-uvx --from git+https://github.com/NISH1001/vibepiler vibepiler compile NASA-IMPACT/akd-labs api/ services/ --exclude alembic/
+uvx --from git+https://github.com/NISH1001/vibepiler vibepiler compile owner/repo api/ services/ --exclude alembic/
 
 # a GitHub folder link compiles that folder
-vibepiler compile https://github.com/NASA-IMPACT/akd-labs/tree/main/frontend
+vibepiler compile https://github.com/owner/repo/tree/main/frontend
 
 # local folders work the same way; --exclude takes commas and repeats
 vibepiler compile . backend/ api/ --exclude "**/gen/" --exclude scripts/
 ```
 
-By default the whole source is still read and only the named paths are scored and reported. That is how a compiler builds one unit against the whole program: a route registered in `main.py`, or a function in `services/` that only `workers/` calls, is still alive when you name `api/ services/`. Add `--isolate` to read the named paths alone: it is faster, but anything that reaches them from outside is not seen. On akd-labs, `api/ services/` scores 3.7% waste; with `--isolate` it scores 56.9%, because the routes are wired up in `main.py`. Naming `main.py` too gets most of that back.
+By default the whole source is still read and only the named paths are scored and reported. That is how a compiler builds one unit against the whole program: a route registered in `main.py`, or a function in `services/` that only `workers/` calls, is still alive when you name `api/ services/`. Add `--isolate` to read the named paths alone: it is faster, but anything that reaches them from outside is not seen. On one real monorepo, `api/ services/` scores 3.7% waste; with `--isolate` it scores 56.9%, because the routes are wired up in `main.py`. Naming `main.py` too gets most of that back.
 
 If you will run it more than once, install the command:
 
@@ -457,7 +457,7 @@ import vibepiler
 from vibepiler import Compiler
 
 result = Compiler("path/to/project").run(opt_level=2, emit=["json", "html"], out_dir="out")
-result = Compiler("NASA-IMPACT/akd-labs", include=["api/", "services/"], exclude=["alembic/"]).run(emit=())
+result = Compiler("owner/repo", include=["api/", "services/"], exclude=["alembic/"]).run(emit=())
 result = Compiler(".").include("backend/").exclude("**/gen/").isolate().run(emit=())   # the same, chained
 result = Compiler("path/to/one_file.py").run(emit=())                # just that file; config from its folder
 result = Compiler("def f():\n    return 1\n", language="python").run()   # a snippet; language is optional
