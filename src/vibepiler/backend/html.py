@@ -10,6 +10,7 @@ IR is embedded as JSON.
 from __future__ import annotations
 
 import json
+from html import escape
 from importlib import resources
 
 from vibepiler.backend.common import summarize
@@ -31,7 +32,7 @@ def emit_html(program: Program) -> str:
     return (
         resources.files("vibepiler.backend").joinpath("viewer.html").read_text(encoding="utf-8")
         .replace("__CYTOSCAPE__", CYTOSCAPE)
-        .replace("__NAME__", program.root.name)
+        .replace("__NAME__", escape(program.root.name))
         .replace("__FILES__", str(s["files"]))
         .replace("__SYMBOLS__", str(s["symbols"]))
         .replace("__LINKED__", pct)

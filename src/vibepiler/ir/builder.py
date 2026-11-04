@@ -28,7 +28,7 @@ from vibepiler.config import Config
 from vibepiler.frontend.facts import FileFacts, ImportDef
 from vibepiler.frontend.languages import get_language
 from vibepiler.frontend.languages.base import LanguageSpec
-from vibepiler.frontend.loader import SourceFile, discover
+from vibepiler.frontend.loader import STRING_ROOT, SourceFile, discover
 from vibepiler.ir.graph import ProgramGraph
 from vibepiler.ir.model import CALLABLE_KINDS, Edge, EdgeKind, Node, NodeKind
 from vibepiler.ir.program import Program
@@ -86,7 +86,8 @@ def package_id(name: str) -> str:
 
 
 def build_program(root: str | Path, config: Config | None = None, files: list[SourceFile] | None = None) -> Program:
-    root = Path(root).resolve()
+    root = Path(root)
+    root = root if root == STRING_ROOT else root.resolve()  # a string program has no place on disk
     cfg = config or Config.load(root)
     if files is None:
         files = discover(root, ignore=cfg.ignore, languages=cfg.languages, use_gitignore=cfg.use_gitignore)
