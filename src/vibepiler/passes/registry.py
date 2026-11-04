@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import fnmatch
+import re
 import time
 
 from vibepiler.ir.program import Program
 from vibepiler.passes.abstraction import AbstractionPass
 from vibepiler.passes.base import Pass
 from vibepiler.passes.bloat import BloatPass
-from vibepiler.passes.bloat_score import BloatScorePass
+from vibepiler.passes.bloat_score import Bloat, BloatScorePass
 from vibepiler.passes.complexity import ComplexityPass
 from vibepiler.passes.concepts import ConceptsPass
 from vibepiler.passes.cycles import CyclesPass
@@ -18,6 +19,7 @@ from vibepiler.passes.diagnostic import Diagnostic
 from vibepiler.passes.duplicates import DuplicatesPass
 from vibepiler.passes.entry_points import EntryPointsPass
 from vibepiler.passes.hotspots import HotspotsPass
+from vibepiler.passes.metric import Metric
 from vibepiler.passes.responsibilities import ResponsibilitiesPass
 from vibepiler.passes.semantic_duplicates import SemanticDuplicatesPass
 from vibepiler.passes.unused_imports import UnusedImportsPass
@@ -43,6 +45,20 @@ _PASSES: list[Pass] = [
 
 def all_passes() -> list[Pass]:
     return list(_PASSES)
+
+
+def all_metrics() -> list[type[Metric]]:
+    """Every score, in the order the size line prints them."""
+    return [Bloat]
+
+
+def parse_gate(expr: str) -> tuple[type[Metric], str, float] | None:
+    """`bloat>0.25` or `live<0.9` -> (metric, op, limit); None for anything else (a severity name)."""
+    m = re.fullmatch(r"([a-z]+)([<>])(\d*\.?\d+)", expr.strip())
+    if m is None:
+        return None
+    cls = next((c for c in all_metrics() if c.label == m.group(1)), None)
+    return (cls, m.group(2), float(m.group(3))) if cls else None
 
 
 def get_pass(name: str) -> Pass:
