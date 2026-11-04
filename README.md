@@ -403,7 +403,9 @@ result = Compiler("path/to/project").run(opt_level=2, emit=["json", "html"], out
 result = Compiler("path/to/one_file.py").run(emit=())                # just that file; config from its folder
 result = Compiler("def f():\n    return 1\n", language="python").run()   # a snippet; language is optional
 result = vibepiler.compile("path/to/project", emit=["json"], out_dir="out")       # the one-call form (remote repos are CLI-only)
-program = result.program
+result.bloat.waste, result.bloat.score     # typed scores; result.scores has every one by label
+result.liveness.value                      # share of definitions that reach a use: result.scores["live"]
+program = result.program                   # result.diagnostics, result.graph and result.metrics are shortcuts into it
 g = program.graph                       # ProgramGraph (networkx underneath)
 for d in program.diagnostics:           # Diagnostic(pass_name, code, severity, message, file, line, node_id, suggestion, data)
     ...

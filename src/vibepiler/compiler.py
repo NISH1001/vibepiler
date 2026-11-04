@@ -6,15 +6,20 @@ import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from vibepiler.backend import emit_dot, emit_html, emit_json, emit_markdown, emit_mermaid
 from vibepiler.config import Config
 from vibepiler.frontend.languages import available
 from vibepiler.frontend.loader import SourceFile, classify_source, discover, source_from_file, source_from_string
 from vibepiler.ir.builder import build_program
+from vibepiler.ir.graph import ProgramGraph
 from vibepiler.ir.program import Program
-from vibepiler.passes.registry import run_passes
+from vibepiler.passes.bloat_score import Bloat
+from vibepiler.passes.diagnostic import Diagnostic
+from vibepiler.passes.liveness import Liveness
+from vibepiler.passes.metric import Metric
+from vibepiler.passes.registry import all_metrics, run_passes
 
 EMITTERS = ("json", "dot", "mermaid", "html", "md")
 PhaseCallback = Callable[[int, str, str], None]  # (phase number, phase name, message)
@@ -22,9 +27,41 @@ PhaseCallback = Callable[[int, str, str], None]  # (phase number, phase name, me
 
 @dataclass
 class CompileResult:
+    """What a compile returns: the program, the files written, the phase timings, and typed views over the scores."""
+
     program: Program
     outputs: dict[str, Path] = field(default_factory=dict)
     timings: dict[str, float] = field(default_factory=dict)
+
+    @property
+    def scores(self) -> dict[str, Metric]:
+        """Every score that was measured, by label: `result.scores["live"].value`. Empty at -O0."""
+        return {cls.label: m for cls in all_metrics() if (m := cls.of(self.program)) is not None}
+
+    @property
+    def bloat(self) -> Bloat | None:
+        return Bloat.of(self.program)
+
+    @property
+    def liveness(self) -> Liveness | None:
+        return Liveness.of(self.program)
+
+    @property
+    def diagnostics(self) -> list[Diagnostic]:
+        return self.program.diagnostics
+
+    @property
+    def graph(self) -> ProgramGraph:
+        return self.program.graph
+
+    @property
+    def metrics(self) -> dict[str, Any]:
+        """The raw per-pass numbers: the untyped layer under `scores`."""
+        return self.program.metrics
+
+    def to_dict(self) -> dict[str, Any]:
+        """The ir.json payload."""
+        return emit_json(self.program)
 
 
 class Compiler:
