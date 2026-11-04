@@ -154,8 +154,15 @@ class JavaScriptFlow:
             value = c.child_by_field_name("value")
             uses |= self.names_in(value, sf)
             own.append([s for s in c.named_children if s != value and s.type != "comment"])
-        # fallthrough: an arm may run into every case after it
-        arms = [(c, [s for rest in own[i:] for s in rest]) for i, c in enumerate(cases)]
+        # fallthrough: an arm runs into the cases after it until a `break` that leaves the switch
+        arms = []
+        for i, c in enumerate(cases):
+            run: list[Node] = []
+            for rest in own[i:]:
+                run += rest
+                if any(s.type == "break_statement" and s.child_by_field_name("label") is None for s in rest):
+                    break
+            arms.append((c, run))
         return Branch(stmt, uses, arms, any(c.type == "switch_default" for c in cases))
 
     def _for(self, stmt: Node, n: Node, sf: SourceFile, label: str | None = None) -> Loop:
