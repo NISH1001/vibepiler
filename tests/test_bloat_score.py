@@ -148,3 +148,36 @@ def test_symbols_alive_only_by_name_are_counted_as_the_unverified_band(tmp_path)
     assert prog.metrics["entry_points"]["kept_by_name"] == {"symbols": 1, "loc": 2}
     assert prog.metrics["bloat_score"]["unverified_loc"] == 2.0
     assert "Box.unused" in {d.data["qualname"] for d in prog.diagnostics if d.code == "dead-symbol"}
+
+
+# ------------------------------------------------------------------ liveness findings claim lines through the same budget
+def _snippet(src):
+    from vibepiler.compiler import Compiler
+
+    return Compiler(src).run(opt_level=1, emit=()).program
+
+
+def test_liveness_findings_claim_their_lines_once():
+    prog = _snippet("def f():\n    x = []\n    y = []\n    return 0\n\ndef dead():\n    z = 1\n    z = 2\n    return z\n\nif __name__ == '__main__':\n    f()\n")
+    by = {}
+    for p in prog.metrics["bloat_score"]["plan"]:
+        by.setdefault(p["qualname"], []).append((p["code"], p["lines"]))
+    assert sorted(by["f"]) == [("dead-store", 1.0), ("dead-store", 1.0)]
+    assert by["dead"] == [("dead-symbol", 4.0)]  # dead whole; its inner dead store adds nothing
+
+
+def test_unused_param_is_in_findings_but_not_in_the_plan():
+    prog = _snippet("def f(a, b):\n    return a\n")
+    assert any(d.code == "unused-param" for d in prog.diagnostics)
+    assert not any(p["code"] == "unused-param" for p in prog.metrics["bloat_score"]["plan"])
+
+
+def test_dead_store_with_a_call_frees_no_lines():
+    prog = _snippet("def f():\n    x = g()\n    return 0\n")
+    assert not any(p["code"] == "dead-store" for p in prog.metrics["bloat_score"]["plan"])
+
+
+def test_liveness_findings_are_proven_and_attributes_inferred():
+    prog = _snippet("class C:\n    def __init__(self):\n        self.cache = []\n\ndef f():\n    x = []\n    return C()\n\nif __name__ == '__main__':\n    f()\n")
+    conf = {p["code"]: p["confidence"] for p in prog.metrics["bloat_score"]["plan"]}
+    assert conf["dead-store"] == "proven" and conf["unused-attribute"] == "inferred"
