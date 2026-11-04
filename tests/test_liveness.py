@@ -206,3 +206,47 @@ def test_the_typescript_fixture_leftovers_are_each_found():
     prog = Compiler(JSFIX).run(opt_level=1, emit=()).program
     got = {(d.code, tuple(d.data.get("names") or ())) for d in prog.diagnostics if d.file == "src/leftovers.ts" and d.pass_name == "liveness"}
     assert got == {("dead-store", ("items",)), ("dead-store", ("data",)), ("dead-store", ("result",)), ("unused-param", ("channel",)), ("unused-attribute", ("lastSeen",))}
+
+
+# ------------------------------------------------------------------ final review: never `delete` working code
+def test_review_js_switch_with_a_return_per_case_has_no_unreachable_code():
+    assert codes('function kind(k) {\n  switch (k) {\n    case "a": return 1\n    case "b": return 2\n    default: return 3\n  }\n}', language="javascript") == []
+    assert codes("function f(xs) {\n  let last\n  for (const x of xs) {\n    switch (x) {\n      case 1: continue\n      default: last = x\n    }\n  }\n  return last\n}", language="javascript") == []
+
+
+def test_review_js_function_declarations_after_return_are_hoisted_not_unreachable():
+    assert codes("function parse(s) {\n  return clean(trim(s))\n  function trim(x) { return x }\n  function clean(x) { return x }\n}", language="javascript") == []
+
+
+def test_review_a_store_in_finally_read_after_the_try_is_live():
+    assert codes("def f():\n    try:\n        g()\n    finally:\n        x = 1\n    return x\n") == []
+    assert codes("function f() {\n  let y\n  try { g() } finally { y = 1 }\n  return y\n}", language="javascript") == []
+
+
+def test_review_attribute_reads_through_any_receiver_count():
+    src = (
+        "class A:\n    def __init__(self):\n        self.x = 1\n        self.y = 2\n        self.label = 3\n        self.k = 4\n        self.z = 5\n\n"
+        "def use(items, kids):\n    return get().x, items[0].y, kids[0].label, getattr(items, 'z')\n\n"
+        "class B(A):\n    def m(self):\n        return super().k\n"
+    )
+    assert [c for c in codes(src) if c[0] == "unused-attribute"] == []
+    js = "class A { constructor() { this.x = 1; this.y = 2; this.w = 3 } m() { const { w } = this; return w } }\nfunction use(arr) { return mk().x + arr[0].y }"
+    assert [c for c in codes(js, language="javascript") if c[0] == "unused-attribute"] == []
+
+
+def test_review_a_with_body_may_be_cut_short_by_a_suppressing_context_manager():
+    assert codes("def f(d, k):\n    value = None\n    with contextlib.suppress(KeyError):\n        value = d[k]\n    return value\n") == []
+
+
+def test_review_a_base_method_overridden_below_keeps_its_parameters():
+    src = "class Visitor:\n    def visit(self, node):\n        return None\n\nclass Printer(Visitor):\n    def visit(self, node):\n        print(node)\n"
+    assert [c for c in codes(src) if c[0] == "unused-param"] == []
+    assert [c for c in codes("class X implements H {\n  handle(req, res) { return req }\n}", language="typescript") if c[0] == "unused-param"] == []
+
+
+def test_review_a_dead_branch_holding_a_yield_is_not_reported():
+    assert codes("def gen():\n    if False:\n        yield\n    return\n") == []
+
+
+def test_review_an_annotation_reads_its_names():
+    assert codes("def f():\n    T = int\n    v: T = 3\n    return v\n") == []

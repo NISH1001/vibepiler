@@ -16,6 +16,7 @@ SPLATS = frozenset({"list_splat_pattern", "list_splat"})
 SIDE_EFFECTS = frozenset({"call", "await", "yield"})
 DYNAMIC = frozenset({"locals", "vars", "globals", "eval", "exec"})
 NESTED = frozenset({"function_definition", "lambda"})
+NAME_LOOKUPS = frozenset({"getattr", "hasattr", "attrgetter", "methodcaller"})  # a string argument names an attribute
 
 
 class PythonFlow:
@@ -80,6 +81,21 @@ class PythonFlow:
             stack.extend(n.children)
         return False
 
+    def attribute_reads(self, sf: SourceFile) -> list[str]:
+        out: list[str] = []
+        stack = [sf.tree.root_node]
+        while stack:
+            n = stack.pop()
+            stack.extend(n.children)
+            if n.type == "attribute":
+                p = n.parent
+                if not (p is not None and p.type == "assignment" and p.child_by_field_name("left") == n):
+                    out.append(sf.text(n.child_by_field_name("attribute")))
+            elif n.type == "call" and (fn := n.child_by_field_name("function")) is not None and sf.text(fn).split(".")[-1] in NAME_LOOKUPS:
+                args = n.child_by_field_name("arguments")
+                out += [sf.text(c) for a in (args.named_children if args is not None else []) if a.type == "string" for c in a.named_children if c.type == "string_content"]
+        return out
+
     # ----- shapes ------------------------------------------------------------------------------
     def _assignment(self, stmt: Node, n: Node, sf: SourceFile) -> Plain:
         targets, right = [], n
@@ -90,7 +106,7 @@ class PythonFlow:
             return Plain(stmt, [], self.names_in(n.child_by_field_name("type"), sf))
         has_call = contains_any(right, SIDE_EFFECTS)
         defs: list[Def] = []
-        uses = self.names_in(right, sf)
+        uses = self.names_in(right, sf) | self.names_in(n.child_by_field_name("type"), sf)  # `v: T = 3` reads T
         if n.type == "augmented_assignment":  # `acc |= x` may mutate in place: a read, never a store we could drop
             return Plain(stmt, [], uses | self.names_in(targets[0], sf))
         for t in targets:

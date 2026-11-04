@@ -15,7 +15,7 @@ from typing import ClassVar, Literal
 
 from tree_sitter import Node as TSNode
 
-from vibepiler.frontend.flow import Def
+from vibepiler.frontend.flow import Def, contains_any
 from vibepiler.ir.graph import ProgramGraph
 from vibepiler.ir.model import EdgeKind, Node, NodeKind
 from vibepiler.ir.program import Program
@@ -27,6 +27,7 @@ from vibepiler.passes.entry_points import is_dunder
 from vibepiler.passes.metric import Metric
 from vibepiler.passes.unused_imports import is_binding, is_unused_import
 
+YIELDS = frozenset({"yield", "yield_expression"})  # deleting a dead `if False: yield` turns a generator into a function
 KINDS = ("stores", "params", "attributes", "symbols", "imports")
 DEAD_SYMBOL = frozenset({"dead-symbol", "unreachable-symbol"})  # an unused export is live, as it is for bloat
 SCOPES = (NodeKind.FUNCTION, NodeKind.METHOD, NodeKind.CLASS)
@@ -108,7 +109,7 @@ class LivenessPass(Pass):
             diags += self._store_findings(fn, a)
             diags += self._param_findings(fn, a)
             diags += [self.diag("unreachable-code", Severity.WARNING, f"`{fn.qualname}`: statements after a return, raise, break or continue can never run", node=fn, line=span(f, l)[0], suggestion="Delete them.", span=span(f, l), loc=span(f, l)[1] - span(f, l)[0] + 1, action="delete", confidence="proven") for f, l in a.result.unreachable]
-            diags += [self.diag("dead-branch", Severity.WARNING, f"`{fn.qualname}`: a branch on a constant condition that can never run", node=fn, line=span(f, l)[0], suggestion="Delete the branch.", span=span(f, l), loc=span(f, l)[1] - span(f, l)[0] + 1, action="delete", confidence="proven") for f, l in a.result.dead_branches]
+            diags += [self.diag("dead-branch", Severity.WARNING, f"`{fn.qualname}`: a branch on a constant condition that can never run", node=fn, line=span(f, l)[0], suggestion="Delete the branch.", span=span(f, l), loc=span(f, l)[1] - span(f, l)[0] + 1, action="delete", confidence="proven") for f, l in a.result.dead_branches if not contains_any(f, YIELDS)]
         diags += self._attribute_findings(program)
         self._roll_up(program)
         counts = defaultdict(int, {d.code: 0 for d in diags})
@@ -162,7 +163,10 @@ class LivenessPass(Pass):
         if spec.is_stub_body(spec.body_statements(sd.node, sf), sf):
             return True
         cls = program.graph.parent(fn.id)
-        return cls is not None and cls.kind is NodeKind.CLASS and (program.graph.has_external_base(cls.id) or _overrides(program.graph, cls.id, fn.name))
+        if cls is None or cls.kind is not NodeKind.CLASS:
+            return False
+        g = program.graph
+        return g.has_external_base(cls.id) or _overrides(g, cls.id, fn.name) or _overridden(g, cls.id, fn.name) or _implements(program, cls)
 
     # ----- 2. findings ---------------------------------------------------------------------------
     def _store_findings(self, fn: Node, a: Analysed) -> list[Diagnostic]:
@@ -284,3 +288,20 @@ def _overrides(g: ProgramGraph, cls_id: str, name: str, depth: int = 0) -> bool:
         if base.kind is NodeKind.CLASS and (any(c.name == name for c in g.children(base.id)) or _overrides(g, base.id, name, depth + 1)):
             return True
     return False
+
+
+def _overridden(g: ProgramGraph, cls_id: str, name: str, depth: int = 0) -> bool:
+    """True when a subclass, at any depth, defines a member called `name`: the parameter is part of a polymorphic signature."""
+    if depth > 10:
+        return False
+    for e in g.in_edges(cls_id, EdgeKind.INHERITS):
+        sub = g.node(e.src)
+        if sub.kind is NodeKind.CLASS and (any(c.name == name for c in g.children(sub.id)) or _overridden(g, sub.id, name, depth + 1)):
+            return True
+    return False
+
+
+def _implements(program: Program, cls: Node) -> bool:
+    """A TypeScript class that `implements` an interface: its method signatures are the interface's."""
+    sd = program.symbol_def(cls)
+    return sd is not None and sd.node is not None and contains_any(sd.node, frozenset({"implements_clause"}))

@@ -19,6 +19,7 @@ from vibepiler.frontend.flow import GLOBAL, Branch, Def, Flow, Jump, Loop, Plain
 from vibepiler.frontend.languages.base import LanguageSpec
 from vibepiler.frontend.loader import SourceFile
 
+HOISTED = frozenset({"function_declaration", "generator_function_declaration", "type_alias_declaration", "interface_declaration"})  # JS/TS: in scope before any statement runs
 MAX_ROUNDS = 50  # a loop's fixpoint settles in two or three; this only guards against a bug
 
 
@@ -68,13 +69,21 @@ class _Walker:
         return self._flows[key]
 
     def record(self, d: Def, live: bool) -> None:
-        self.records[(d.node.start_byte, d.node.type, d.name, d.kind, d.group)] = (d, live)
+        """Live if any walk over this definition found it live: loop rounds and `finally` are walked more than once."""
+        key = (d.node.start_byte, d.node.type, d.name, d.kind, d.group)
+        self.records[key] = (d, live or (key in self.records and self.records[key][1]))
 
     # ----- blocks ------------------------------------------------------------------------------
     def block(self, stmts: list[Node], out: set[str]) -> set[str]:
         for i, s in enumerate(stmts[:-1]):
             if self.terminates(s):
-                self.unreachable[stmts[i + 1].start_byte] = (stmts[i + 1], stmts[-1])
+                run: list[Node] = []
+                for t in [*stmts[i + 1 :], None]:  # report each run of dead statements between hoisted declarations
+                    if t is not None and t.type not in HOISTED:
+                        run.append(t)
+                    elif run:
+                        self.unreachable[run[0].start_byte] = (run[0], run[-1])
+                        run = []
                 stmts = stmts[: i + 1]
                 break
         live = out
@@ -176,7 +185,9 @@ class _Walker:
         return body_in | caught
 
     def with_(self, f: With, out: set[str]) -> set[str]:
+        self.handlers.append(out)  # `suppress(...)` and friends: any statement in the body may end it early
         body_in = self.block(f.body, out)
+        self.handlers.pop()
         for d in f.defs:
             self.record(d, d.kind == "attribute" or d.name in body_in)
         return f.uses | (body_in - {d.name for d in f.defs})
