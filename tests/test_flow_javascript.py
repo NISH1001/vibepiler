@@ -28,7 +28,7 @@ def test_a_declaration_without_a_value_defines_nothing():
 def test_assignment_and_augmented_assignment():
     spec, sf, _, stmts = js("function f(x) { x = 2; x += 1 }")
     a, b = spec.classify(stmts[0], sf), spec.classify(stmts[1], sf)
-    assert a.defs[0].name == "x" and a.uses == set() and b.uses == {"x"} and b.defs[0].name == "x"
+    assert a.defs[0].name == "x" and a.uses == set() and b.uses == {"x"} and b.defs == []
 
 
 def test_const_destructuring_shares_a_group():

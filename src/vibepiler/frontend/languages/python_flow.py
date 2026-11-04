@@ -96,10 +96,10 @@ class PythonFlow:
         has_call = _has(right, SIDE_EFFECTS)
         defs: list[Def] = []
         uses = self.names_in(right, sf)
+        if n.type == "augmented_assignment":  # `acc |= x` may mutate in place: a read, never a store we could drop
+            return Plain(stmt, [], uses | self.names_in(targets[0], sf))
         for t in targets:
             self._targets(t, stmt, sf, defs, uses, has_call)
-        if n.type == "augmented_assignment":
-            uses |= {d.name for d in defs if d.kind != "attribute"}
         return Plain(stmt, defs, uses)
 
     def _targets(self, t: Node, stmt: Node, sf: SourceFile, defs: list[Def], uses: set[str], has_call: bool, group: int = 0) -> None:

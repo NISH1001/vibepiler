@@ -208,7 +208,7 @@ class PythonSpec(PythonFlow, LanguageSpec):
         if not stmts or len(stmts) > 1:
             return False
         s = stmts[0]
-        if s.type == "pass_statement":
+        if s.type in ("pass_statement", "ellipsis"):  # this grammar puts a bare `...` straight in the block
             return True
         if s.type == "expression_statement" and s.named_child_count == 1 and s.named_children[0].type == "ellipsis":
             return True

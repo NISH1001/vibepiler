@@ -122,9 +122,9 @@ class JavaScriptFlow:
         right = n.child_by_field_name("right")
         defs: list[Def] = []
         uses = self.names_in(right, sf)
+        if n.type == "augmented_assignment_expression":  # a read of the target; never a store we would drop
+            return Plain(stmt, [], uses | self.names_in(n.child_by_field_name("left"), sf))
         self._targets(n.child_by_field_name("left"), stmt, sf, defs, uses, _has(right, SIDE_EFFECTS) if right is not None else False)
-        if n.type == "augmented_assignment_expression":
-            uses |= {d.name for d in defs if d.kind != "attribute"}
         return Plain(stmt, defs, uses)
 
     def _if(self, stmt: Node, n: Node, sf: SourceFile) -> Branch:

@@ -19,6 +19,7 @@ from vibepiler.passes.diagnostic import Diagnostic
 from vibepiler.passes.duplicates import DuplicatesPass
 from vibepiler.passes.entry_points import EntryPointsPass
 from vibepiler.passes.hotspots import HotspotsPass
+from vibepiler.passes.liveness import LivenessPass
 from vibepiler.passes.metric import Metric
 from vibepiler.passes.responsibilities import ResponsibilitiesPass
 from vibepiler.passes.semantic_duplicates import SemanticDuplicatesPass
@@ -28,6 +29,7 @@ from vibepiler.passes.wrappers import WrappersPass
 _PASSES: list[Pass] = [
     EntryPointsPass(),
     DeadCodePass(),
+    LivenessPass(),
     UnusedImportsPass(),
     CyclesPass(),
     ComplexityPass(),
