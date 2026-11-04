@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import PurePosixPath
+
 from vibepiler.ir.model import CALLABLE_KINDS, EdgeKind, NodeKind
 from vibepiler.ir.program import Program
 from vibepiler.passes.base import Pass
@@ -15,6 +17,7 @@ from vibepiler.passes.manifests import (
     normalize_py,
     PY_IMPORT_TO_DIST,
     PY_TOOL_PACKAGES,
+    governing,
     read_manifests,
 )
 
@@ -44,7 +47,9 @@ class BloatPass(Pass):
         g = program.graph
         if g.meta.get("scope", "directory") != "directory":
             return []  # one file or a snippet cannot be held to a folder's manifest
-        manifests = read_manifests(program.root)
+        files = [n.file for n in g.nodes(NodeKind.MODULE) if n.file]
+        folders = {"", *(str(p) for f in files for p in PurePosixPath(f).parents if str(p) != ".")}
+        manifests = read_manifests(program.root, folders)
         if not manifests:
             return []
         diags: list[Diagnostic] = []
@@ -61,8 +66,15 @@ class BloatPass(Pass):
         # a standalone script may declare its own dependencies (PEP 723); those imports owe the manifest nothing
         inline = {f.file.rel: deps for f in program.facts.values() if f.file.language == "python" and (deps := script_dependencies(f.file.source.decode("utf-8", "replace")))}
 
+        owners: dict[tuple[str, str], list] = {}
+        for lang, by_key in imported.items():
+            for fs in by_key.values():
+                for f in fs:
+                    if (lang, f) not in owners:
+                        owners[(lang, f)] = governing(manifests, lang, f)
         for m in manifests:
-            used = imported[m.language]
+            # only the imports of files this manifest governs: a frontend/ package.json answers for frontend/ alone
+            used = {k: own for k, fs in imported[m.language].items() if (own := {f for f in fs if any(o is m for o in owners[(m.language, f)])})}
             declared = {**{k: ("dep", v) for k, v in m.dependencies.items()}, **{k: ("dev", v) for k, v in m.dev_dependencies.items()}}
             for name, (group, spec) in sorted(declared.items()):
                 key = normalize_py(name) if m.language == "python" else name

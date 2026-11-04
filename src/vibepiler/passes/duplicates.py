@@ -28,6 +28,8 @@ class DuplicatesPass(Pass):
             d = program.symbol_def(n)
             if d is None or d.node is None:
                 continue
+            if g.node(n.module).attrs.get("is_migration"):  # type: ignore[arg-type]
+                continue  # each migration is frozen once written: repeating the last one's shape is the point
             spec = program.spec_for(n)
             body = d.node.child_by_field_name("body") or d.node
             seq = type_sequence(body, spec.leaf_types)

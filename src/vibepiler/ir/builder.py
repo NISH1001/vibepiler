@@ -413,7 +413,7 @@ class _Builder:
                     self._mark_used(mid, name, ".".join(parts[:i]))
                     return b
         b = self.bindings.get(mid, {}).get(name)
-        if b is not None and not isinstance(b, DefBinding):
+        if not isinstance(b, DefBinding):  # an import we could not resolve still counts as used when its name is
             self._mark_used(mid, name, None)
         return b
 

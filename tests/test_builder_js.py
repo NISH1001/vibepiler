@@ -79,3 +79,29 @@ def test_node_builtins_are_namespaced(g):
 
 def test_unresolved_receiver_methods_land_in_name_registry(g):
     assert g.meta["used_member_names"].get("find", 0) >= 1
+
+
+def _monorepo(tmp_path):
+    fe = tmp_path / "frontend"
+    (fe / "src" / "app").mkdir(parents=True)
+    (fe / "src" / "providers").mkdir()
+    (fe / "package.json").write_text('{"name": "fe", "dependencies": {"react": "19"}}')
+    (fe / "src" / "app" / "page.tsx").write_text(
+        'import { useAuth } from "@/providers/auth";\nimport { Missing } from "@/nowhere/missing";\n\n'
+        "export default function Page() {\n  const a = useAuth();\n  return <Missing a={a} />;\n}\n"
+    )
+    (fe / "src" / "providers" / "auth.ts").write_text("export function useAuth() {\n  return 1;\n}\n")
+    return build_program(tmp_path)
+
+
+def test_at_alias_resolves_against_the_nearest_package_not_the_repo_root(tmp_path):
+    g = _monorepo(tmp_path).graph
+    targets = {e.dst for e in g.out_edges("mod:frontend/src/app/page.tsx", EdgeKind.IMPORTS)}
+    assert "mod:frontend/src/providers/auth.ts" in targets
+
+
+def test_an_unresolved_import_that_is_used_is_not_unused(tmp_path):
+    from vibepiler.passes.registry import run_pass
+
+    diags = run_pass("unused-imports", _monorepo(tmp_path))
+    assert [d.message for d in diags if d.code == "unused-import"] == []  # `Missing` resolves nowhere, but JSX uses it
