@@ -161,3 +161,48 @@ def test_the_fragment_names_only_nonzero_kinds():
 def test_all_metrics_prints_bloat_then_live():
     assert [m.label for m in all_metrics()] == ["bloat", "live"]
     assert Liveness.better == "high" and Liveness(defined=10, live=8, dead=dict(KINDS0)).trips("<", 0.9)
+
+
+# ------------------------------------------------------------------ the fixtures, and ruff as the oracle for Python
+import json  # noqa: E402
+import re  # noqa: E402
+import shutil  # noqa: E402
+import subprocess  # noqa: E402
+
+import pytest  # noqa: E402
+
+RUFF = shutil.which("ruff")
+JSFIX = Path(__file__).parent / "fixtures" / "jsproj"
+
+
+@pytest.mark.skipif(RUFF is None, reason="ruff is a dev dependency")
+def test_ruff_f841_is_contained_in_dead_store_and_every_extra_is_a_named_case():
+    out = subprocess.run([RUFF, "check", "--select", "F841,ARG", "--output-format", "json", "--no-cache", "--isolated", str(FIX / "src")], capture_output=True, text=True)
+    ruff = json.loads(out.stdout or "[]")
+    rel = lambda r: Path(r["filename"]).resolve().relative_to(FIX.resolve()).as_posix()  # noqa: E731
+    f841 = {(rel(r), r["location"]["row"]) for r in ruff if r["code"] == "F841"}
+    arg = {(rel(r), re.search(r"`([^`]+)`", r["message"]).group(1)) for r in ruff if r["code"].startswith("ARG")}
+    prog = Compiler(FIX).run(opt_level=1, emit=()).program
+    src = [d for d in prog.diagnostics if (d.file or "").startswith("src/")]
+    ours = {(d.file, d.line) for d in src if d.code == "dead-store"}
+    params = {(d.file, n) for d in src if d.code == "unused-param" for n in d.data["names"]}
+    assert f841 and f841 <= ours
+    named = {(d.file, d.line) for d in src if d.code == "dead-store" and (d.data.get("overwritten_at") or len(d.data["names"]) > 1 or d.data.get("binding") == "loop")}
+    assert ours - f841 <= named
+    assert params and params <= arg
+
+
+def test_the_python_fixture_leftovers_are_each_found():
+    prog = Compiler(FIX).run(opt_level=1, emit=()).program
+    got = {(d.code, tuple(d.data.get("names") or ())) for d in prog.diagnostics if d.file == "src/app/leftovers.py" and d.pass_name == "liveness"}
+    assert got == {
+        ("dead-store", ("items",)), ("dead-store", ("data",)), ("dead-store", ("result",)), ("unused-param", ("channel",)),
+        ("dead-store", ("first", "second")), ("dead-store", ("fh",)), ("dead-store", ("exc",)), ("dead-branch", ()), ("unreachable-code", ()),
+        ("unused-attribute", ("cache",)),
+    }
+
+
+def test_the_typescript_fixture_leftovers_are_each_found():
+    prog = Compiler(JSFIX).run(opt_level=1, emit=()).program
+    got = {(d.code, tuple(d.data.get("names") or ())) for d in prog.diagnostics if d.file == "src/leftovers.ts" and d.pass_name == "liveness"}
+    assert got == {("dead-store", ("items",)), ("dead-store", ("data",)), ("dead-store", ("result",)), ("unused-param", ("channel",)), ("unused-attribute", ("lastSeen",))}
