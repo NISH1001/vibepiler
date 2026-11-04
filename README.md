@@ -248,7 +248,7 @@ Vibepiler never edits your code. Each pass is the analysis half of a compiler op
 | `wrappers` | inlining | Functions whose entire body is one call to another project function (`pass-through-wrapper` when the arguments are forwarded unchanged, `thin-wrapper` otherwise) and chains of them (`indirection-chain`). Skips decorated functions, roots, and overrides. | warning / info |
 | `hotspots` | critical-path analysis | Fan-in/fan-out per module, god modules, PageRank-central functions, hub functions. | warning / info |
 | `abstraction` | devirtualization / indirection removal | Abstract classes with exactly one implementation (`single-implementation`), base classes with one subclass and no other use, abstract classes with none, classes with a single real method (`class-as-function`), all-static classes (`namespace-class`), helpers called exactly once from the same module (`single-use-helper`), deep inheritance, tiny modules with one importer. Skips dataclasses, pydantic/ORM models, enums, exceptions. | warning / info |
-| `bloat` | link-time pruning | Dependencies declared in `pyproject.toml` / `requirements*.txt` / `package.json` but never imported (`unused-dependency`), imported packages not declared (`undeclared-dependency`), `except: pass` (`swallowed-exception`), try/except that only re-raises (`redundant-try`), log-and-reraise, stub functions. | warning / info |
+| `bloat` | link-time pruning | Dependencies declared in `pyproject.toml` / `requirements*.txt` / `package.json` but never imported (`unused-dependency`), imported packages not declared (`undeclared-dependency`; a script that declares its own in a PEP 723 `# /// script` block is honoured), `except: pass` (`swallowed-exception`), try/except that only re-raises (`redundant-try`), log-and-reraise, stub functions. | warning / info |
 | `duplicates` | common-subexpression elimination | Functions with identical AST shape ignoring identifiers and literals (`duplicate-function`), and near-identical ones by 4-gram Jaccard similarity (`near-duplicate-function`). `-O2` only. | warning / info |
 | `semantic-duplicates` | value numbering (semantic CSE) | Functions that do the same job with different code, by embedding similarity. Only mutual nearest neighbours above the threshold are reported, so the list stays short and precise. `-O3` only. | warning / info |
 | `responsibilities` | function partitioning | Modules whose functions cluster into several unrelated groups by meaning (a module that is really three modules). `-O3` only. | info |
@@ -348,7 +348,7 @@ The first thing it was run on was vibepiler. Five rounds of the loop, each measu
 
 ![Bloat and tangle over the five bootstrap rounds, and the removable lines per round](docs/img/bootstrap.png)
 
-*Left: bloat and tangle, two unitless shares on one axis. Right: the lines the analysis could show removable. Vector versions for papers: [`docs/img/bootstrap.svg`](docs/img/bootstrap.svg), [`docs/img/bootstrap.pdf`](docs/img/bootstrap.pdf); regenerate with `uv run --with matplotlib python scripts/bootstrap_figure.py`.*
+*Left: bloat and tangle, two unitless shares on one axis. Right: the lines the analysis could show removable. Vector versions for papers: [`docs/img/bootstrap.svg`](docs/img/bootstrap.svg), [`docs/img/bootstrap.pdf`](docs/img/bootstrap.pdf); regenerate with `uv run scripts/bootstrap_figure.py` (the script declares matplotlib itself, PEP 723).*
 
 | | start | round 1 | round 2 | round 3 | round 4 | round 5 |
 |---|---|---|---|---|---|---|

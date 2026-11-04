@@ -8,6 +8,7 @@ from vibepiler.passes.base import Pass
 from vibepiler.passes.diagnostic import Diagnostic, Severity
 from vibepiler.passes.entry_points import is_dunder
 from vibepiler.passes.manifests import (
+    script_dependencies,
     is_js_tool_package,
     is_py_stdlib,
     js_package_for_specifier,
@@ -57,6 +58,8 @@ class BloatPass(Pass):
             lang = "python" if src.language == "python" else "javascript"
             key = normalize_py(PY_IMPORT_TO_DIST.get(dst.name, dst.name)) if lang == "python" else (js_package_for_specifier(dst.name) or dst.name)
             imported[lang].setdefault(key, set()).add(src.file or "")
+        # a standalone script may declare its own dependencies (PEP 723); those imports owe the manifest nothing
+        inline = {f.file.rel: deps for f in program.facts.values() if f.file.language == "python" and (deps := script_dependencies(f.file.source.decode("utf-8", "replace")))}
 
         for m in manifests:
             used = imported[m.language]
@@ -87,6 +90,9 @@ class BloatPass(Pass):
                 )
             declared_keys = set(declared)
             for key, files in sorted(used.items()):
+                files = {f for f in files if key not in inline.get(f, ())}
+                if not files:
+                    continue
                 if m.language == "python":
                     if is_py_stdlib(key) or key in declared_keys or any(k.replace("-", "") == key.replace("-", "") for k in declared_keys):
                         continue
