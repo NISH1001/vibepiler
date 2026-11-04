@@ -8,6 +8,7 @@ tree-sitter on first access.
 from __future__ import annotations
 
 import os
+from contextlib import suppress
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
@@ -15,7 +16,7 @@ from pathlib import Path
 import pathspec
 from tree_sitter import Tree
 
-from vibepiler.frontend.parser import GRAMMARS, parse, walk
+from vibepiler.frontend.parser import parse, walk
 
 DEFAULT_IGNORES: tuple[str, ...] = (
     ".git/",
@@ -85,14 +86,63 @@ class SourceFile:
         return self.source[node.start_byte : node.end_byte].decode("utf-8", errors="replace")
 
 
+CODE_MARKS = "(){};="  # a string with one of these is code, not a path
+#: the grammars tried on a snippet, in tie-break order, with the file name the snippet is given
+SNIPPET_CANDIDATES: tuple[tuple[str, str], ...] = (("python", "snippet.py"), ("javascript", "snippet.js"), ("typescript", "snippet.ts"), ("typescript", "snippet.tsx"))
+
+
+def classify_source(source: str | Path) -> tuple[str, Path]:
+    """("directory" | "file", the path) or ("string", STRING_ROOT). A path that is not on disk is an error, never a snippet."""
+    if isinstance(source, Path):
+        if source.is_dir():
+            return "directory", source
+        if source.is_file():
+            return "file", source
+        raise FileNotFoundError(f"{source}: no such file or directory")
+    if not source.strip():
+        raise ValueError("empty source: give a directory, a file, or a code string")
+    if "\n" in source:
+        return "string", STRING_ROOT
+    with suppress(OSError, ValueError):  # too long for a path, or an embedded NUL: not on disk either way
+        p = Path(source)
+        if p.is_dir():
+            return "directory", p
+        if p.is_file():
+            return "file", p
+    if any(c in CODE_MARKS for c in source) or (any(c.isspace() for c in source) and any(errors == 0 for _, errors in _snippet_parses(source.encode("utf-8")).values())):
+        return "string", STRING_ROOT
+    raise FileNotFoundError(f"{source!r}: no such file or directory (a code string has a newline, code-like characters, or parses cleanly)")
+
+
+def _snippet_parses(data: bytes) -> dict[tuple[str, str], tuple[Tree, int]]:
+    """Every candidate grammar's parse of a snippet, with its count of error and missing nodes."""
+    out: dict[tuple[str, str], tuple[Tree, int]] = {}
+    for lang, rel in SNIPPET_CANDIDATES:
+        tree = parse(lang, data, rel=rel)
+        out[(lang, rel)] = (tree, sum(1 for n in walk(tree.root_node) if n.is_error or n.is_missing))
+    return out
+
+
 def source_from_string(code: str, language: str | None = None) -> SourceFile:
-    """One in-memory source file for a code string. Without `language`, the grammar with the fewest error nodes wins (python, javascript, typescript on a tie)."""
+    """One in-memory source file for a code string. Without `language`, the grammar with the fewest error nodes wins (python, javascript, typescript, tsx on a tie)."""
     data = code.encode("utf-8")
-    if language is None:
-        errors = {name: sum(1 for n in walk(parse(name, data).root_node) if n.is_error or n.is_missing) for name in GRAMMARS}
-        language = min(errors, key=errors.__getitem__)
-    rel = "snippet" + next(ext for ext, name in EXTENSIONS.items() if name == language)
-    return SourceFile(path=STRING_ROOT / rel, rel=rel, language=language, root=STRING_ROOT, source=data)
+    if language is not None:
+        rel = next(r for lang, r in SNIPPET_CANDIDATES if lang == language)
+        return SourceFile(path=STRING_ROOT / rel, rel=rel, language=language, root=STRING_ROOT, source=data)
+    (language, rel), (tree, _) = min(_snippet_parses(data).items(), key=lambda kv: kv[1][1])
+    sf = SourceFile(path=STRING_ROOT / rel, rel=rel, language=language, root=STRING_ROOT, source=data)
+    sf.__dict__["tree"] = tree  # the winning parse; the snippet is not parsed again
+    return sf
+
+
+def source_from_file(path: Path, root: Path, language: str | None = None) -> SourceFile:
+    """The one file the caller named; ignore patterns do not apply to it. An unknown extension, or a `language` that is not the file's, is an error."""
+    lang = EXTENSIONS.get(path.suffix.lower())
+    if lang is None:
+        raise ValueError(f"cannot compile {path.name}: unknown extension {path.suffix!r}; known: {', '.join(EXTENSIONS)}")
+    if language is not None and language != lang:
+        raise ValueError(f"{path.name} is {lang}, not {language}")
+    return SourceFile(path=path, rel=path.relative_to(root).as_posix(), language=lang, root=root, source=path.read_bytes())
 
 
 def _read_gitignore(root: Path) -> list[str]:

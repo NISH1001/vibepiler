@@ -41,6 +41,8 @@ class BloatPass(Pass):
     # --- dependencies ----------------------------------------------------------
     def _dependencies(self, program: Program) -> list[Diagnostic]:
         g = program.graph
+        if g.meta.get("scope", "directory") != "directory":
+            return []  # one file or a snippet cannot be held to a folder's manifest
         manifests = read_manifests(program.root)
         if not manifests:
             return []

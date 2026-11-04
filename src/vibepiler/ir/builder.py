@@ -85,19 +85,21 @@ def package_id(name: str) -> str:
     return f"pkg:{name}"
 
 
-def build_program(root: str | Path, config: Config | None = None, files: list[SourceFile] | None = None) -> Program:
+def build_program(root: str | Path, config: Config | None = None, files: list[SourceFile] | None = None, scope: str = "directory") -> Program:
+    """`scope` is what the caller handed over: "directory", "file" or "string"; passes that judge a whole project read it from `graph.meta`."""
     root = Path(root)
     root = root if root == STRING_ROOT else root.resolve()  # a string program has no place on disk
     cfg = config or Config.load(root)
     if files is None:
         files = discover(root, ignore=cfg.ignore, languages=cfg.languages, use_gitignore=cfg.use_gitignore)
-    builder = _Builder(root, files, cfg)
+    builder = _Builder(root, files, cfg, scope)
     return builder.build()
 
 
 class _Builder:
-    def __init__(self, root: Path, files: list[SourceFile], cfg: Config) -> None:
+    def __init__(self, root: Path, files: list[SourceFile], cfg: Config, scope: str = "directory") -> None:
         self.root = root
+        self.scope = scope
         self.files = files
         self.cfg = cfg
         self.graph = ProgramGraph()
@@ -510,6 +512,7 @@ class _Builder:
         self.graph.meta.update(
             {
                 "root": str(self.root),
+                "scope": self.scope,
                 "files": len(self.files),
                 "languages": dict(langs),
                 "parse_errors": self.parse_errors,

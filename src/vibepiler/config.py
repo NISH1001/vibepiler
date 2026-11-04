@@ -37,6 +37,8 @@ class Config:
 
     @classmethod
     def load(cls, root: Path, **overrides: Any) -> Config:
+        if root.is_file():
+            root = root.parent  # a file's config is its folder's
         data: dict[str, Any] = {}
         for candidate in (root / "vibepiler.toml", root / "pyproject.toml"):
             if candidate.is_file():
