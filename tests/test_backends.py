@@ -85,3 +85,9 @@ def test_markdown_carries_the_live_number(program):
 def test_html_carries_the_liveness_score_and_the_colour_switch(program):
     html = emit_html(program)
     assert '"liveness_score"' in html and 'id="t-colour"' in html and "livenessBlock" in html
+
+
+def test_html_graph_hides_test_modules_until_asked(program):
+    html = emit_html(program)
+    assert 'id="t-tests" aria-pressed="false"' in html  # off by default: the scores leave tests out, so does the graph
+    assert "tests: false" in html and "!show.tests && isTest(n)" in html

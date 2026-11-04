@@ -225,6 +225,7 @@
       <div class="group" role="group" aria-label="Nodes">
         <button id="t-packages" aria-pressed="false">packages</button>
         <button id="t-dead" aria-pressed="true">unreachable</button>
+        <button id="t-tests" aria-pressed="false" title="Show test modules and their symbols. The scores leave tests out, so the graph does too by default.">tests</button>
         <button id="t-flagged" aria-pressed="false">only flagged</button>
         <button id="t-colour" aria-pressed="false" title="Colour the module wedges by waste (bloat) or by the share of definitions nothing reads (live). Tint only: nothing moves.">colour: bloat</button>
       </div>
@@ -427,12 +428,14 @@ function positions() {
 
 // ---------- elements ----------
 const edgeOn = { imports: true, calls: true, references: false, inherits: true };
-const show = { packages: false, dead: true, flagged: false, bloatMin: 0 };
+const show = { packages: false, dead: true, tests: false, flagged: false, bloatMin: 0 };
+const isTest = n => !!(n.kind === 'module' ? n.attrs.is_test : (nodeById[n.module] || { attrs: {} }).attrs.is_test);
 function visibleNode(n) {
   if (n.kind === 'package') return show.packages;
   if (n.kind === 'variable') return false;
   if (n.kind !== 'module' && !expanded.has(n.module)) return false;
   if (!show.dead && n.attrs.reachable === false) return false;
+  if (!show.tests && isTest(n)) return false;
   if (show.flagged && !isFlagged(n)) return false;
   if (show.bloatMin > 0 && n.kind !== 'package' && Math.round(100 * ((n.attrs.bloat || {}).score || 0)) < show.bloatMin) return false;
   return true;
@@ -879,15 +882,16 @@ document.getElementById('bloat-min').addEventListener('input', e => {
 });
 function toggleFeedback(key) {
   const st = document.getElementById('status');
-  const n = key === 'packages' ? DATA.nodes.filter(x => x.kind === 'package').length : key === 'dead' ? modules.filter(m => m.attrs.reachable === false).length : DATA.nodes.filter(visibleNode).length;
+  const n = key === 'packages' ? DATA.nodes.filter(x => x.kind === 'package').length : key === 'dead' ? modules.filter(m => m.attrs.reachable === false).length : key === 'tests' ? modules.filter(isTest).length : DATA.nodes.filter(visibleNode).length;
   const f = findingFilter('f'), what = f.code || f.pass ? `${f.code || f.pass} findings` : f.min > 10 ? 'findings at warning or above' : 'findings';
   st.textContent = key === 'packages' ? (show.packages ? `${n} external packages shown in a row below the modules` : 'external packages hidden')
     : key === 'dead' ? (show.dead ? `${n} unreachable modules shown, grey, in the column on the right` : `${n} unreachable modules hidden`)
+    : key === 'tests' ? (show.tests ? `${n} test modules shown` : `${n} test modules hidden; the scores leave them out too`)
     : (show.flagged ? `only the ${n} nodes with ${what} (the Findings filters decide)` : 'showing everything');
   if (show[key] && !REDUCED) cy.animate({ fit: { eles: cy.nodes(':visible'), padding: 40 } }, { duration: 450, easing: 'ease-in-out-cubic' });
   clearTimeout(say.t); say.t = setTimeout(() => { st.textContent = ''; }, 6000);
 }
-bindToggle('t-packages', 'packages'); bindToggle('t-dead', 'dead'); bindToggle('t-flagged', 'flagged');
+bindToggle('t-packages', 'packages'); bindToggle('t-dead', 'dead'); bindToggle('t-tests', 'tests'); bindToggle('t-flagged', 'flagged');
 document.getElementById('t-colour').addEventListener('click', e => {
   colourBy = colourBy === 'bloat' ? 'live' : 'bloat';
   e.currentTarget.setAttribute('aria-pressed', String(colourBy === 'live'));
