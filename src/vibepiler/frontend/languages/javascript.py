@@ -12,8 +12,20 @@ from pathlib import Path
 
 from tree_sitter import Node
 
-from vibepiler.frontend.facts import CallSite, EntryHint, FileFacts, ImportDef, RefSite, SymbolDef
-from vibepiler.frontend.languages.base import decorator_parts, ImportOption, LanguageSpec
+from vibepiler.frontend.facts import (
+    CallSite,
+    EntryHint,
+    FileFacts,
+    ImportDef,
+    RefSite,
+    SymbolDef,
+)
+from vibepiler.frontend.languages.base import (
+    ImportOption,
+    LanguageSpec,
+    decorator_parts,
+)
+from vibepiler.frontend.languages.javascript_flow import JavaScriptFlow
 from vibepiler.frontend.loader import SourceFile
 from vibepiler.ir.model import NodeKind
 from vibepiler.passes.manifests import js_package_for_specifier
@@ -44,7 +56,7 @@ _UNWRAP = {"non_null_expression", "parenthesized_expression", "as_expression", "
 _TYPE_CONTEXT = {"type_annotation", "type_arguments", "generic_type", "union_type", "intersection_type", "array_type", "object_type", "type_predicate", "asserts", "lookup_type", "index_type_query", "conditional_type", "tuple_type", "readonly_type", "typeof_type", "type_query"}
 
 
-class JavaScriptSpec(LanguageSpec):
+class JavaScriptSpec(JavaScriptFlow, LanguageSpec):
     name = "javascript"
     branch_types = frozenset({"if_statement", "for_statement", "for_in_statement", "while_statement", "do_statement", "catch_clause", "switch_case", "ternary_expression"})
     nesting_types = frozenset({
