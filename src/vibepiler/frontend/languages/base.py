@@ -14,7 +14,9 @@ from tree_sitter import Node
 from dataclasses import dataclass
 
 from vibepiler.frontend.facts import FileFacts, ImportDef
+from vibepiler.frontend.flow import Flow, Plain
 from vibepiler.frontend.loader import SourceFile
+from vibepiler.frontend.parser import walk
 
 
 @dataclass(slots=True)
@@ -106,6 +108,25 @@ class LanguageSpec(ABC):
         return []
 
     def is_stub_body(self, stmts: list[Node], sf: SourceFile) -> bool:
+        return False
+
+    # --- flow hooks, for the liveness dataflow (see frontend/flow.py) ------------------------
+    def classify(self, stmt: Node, sf: SourceFile) -> Flow:
+        """The statement's flow shape. Unknown statements read every name they contain and define nothing."""
+        return Plain(stmt, [], self.names_in(stmt, sf))
+
+    def names_in(self, node: Node, sf: SourceFile) -> set[str]:
+        return {sf.text(n) for n in walk(node) if n.type == "identifier"}
+
+    def function_params(self, def_node: Node, sf: SourceFile) -> list[tuple[str, str]]:
+        """(name, "self" | "plain" | "rest") in positional order."""
+        return []
+
+    def captured_names(self, def_node: Node, sf: SourceFile) -> set[str]:
+        """Names read inside nested functions and lambdas: live at every point of the enclosing function."""
+        return set()
+
+    def has_dynamic_scope(self, def_node: Node, sf: SourceFile) -> bool:
         return False
 
     def is_log_call(self, stmt: Node, sf: SourceFile) -> bool:
