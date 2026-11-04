@@ -46,6 +46,23 @@ uvx --from git+https://github.com/NISH1001/vibepiler vibepiler compile igaurab/g
 cd my-vibe-coded-app && uvx --from git+https://github.com/NISH1001/vibepiler vibepiler compile .
 ```
 
+### Choosing what to compile
+
+Name folders or files after the source to report on just those parts, and leave paths out with `--exclude`:
+
+```bash
+# two folders of a GitHub repo, without its migrations
+uvx --from git+https://github.com/NISH1001/vibepiler vibepiler compile NASA-IMPACT/akd-labs api/ services/ --exclude alembic/
+
+# a GitHub folder link compiles that folder
+vibepiler compile https://github.com/NASA-IMPACT/akd-labs/tree/main/frontend
+
+# local folders work the same way; --exclude takes commas and repeats
+vibepiler compile . backend/ api/ --exclude "**/gen/" --exclude scripts/
+```
+
+By default the whole source is still read and only the named paths are scored and reported. That is how a compiler builds one unit against the whole program: a route registered in `main.py`, or a function in `services/` that only `workers/` calls, is still alive when you name `api/ services/`. Add `--isolate` to read the named paths alone: it is faster, but anything that reaches them from outside is not seen. On akd-labs, `api/ services/` scores 3.7% waste; with `--isolate` it scores 56.9%, because the routes are wired up in `main.py`. Naming `main.py` too gets most of that back.
+
 If you will run it more than once, install the command:
 
 ```bash
@@ -130,12 +147,13 @@ uv run pytest
 ## The CLI (deliberately compiler-shaped)
 
 ```
-vibepiler compile <path | owner/repo[@ref] | git url> [-O0|-O1|-O2|-O3] [-W all|warning|error]
+vibepiler compile <path | owner/repo[@ref] | git url> [paths...] [-O0|-O1|-O2|-O3] [-W all|warning|error]
                          [--emit json,dot,mermaid,html,md] [-o out/] [--only pass,pass] [--skip pass]
-                         [--ignore "glob,glob"] [--lang python,typescript] [--fail-on warning|error|bloat>0.25] [-q]
+                         [--exclude "glob,glob"]... [--isolate] [--lang python,typescript]
+                         [--fail-on warning|error|bloat>0.25|live<0.9] [-q]
                          [-R] [--baseline previous/ir.json] [--cache DIR] [--refresh]
-vibepiler size    <path> [-O1|-O2|-O3] [--top N]    # waste, tangle and bloat per folder, like `size` on a binary
-vibepiler graph   <path> [--level module|symbol] [--format dot|mermaid|json] [--packages]
+vibepiler size    <path> [paths...] [--exclude ...] [--isolate] [-O1|-O2|-O3] [--top N]   # waste, tangle and bloat per folder
+vibepiler graph   <path> [paths...] [--exclude ...] [--isolate] [--level module|symbol] [--format dot|mermaid|json] [--packages]
 vibepiler paths   <path> --from <symbol> [--to <symbol>] [--depth N]
 vibepiler similar <path> <symbol> [-n 10]          # -O3 tier: nearest functions by meaning
 vibepiler passes
@@ -145,7 +163,8 @@ vibepiler passes
 - `-W` is the minimum severity printed to the terminal. `-Wall` shows `info` findings. Everything is always in `ir.json`/`report.md`.
 - `-R` prints the **missed-optimization remarks** (after clang's `-Rpass-missed`): the elimination plan, one line per edit with the lines it frees and how sure the tool is.
 - `--baseline previous/ir.json` prints how waste, tangle and bloat moved since an earlier run. That is the loop: apply the top remark, re-run, repeat.
-- `--fail-on warning` or `--fail-on bloat>0.25` makes it a CI gate.
+- `--fail-on warning`, `--fail-on bloat>0.25` or `--fail-on live<0.9` makes it a CI gate.
+- `paths...` after the source are the folders or files to report on; `--exclude` (old name `--ignore`) leaves gitignore-style patterns out; `--isolate` reads the named paths alone. See [Choosing what to compile](#choosing-what-to-compile).
 
 What each tier does:
 
@@ -406,7 +425,9 @@ Optional `[tool.vibepiler]` in `pyproject.toml` (or a `vibepiler.toml`):
 
 ```toml
 [tool.vibepiler]
-ignore = ["migrations/**", "scripts/one_off_*.py"]
+include = ["backend/", "services/"]   # report on these paths (default: the whole project)
+exclude = ["migrations/**", "scripts/one_off_*.py"]   # leave these out ("ignore" is still read)
+isolate = false                     # true: read only `include`, not the whole project
 accept = ["class-as-function:*Embedder", "single-use-helper:*_id"]   # findings you have decided to keep: a code, or code:qualname-glob; counted, never reported
 languages = ["python"]              # default: all detected
 opt_level = 2
@@ -429,16 +450,18 @@ responsibility_similarity = 0.32    # -O3; omit to use the per-model default
 
 ## Using it from Python
 
-`Compiler(source)` takes a project directory, one source file, or a code string. A path must exist, and a named file is compiled whatever the ignore rules say. A string that is not on disk is source code when it has a newline, code-like characters, or parses cleanly; its grammar is the one that parses it with the fewest errors unless you pass `language=`. One file or a snippet is never checked against a folder's dependency manifest.
+`Compiler(source)` takes a project directory, a repo (`owner/repo[@ref]`, a GitHub or git URL, cloned into `~/.cache/vibepiler`), one source file, or a code string. For a directory or a repo, `include=` names the paths to report on, `exclude=` leaves patterns out and `isolate=True` reads the included paths alone; the same three chain as methods. A path must exist, and a named file is compiled whatever the ignore rules say. A string that is not on disk is source code when it has a newline, code-like characters, or parses cleanly; its grammar is the one that parses it with the fewest errors unless you pass `language=`. One file or a snippet is never checked against a folder's dependency manifest.
 
 ```python
 import vibepiler
-from vibepiler.compiler import Compiler
+from vibepiler import Compiler
 
 result = Compiler("path/to/project").run(opt_level=2, emit=["json", "html"], out_dir="out")
+result = Compiler("NASA-IMPACT/akd-labs", include=["api/", "services/"], exclude=["alembic/"]).run(emit=())
+result = Compiler(".").include("backend/").exclude("**/gen/").isolate().run(emit=())   # the same, chained
 result = Compiler("path/to/one_file.py").run(emit=())                # just that file; config from its folder
 result = Compiler("def f():\n    return 1\n", language="python").run()   # a snippet; language is optional
-result = vibepiler.compile("path/to/project", emit=["json"], out_dir="out")       # the one-call form (remote repos are CLI-only)
+result = vibepiler.compile("path/to/project", include=["api/"], emit=["json"], out_dir="out")   # the one-call form
 result.bloat.waste, result.bloat.score     # typed scores; result.scores has every one by label
 result.liveness.value                      # share of definitions that reach a use: result.scores["live"]
 program = result.program                   # result.diagnostics, result.graph and result.metrics are shortcuts into it

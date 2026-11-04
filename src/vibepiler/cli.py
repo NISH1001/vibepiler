@@ -79,9 +79,11 @@ def _split(values: list[str] | None) -> list[str]:
     return [p.strip() for v in values or [] for p in v.split(",") if p.strip()]
 
 
-def _scoped_config(root: Path, spec: str, paths: list[str] | None, exclude: list[str] | None, **overrides) -> Config:  # noqa: ANN003
-    """The project's config plus what this command line names: the paths to read (and a GitHub link's folder) and the exclusions."""
+def _scoped_config(root: Path, spec: str, paths: list[str] | None, exclude: list[str] | None, isolate: bool = False, **overrides) -> Config:  # noqa: ANN003
+    """The project's config plus what this command line names: the paths to report on (and a GitHub link's folder), the
+    exclusions, and whether to read the named paths alone."""
     cfg = Config.load(root, **overrides)
+    cfg.isolate = cfg.isolate or isolate
     cfg.include += [*filter(None, [remote_subpath(spec)]), *(paths or [])]
     cfg.exclude += _split(exclude)
     if cfg.include and not root.is_dir():
@@ -110,6 +112,7 @@ def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
     only: Optional[str] = typer.Option(None, "--only", help="Comma-separated pass names to run (others skipped)."),
     skip: Optional[str] = typer.Option(None, "--skip", help="Comma-separated pass names to skip."),
     exclude: Optional[List[str]] = typer.Option(None, "--exclude", "--ignore", help="Gitignore-style patterns to leave out, comma-separated or repeated (--ignore is the old name)."),
+    isolate: bool = typer.Option(False, "--isolate", help="Read only the named paths (faster). By default the whole source is read, so callers outside them count, and only the named paths are reported."),
     lang: Optional[str] = typer.Option(None, "--lang", help="Restrict to languages: python,javascript,typescript."),
     fail_on: Optional[str] = typer.Option(None, "--fail-on", help="Exit 1 if any finding is at/above this severity (warning|error), or if the repo's bloat exceeds a value: bloat>0.25."),
     remarks: bool = typer.Option(False, "-R", "--remarks", help="Print missed-optimization remarks: the elimination plan, one line per edit with the lines it frees."),
@@ -126,7 +129,7 @@ def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
     langs = [x.strip() for x in lang.split(",")] if lang else None
     if langs and (bad_langs := [x for x in langs if x not in available()]):
         raise typer.BadParameter(f"unknown language(s) {bad_langs}; choose from {', '.join(available())}")
-    cfg = _scoped_config(root, path, paths, exclude, languages=langs)
+    cfg = _scoped_config(root, path, paths, exclude, isolate, languages=langs)
     min_sev = _parse_warn(warn)
     emits = tuple(e.strip() for e in emit.split(",") if e.strip())
     bad = [e for e in emits if e not in EMITTERS]
@@ -182,11 +185,12 @@ def size(
     opt: int = typer.Option(None, "-O", "--opt", min=1, max=3, help="Which passes feed the score (default from config, usually -O2)."),
     top: int = typer.Option(15, "--top", help="How many remarks to print."),
     exclude: Optional[List[str]] = typer.Option(None, "--exclude", "--ignore", help="Gitignore-style patterns to leave out, comma-separated or repeated."),
+    isolate: bool = typer.Option(False, "--isolate", help="Read only the named paths (faster). By default the whole source is read, so callers outside them count, and only the named paths are reported."),
     cache: Optional[Path] = typer.Option(None, "--cache", help="Where remote repos are cloned (default ~/.cache/vibepiler)."),
 ) -> None:
     """The size report: waste, tangle and bloat per folder, like `size` on a binary, plus the top remarks."""
     root, _ = _resolve_source(path, cache)
-    cfg = _scoped_config(root, path, paths, exclude)
+    cfg = _scoped_config(root, path, paths, exclude, isolate)
     program = _run(Compiler(root, cfg), opt_level=opt, emit=()).program
     b = program.metrics.get("bloat_score")
     if not b:
@@ -230,10 +234,11 @@ def graph(
     fmt: str = typer.Option("dot", "--format", help="dot | mermaid | json"),
     packages: bool = typer.Option(False, "--packages/--no-packages", help="Include external packages."),
     exclude: Optional[List[str]] = typer.Option(None, "--exclude", "--ignore", help="Gitignore-style patterns to leave out."),
+    isolate: bool = typer.Option(False, "--isolate", help="Read only the named paths (faster). By default the whole source is read, so callers outside them count, and only the named paths are reported."),
 ) -> None:
     """Print the dependency / call graph in DOT, Mermaid or JSON."""
     root, _ = _resolve_source(path, None)
-    cfg = _scoped_config(root, path, paths, exclude)
+    cfg = _scoped_config(root, path, paths, exclude, isolate)
     try:
         program = build_program(root, config=cfg)
     except (FileNotFoundError, ValueError) as exc:
