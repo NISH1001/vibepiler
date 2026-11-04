@@ -105,3 +105,25 @@ def test_size_command_prints_waste_tangle_and_bloat_per_folder():
     assert res.exit_code == 0, res.output
     assert "waste" in res.output and "tangle" in res.output and "bloat" in res.output
     assert "src/app" in res.output and "remark:" in res.output
+
+
+def test_fail_on_live_threshold():
+    bad = runner.invoke(app, ["compile", str(FIX), "-q", "--fail-on", "live<0.999"])
+    ok = runner.invoke(app, ["compile", str(FIX), "-q", "--fail-on", "live<0.0"])
+    assert bad.exit_code == 1 and "live" in bad.output and ok.exit_code == 0
+
+
+def test_baseline_reports_a_live_move(tmp_path):
+    import json
+
+    first = runner.invoke(app, ["compile", str(FIX), "-q", "--emit", "json", "-o", str(tmp_path)])
+    ir = json.loads((tmp_path / "ir.json").read_text())
+    ir["metrics"]["liveness_score"].update({"defined": 1000, "live": 123})  # the value is derived from the counts
+    (tmp_path / "ir.json").write_text(json.dumps(ir))
+    second = runner.invoke(app, ["compile", str(FIX), "-q", "--emit", "json", "-o", str(tmp_path / "2"), "--baseline", str(tmp_path / "ir.json")])
+    assert first.exit_code == 0 and "live 12.3% →" in second.output
+
+
+def test_size_command_has_a_live_column():
+    res = runner.invoke(app, ["size", str(FIX)])
+    assert res.exit_code == 0 and "live" in res.output and "definitions" in res.output

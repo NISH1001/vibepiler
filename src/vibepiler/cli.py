@@ -20,7 +20,7 @@ from vibepiler.ir.builder import build_program
 from vibepiler.ir.model import EdgeKind, NodeKind
 from vibepiler.ir.program import Program
 from vibepiler.passes.diagnostic import Severity
-from vibepiler.passes.registry import all_passes, run_passes
+from vibepiler.passes.registry import all_passes, parse_gate, run_passes
 from vibepiler.remote import default_cache, fetch_remote, parse_remote, repo_name
 
 app = typer.Typer(
@@ -138,12 +138,13 @@ def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
 
 
 def _gate(program: Program, fail_on: str) -> None:
-    """Exit 1 when the run crosses the line the user drew: a severity, or `bloat>0.25`."""
-    if fail_on.startswith("bloat>"):
-        limit = float(fail_on[6:])
-        b = program.metrics.get("bloat_score", {})
-        if b and b["score"] > limit:
-            console.print(f"[red]bloat {b['score']:.0%} exceeds the limit {limit:.0%}[/red]")
+    """Exit 1 when the run crosses the line the user drew: a severity, or a score such as `bloat>0.25` or `live<0.9`."""
+    gate = parse_gate(fail_on)
+    if gate is not None:
+        cls, op, limit = gate
+        m = cls.of(program)
+        if m is not None and m.trips(op, limit):
+            console.print(f"[red]{cls.label} {m.value:.1%} is {'over' if op == '>' else 'under'} the limit {limit:.1%}[/red]")
             raise typer.Exit(1)
     elif any(d.severity >= _parse_warn(fail_on) for d in program.diagnostics):
         raise typer.Exit(1)
@@ -165,15 +166,18 @@ def size(
         console.print("[yellow]no passes ran, nothing to size[/yellow]")
         raise typer.Exit(1)
     console.print(f"[bold]vibepiler size[/bold] [cyan]{root}[/cyan]")
-    console.print(size_line(b))
+    console.print(size_line(program.metrics))
+    lv = program.metrics.get("liveness_score") or {}
+    live_by = {f["path"]: f"{f['value']:.1%}" for f in lv.get("folders", [])}
     table = Table(header_style="dim", show_lines=False)
-    for col, just in (("folder", "left"), ("modules", "right"), ("lines", "right"), ("removable", "right"), ("waste", "right"), ("tangle", "right"), ("bloat", "right")):
+    for col, just in (("folder", "left"), ("modules", "right"), ("lines", "right"), ("removable", "right"), ("waste", "right"), ("tangle", "right"), ("bloat", "right"), ("live", "right")):
         table.add_column(col, justify=just)  # type: ignore[arg-type]
     for f in b["folders"]:
-        table.add_row(f["path"], str(f["modules"]), str(f["loc"]), f"{f['removable_loc']:.0f}", f"{f['waste']:.1%}", f"{f['tangle']:.1%}", f"{f['score']:.1%}")
+        table.add_row(f["path"], str(f["modules"]), str(f["loc"]), f"{f['removable_loc']:.0f}", f"{f['waste']:.1%}", f"{f['tangle']:.1%}", f"{f['score']:.1%}", live_by.get(f["path"], ""))
     t = b.get("tests", {})
     if t.get("loc"):
-        table.add_row("[dim]tests (not in the totals)[/dim]", str(t["modules"]), str(t["loc"]), f"{t['removable_loc']:.0f}", f"{t['waste']:.1%}", f"{t['tangle']:.1%}", f"{t['score']:.1%}")
+        lt = lv.get("tests") or {}
+        table.add_row("[dim]tests (not in the totals)[/dim]", str(t["modules"]), str(t["loc"]), f"{t['removable_loc']:.0f}", f"{t['waste']:.1%}", f"{t['tangle']:.1%}", f"{t['score']:.1%}", f"{lt['value']:.1%}" if lt else "")
     console.print(table)
     print_remarks(program, top)
 

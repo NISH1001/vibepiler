@@ -182,7 +182,7 @@
     <button class="phase" role="tab" data-view="concepts"><span class="step">4 · semantic (-O3)</span><span class="name">Concepts</span><span class="count" id="concept-count">needs -O3</span></button>
     <button class="phase" role="tab" data-view="optimize"><span class="step">5 · optimize</span><span class="name">Passes</span><span class="count"><b class="num" data-count="__FINDINGS__">0</b> findings</span></button>
   </nav>
-  <div class="meter" id="meter" hidden title="bloat = 1 − (1 − waste)(1 − tangle); waste = lines that could go / lines, tangle = structure harder than its job"></div>
+  <div class="meter" id="meter" hidden title="bloat = 1 − (1 − waste)(1 − tangle); waste = lines that could go / lines, tangle = structure harder than its job. live = definitions that reach a use / definitions"></div>
 </header>
 <main>
   <!-- ========== 1 frontend ========== -->
@@ -226,6 +226,7 @@
         <button id="t-packages" aria-pressed="false">packages</button>
         <button id="t-dead" aria-pressed="true">unreachable</button>
         <button id="t-flagged" aria-pressed="false">only flagged</button>
+        <button id="t-colour" aria-pressed="false" title="Colour the module wedges by waste (bloat) or by the share of definitions nothing reads (live). Tint only: nothing moves.">colour: bloat</button>
       </div>
       <label class="slider" title="Hide every module and symbol scored below this">bloat ≥ <input type="range" id="bloat-min" min="0" max="100" step="5" value="0" aria-label="Minimum bloat"><b id="bloat-min-v">0%</b></label>
       <button id="expand-all">Expand all</button>
@@ -315,6 +316,13 @@ const diagsByNode = {};
 for (const d of DATA.diagnostics) if (d.node_id) (diagsByNode[d.node_id] ||= []).push(d);
 const worst = id => (diagsByNode[id] || []).reduce((m, d) => Math.max(m, SEV[d.severity]), 0);
 const flaggedModules = new Set(DATA.diagnostics.map(d => { const n = d.node_id && nodeById[d.node_id]; return n ? (n.kind === 'module' ? n.id : n.module) : (d.file && nodeById['mod:' + d.file] ? 'mod:' + d.file : null); }).filter(Boolean));
+let colourBy = 'bloat'; // the module wedge: waste (bloat) or the dead share of definitions (live). Tint only, never layout.
+function wedgeOf(n) {
+  if (n.kind !== 'module') return 0;
+  if (colourBy === 'live') return n.attrs.liveness ? Math.round(100 * (1 - n.attrs.liveness.value)) : 0;
+  return n.attrs.bloat ? Math.round(100 * n.attrs.bloat.waste) : 0;
+}
+const WEDGE = { bloat: '#ff6b6b', live: '#b48cff' };
 function tint(score) { // bloat: clean blue -> amber -> red
   const stops = [[79, 156, 255], [255, 176, 32], [255, 107, 107]]; const p = Math.max(0, Math.min(1, score || 0)) * 2; const i = Math.min(1, Math.floor(p)), f = p - i;
   const a = stops[i], b = stops[i + 1]; return `rgb(${a.map((v, k) => Math.round(v + (b[k] - v) * f)).join(',')})`;
@@ -439,7 +447,7 @@ function elements() {
     els.push({ group: 'nodes', classes: (v ? '' : 'hidden') + (isParent ? ' parent' : '') + (n.attrs.reachable === false && n.kind !== 'package' ? ' dead' : '') + (n.kind === 'module' && n.attrs.is_root && n.attrs.reachable !== false ? ' root' : ''),
       position: { x: pos[n.id].x, y: pos[n.id].y },
       data: { id: n.id, label: displayName(n), kind: n.kind, parent: (n.kind !== 'module' && n.kind !== 'package' && expanded.has(n.module)) ? n.module : undefined,
-        color: kc[n.kind], border: w >= 30 ? css('--error') : w >= 20 ? css('--warning') : kc[n.kind], bw: w >= 20 ? 3 : 1.5, waste: n.kind === 'module' && n.attrs.bloat ? Math.round(100 * n.attrs.bloat.waste) : 0,
+        color: kc[n.kind], border: w >= 30 ? css('--error') : w >= 20 ? css('--warning') : kc[n.kind], bw: w >= 20 ? 3 : 1.5, waste: wedgeOf(n), wedge: WEDGE[colourBy],
         size: n.kind === 'module' ? Math.min(64, 22 + Math.sqrt(n.attrs.loc || 0) * 1.4) : 20, hot: n.attrs.fan_in || 0 } });
   }
   // every edge is drawn between whatever stands for its endpoints on screen: the symbol if its module is open,
@@ -465,7 +473,7 @@ function style() {
   const ec = EDGE(); const ink = fcss('--field-ink'), ink2 = fcss('--field-ink-2'), field = fcss('--field');
   return [
     { selector: 'node', style: { label: 'data(label)', 'font-family': 'IBM Plex Sans, sans-serif', 'font-size': 10, color: ink, 'text-outline-color': field, 'text-outline-width': 2, 'text-outline-opacity': 0.85, 'text-valign': 'center', 'text-halign': 'center', 'background-color': 'data(color)', 'background-opacity': 0.92, 'border-color': 'data(border)', 'border-width': 'data(bw)', shape: 'round-rectangle', width: 'label', height: 'data(size)', padding: '6px', 'text-wrap': 'ellipsis', 'text-max-width': 170, 'min-zoomed-font-size': 4, 'underlay-color': 'data(color)', 'underlay-opacity': 0.16, 'underlay-padding': 5, 'underlay-shape': 'round-rectangle', 'transition-property': 'background-opacity, opacity, border-color, underlay-opacity', 'transition-duration': 150 } },
-    { selector: 'node[kind = "module"]', style: { shape: 'ellipse', width: 'data(size)', height: 'data(size)', padding: 0, 'font-weight': 600, 'text-valign': 'bottom', 'text-margin-y': 7, 'underlay-shape': 'ellipse', 'underlay-padding': 9, 'underlay-opacity': 0.22, 'background-opacity': 1, 'pie-size': '100%', 'pie-1-background-color': '#ff6b6b', 'pie-1-background-size': 'data(waste)', 'pie-1-background-opacity': 0.95 } },
+    { selector: 'node[kind = "module"]', style: { shape: 'ellipse', width: 'data(size)', height: 'data(size)', padding: 0, 'font-weight': 600, 'text-valign': 'bottom', 'text-margin-y': 7, 'underlay-shape': 'ellipse', 'underlay-padding': 9, 'underlay-opacity': 0.22, 'background-opacity': 1, 'pie-size': '100%', 'pie-1-background-color': 'data(wedge)', 'pie-1-background-size': 'data(waste)', 'pie-1-background-opacity': 0.95 } },
     { selector: 'node[kind = "module"].dead', style: { 'pie-1-background-opacity': 0 } },
     { selector: 'node.root', style: { 'border-width': 2, 'border-color': '#ffffff', 'underlay-padding': 14, 'underlay-opacity': 0.35 } },
     { selector: 'node[kind = "package"]', style: { shape: 'hexagon', color: ink2, 'background-opacity': 0.3, 'underlay-opacity': 0 } },
@@ -723,7 +731,7 @@ function renderNode(id) {
   document.getElementById('node-empty').style.display = 'none';
   const ins = (inn[id] || []).filter(e => e.kind !== 'contains').map(e => `<li data-go="${esc(e.src)}"><span class="pill">${e.kind}</span> ${esc(label(nodeById[e.src]))}</li>`);
   const outs = (out[id] || []).filter(e => e.kind !== 'contains').map(e => `<li data-go="${esc(e.dst)}"><span class="pill">${e.kind}</span> ${esc(label(nodeById[e.dst]))}${e.attrs && e.attrs.members ? ' <span class="meta">.' + esc(e.attrs.members.join(', .')) + '</span>' : ''}</li>`);
-  const attrs = Object.entries(n.attrs).filter(([k, v]) => !['imports', 'aliases', 'entry', 'shape_hash', 'bloat'].includes(k) && v !== null && v !== '' && v !== false && !(Array.isArray(v) && !v.length));
+  const attrs = Object.entries(n.attrs).filter(([k, v]) => !['imports', 'aliases', 'entry', 'shape_hash', 'bloat', 'liveness'].includes(k) && v !== null && v !== '' && v !== false && !(Array.isArray(v) && !v.length));
   const ds = diagsByNode[id] || [];
   document.getElementById('node').innerHTML = `
     <div class="section"><div style="display:flex;gap:8px;align-items:baseline"><span class="pill" style="background:color-mix(in srgb, ${KIND()[n.kind]} 30%, transparent)">${esc(n.kind)}</span><b class="mono" style="font-size:13px">${esc(n.qualname || n.name)}</b></div>
@@ -732,6 +740,7 @@ function renderNode(id) {
       <label class="speed">trace speed <input type="range" id="trace-speed" min="0.25" max="4" step="0.25" value="${traceSpeed}" aria-label="Trace speed"><span id="trace-speed-v">×${traceSpeed}</span></label>
       <div id="trace-status" style="color:var(--ink-2);margin-top:6px;min-height:1.2em"></div></div>
     ${n.attrs.bloat ? bloatBlock(n.attrs.bloat, n.attrs.loc) : ''}
+    ${n.attrs.liveness ? livenessBlock(n.attrs.liveness, ds) : ''}
     ${ds.length ? `<div class="section"><h3>Findings (${ds.length})</h3>${ds.map(d => `<div class="finding" style="padding:6px 0"><div class="head"><span class="sev ${d.severity}"></span><span class="code">${esc(d.code)}</span></div><div class="msg">${esc(d.message)}</div>${d.suggestion ? `<div class="fix">${esc(d.suggestion)}</div>` : ''}</div>`).join('')}</div>` : ''}
     <div class="section"><h3>Properties</h3><dl class="kv">${attrs.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(Array.isArray(v) ? v.join(', ') : typeof v === 'object' ? JSON.stringify(v) : v)}</dd>`).join('')}</dl></div>
     <div class="section"><h3>Used by (${ins.length})</h3><ul class="list">${ins.join('') || '<li style="color:var(--ink-3);cursor:default">nothing in the project</li>'}</ul></div>
@@ -742,6 +751,12 @@ function renderNode(id) {
   document.querySelectorAll('#node [data-go]').forEach(li => li.addEventListener('click', () => select(li.dataset.go, true)));
 }
 
+const LIVENESS_CODES = ['dead-store', 'unused-param', 'unused-attribute', 'unreachable-code', 'dead-branch'];
+function livenessBlock(l, ds) {
+  const pct = Math.round(l.value * 1000) / 10, dead = Object.entries(l.dead || {}).filter(([, v]) => v).map(([k, v]) => `${v} ${k}`).join(', ');
+  const where = ds.filter(d => LIVENESS_CODES.includes(d.code)).map(d => `<li style="cursor:default"><span class="pill">${esc(d.code)}</span> ${esc((d.data.names || []).join(', '))} <span class="meta">line ${d.line}</span></li>`).join('');
+  return `<div class="section"><h3>Liveness ${pct}%</h3><div class="bloatbar"><i style="width:${pct}%;background:${tint(1 - l.value)}"></i></div><div class="meta2">${l.live} of ${l.defined} definitions reach a use${dead ? ' · dead: ' + esc(dead) : ''} · live = definitions that reach a use / definitions</div>${where ? `<ul class="list">${where}</ul>` : ''}</div>`;
+}
 function bloatBlock(b, loc) { const pct = Math.round(b.score * 100); return `<div class="section"><h3>Bloat ${pct}%</h3><div class="bloatbar"><i style="width:${pct}%;background:${tint(b.score)}"></i></div><div class="meta2">${Math.round(b.removable_loc)} of ${loc || '?'} lines could go (waste ${(100 * b.waste).toFixed(1)}%) · tangle ${(100 * b.tangle).toFixed(1)}% · bloat = 1 − (1 − waste)(1 − tangle)</div></div>`; }
 
 // ---------- overview ----------
@@ -749,6 +764,8 @@ function renderOverview() {
   const m = DATA.metrics; const tiles = [];
   const bs = m.bloat_score, meter = document.getElementById('meter');
   if (bs) { const pct = Math.round(bs.score * 100); meter.hidden = false; meter.innerHTML = `<span class="l">waste</span><b>${(100 * bs.waste).toFixed(1)}%</b><span class="s">${Math.round(bs.removable_loc)} of ${bs.loc} lines</span><span class="l">tangle</span><b>${(100 * bs.tangle).toFixed(1)}%</b><span class="l">bloat</span><b>${(100 * bs.score).toFixed(1)}%</b><span class="bar"><i style="width:${pct}%;background:${tint(bs.score)}"></i></span>`; }
+  const lv = m.liveness_score;
+  if (lv) { meter.hidden = false; meter.innerHTML += `<span class="l">live</span><b>${(100 * lv.value).toFixed(1)}%</b><span class="s">${lv.live} of ${lv.defined} definitions</span>`; }
   if (m.dead_code) tiles.push([m.dead_code.symbols, 'dead symbols', `${m.dead_code.loc} lines to delete`]);
   if (m.duplicates) tiles.push([m.duplicates.exact_groups, 'duplicate groups', `${m.duplicates.removable_loc} lines to merge`]);
   if (m.wrappers) tiles.push([m.wrappers.count, 'pass-through wrappers', `${m.wrappers.chains} chains to collapse`]);
@@ -871,6 +888,14 @@ function toggleFeedback(key) {
   clearTimeout(say.t); say.t = setTimeout(() => { st.textContent = ''; }, 6000);
 }
 bindToggle('t-packages', 'packages'); bindToggle('t-dead', 'dead'); bindToggle('t-flagged', 'flagged');
+document.getElementById('t-colour').addEventListener('click', e => {
+  colourBy = colourBy === 'bloat' ? 'live' : 'bloat';
+  e.currentTarget.setAttribute('aria-pressed', String(colourBy === 'live'));
+  e.currentTarget.textContent = 'colour: ' + colourBy;
+  // tint only: update the wedge data in place; no layout, no position change
+  cy.batch(() => { for (const n of modules) { const el = cy.getElementById(n.id); if (el.length) el.data({ waste: wedgeOf(n), wedge: WEDGE[colourBy] }); } });
+  say(colourBy === 'live' ? 'module wedges show the share of definitions nothing reads' : 'module wedges show the lines that could go');
+});
 function applyVisibility() {
   // visibility only: positions are untouched
   cy.batch(() => { for (const el of elements()) { const ex = cy.getElementById(el.data.id); if (ex.length) { if (el.classes.includes('hidden')) ex.addClass('hidden'); else ex.removeClass('hidden'); } } });
