@@ -1,6 +1,10 @@
-"""The bootstrap figure for the README and for papers: bloat and tangle over the four rounds, and the removable lines.
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["matplotlib>=3.8"]
+# ///
+"""The bootstrap figure for the README and for papers: bloat and tangle over the five rounds, and the removable lines.
 
-Run:  uv run --with matplotlib python scripts/bootstrap_figure.py
+Run:  uv run scripts/bootstrap_figure.py   (the block above declares matplotlib; uv installs it for this run only)
 Writes docs/img/bootstrap.{svg,pdf,png}. Colour-blind safe (validated adjacent pairs), hatched bars, vector output.
 """
 

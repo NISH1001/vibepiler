@@ -197,6 +197,25 @@ def test_bloat_flags_undeclared_dependency_but_not_local_or_stdlib_modules(tmp_p
     assert undeclared == {"flask"}
 
 
+
+def test_script_metadata_block_lists_its_dependencies():
+    from vibepiler.passes.manifests import script_dependencies
+
+    text = '# /// script\n# requires-python = ">=3.12"\n# dependencies = [\n#   "matplotlib>=3.8",\n#   "Pillow",\n# ]\n# ///\nimport matplotlib\n'
+    assert script_dependencies(text) == {"matplotlib", "pillow"}
+    assert script_dependencies("import matplotlib\n") == set()
+    assert script_dependencies("# /// script\n# dependencies = [\n") == set()  # unterminated block: nothing declared
+
+
+def test_bloat_honours_a_script_that_declares_its_own_dependencies(tmp_path):
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "x"\nversion = "0"\ndependencies = ["requests"]\n')
+    (tmp_path / "app.py").write_text("import requests\nimport matplotlib\n")
+    (tmp_path / "plot.py").write_text('# /// script\n# dependencies = ["matplotlib", "pillow"]\n# ///\nimport matplotlib\nfrom PIL import Image\n')
+    prog = build_program(tmp_path)
+    diags = codes(run_pass("bloat", prog), "undeclared-dependency")
+    assert [(d.data["package"], d.data["files"]) for d in diags] == [("matplotlib", ["app.py"])]  # app.py still owes it; plot.py does not
+
+
 def test_dead_code_stamps_the_verdict_on_the_node(program):
     diags = run_pass("dead-code", program)
     assert diags and all(program.graph.node(d.node_id).attrs.get("dead") == d.code for d in diags if d.node_id)

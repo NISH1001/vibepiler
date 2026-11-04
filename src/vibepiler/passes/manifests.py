@@ -89,6 +89,24 @@ def _py_req_name(spec: str) -> str | None:
     return normalize_py(m.group(1)) if m else None
 
 
+
+# PEP 723 inline script metadata: the reference regex from the spec
+SCRIPT_BLOCK = re.compile(r"(?m)^# /// (?P<type>[a-zA-Z0-9-]+)$\s(?P<content>(^#(| .*)$\s)+)^# ///$")
+
+
+def script_dependencies(text: str) -> set[str]:
+    """The dependencies a standalone script declares in its own `# /// script` block (PEP 723), normalized."""
+    for m in SCRIPT_BLOCK.finditer(text):
+        if m.group("type") != "script":
+            continue
+        body = "".join(line[2:] if line.startswith("# ") else line[1:] for line in m.group("content").splitlines(keepends=True))
+        try:
+            specs = tomllib.loads(body).get("dependencies", []) or []
+        except tomllib.TOMLDecodeError:
+            return set()
+        return {n for spec in specs if isinstance(spec, str) and (n := _py_req_name(spec))}
+    return set()
+
 def _read_pyproject(root: Path) -> Manifest | None:
     pyproject = root / "pyproject.toml"
     if not pyproject.is_file():
