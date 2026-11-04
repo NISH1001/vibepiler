@@ -9,7 +9,9 @@ reads that name. Every exemption below is a rule; when in doubt a definition is 
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import PurePosixPath
+from typing import ClassVar, Literal
 
 from tree_sitter import Node as TSNode
 
@@ -21,7 +23,12 @@ from vibepiler.passes.abstraction import AbstractionPass
 from vibepiler.passes.base import Pass
 from vibepiler.passes.dataflow import FunctionLiveness, Store, analyze
 from vibepiler.passes.diagnostic import Diagnostic, Severity
+from vibepiler.passes.metric import Metric
+from vibepiler.passes.unused_imports import is_binding, is_unused_import
 
+KINDS = ("stores", "params", "attributes", "symbols", "imports")
+DEAD_SYMBOL = frozenset({"dead-symbol", "unreachable-symbol"})  # an unused export is live, as it is for bloat
+SCOPES = (NodeKind.FUNCTION, NodeKind.METHOD, NodeKind.CLASS)
 ATTRIBUTE_HOOKS = ("__getattr__", "__getattribute__", "__slots__")
 COMPOUND_TARGETS = ("loop", "with", "except")  # the statement is bigger than the binding: drop the name, keep the code
 
@@ -34,6 +41,48 @@ def span(first: TSNode, last: TSNode) -> list[int]:
     return [first.start_point[0] + 1, last.end_point[0] + 1]
 
 
+@dataclass(frozen=True)
+class Liveness(Metric):
+    """The share of the definitions a unit makes that reach a use. 1 is everything used; high is good."""
+
+    key: ClassVar[str] = "liveness"
+    label: ClassVar[str] = "live"
+    better: ClassVar[Literal["low", "high"]] = "high"
+    formula: ClassVar[str] = "live = definitions that reach a use / definitions"
+
+    defined: int = 0
+    live: int = 0
+    dead: dict[str, int] = field(default_factory=lambda: dict.fromkeys(KINDS, 0))
+
+    @property
+    def value(self) -> float:
+        return self.live / self.defined if self.defined else 1.0
+
+    def terms(self) -> dict[str, float]:
+        return {"defined": float(self.defined), "live": float(self.live)}
+
+    def as_dict(self) -> dict:
+        return {"value": self.value, "defined": self.defined, "live": self.live, "dead": dict(self.dead)}
+
+    @classmethod
+    def of(cls, unit, default_loc: int = 0) -> Liveness | None:  # noqa: ANN001, ARG003 - a Node, a Program, or a stored dict
+        d = unit if isinstance(unit, dict) else getattr(unit, "attrs", {}).get("liveness") if hasattr(unit, "attrs") else getattr(unit, "metrics", {}).get("liveness_score")
+        if not d:
+            return None
+        return cls(defined=d["defined"], live=d["live"], dead={**dict.fromkeys(KINDS, 0), **d.get("dead", {})})
+
+    def __add__(self, other: Liveness) -> Liveness:
+        return Liveness(self.defined + other.defined, self.live + other.live, {k: self.dead[k] + other.dead[k] for k in KINDS})
+
+    def __str__(self) -> str:
+        dead = ", ".join(f"{self.dead[k]} {k}" for k in KINDS if self.dead[k])
+        return f"live {self.value:.1%} ({self.live} of {self.defined} definitions; {'dead: ' + dead if dead else 'nothing dead'})"
+
+
+def counted(defined: int, dead: dict[str, int]) -> Liveness:
+    return Liveness(defined, defined - sum(dead.values()), {**dict.fromkeys(KINDS, 0), **dead})
+
+
 @dataclass(slots=True)
 class Analysed:
     node: Node
@@ -41,6 +90,7 @@ class Analysed:
     reportable_params: list[tuple[str, bool]]  # (name, read) after the exemptions
     dead_stores: list[Store]  # after the exemptions
     counted_stores: list[Store]  # every store the metric counts (locals; attributes are counted on the class)
+    dead_params: list[str] = field(default_factory=list)  # the ones unused-param reports
 
 
 class LivenessPass(Pass):
@@ -63,6 +113,7 @@ class LivenessPass(Pass):
             diags += [self.diag("unreachable-code", Severity.WARNING, f"`{fn.qualname}`: statements after a return, raise, break or continue can never run", node=fn, line=span(f, l)[0], suggestion="Delete them.", span=span(f, l), loc=span(f, l)[1] - span(f, l)[0] + 1, action="delete", confidence="proven") for f, l in a.result.unreachable]
             diags += [self.diag("dead-branch", Severity.WARNING, f"`{fn.qualname}`: a branch on a constant condition that can never run", node=fn, line=span(f, l)[0], suggestion="Delete the branch.", span=span(f, l), loc=span(f, l)[1] - span(f, l)[0] + 1, action="delete", confidence="proven") for f, l in a.result.dead_branches]
         diags += self._attribute_findings(program)
+        self._roll_up(program)
         counts = defaultdict(int, {d.code: 0 for d in diags})
         for d in diags:
             counts[d.code] += 1
@@ -146,6 +197,7 @@ class LivenessPass(Pass):
         last_read = max((i for i, (_, _, read) in enumerate(a.result.params) if read), default=-1)
         tail = {n for n, _, _ in a.result.params[last_read + 1 :]}
         names = [n for n, read in a.reportable_params if not read and n in tail]
+        a.dead_params = names
         if not names:
             return []
         what = ", ".join(f"`{n}`" for n in names)
@@ -172,6 +224,47 @@ class LivenessPass(Pass):
                 loc = sum(span(s.d.node, s.d.node)[1] - span(s.d.node, s.d.node)[0] + 1 for s in {s.d.node.start_byte: s for s in ss}.values() if not s.d.rhs_has_call)
                 diags.append(self.diag("unused-attribute", Severity.WARNING, f"`{cls.qualname}.{name}` is written and never read anywhere in the project", node=cls, line=ls[0], suggestion="Delete the attribute and its assignments.", names=[name], span=[ls[0], ls[0]], lines=ls, loc=loc, action="delete", confidence="inferred"))
         return diags
+
+    # ----- 3. the metric: definitions that reach a use, by lexical containment ----------------------
+    def _own(self, program: Program, n: Node) -> Liveness:
+        """What `n` itself defines, before what its children define."""
+        if n.kind in (NodeKind.FUNCTION, NodeKind.METHOD) and (a := self._functions.get(n.id)) is not None:
+            if a.result.skipped:
+                return Liveness()
+            return counted(len(a.reportable_params) + len(a.counted_stores), {"params": len(a.dead_params), "stores": len(a.dead_stores)})
+        if n.kind is NodeKind.CLASS:
+            attrs = self._attributes.get(n.id, [])
+            return counted(len(attrs), {"attributes": sum(1 for *_, live in attrs if not live)})
+        if n.kind is NodeKind.MODULE:
+            recs = [r for r in n.attrs.get("imports", []) if is_binding(r)]
+            return counted(len(recs), {"imports": sum(1 for r in recs if is_unused_import(n, r))})
+        return Liveness()
+
+    def _visit(self, program: Program, n: Node) -> Liveness:
+        total = self._own(program, n)
+        for c in program.graph.children(n.id):
+            if c.kind in (*SCOPES, NodeKind.VARIABLE):
+                dead = c.attrs.get("dead") in DEAD_SYMBOL and not c.attrs.get("accepted")
+                total = total + counted(1, {"symbols": int(dead)})
+            if c.kind in SCOPES:
+                total = total + self._visit(program, c)
+        n.attrs["liveness"] = total.as_dict()
+        return total
+
+    def _roll_up(self, program: Program) -> None:
+        source, tests = Liveness(), Liveness()
+        folders: dict[str, list] = defaultdict(lambda: [0, Liveness()])
+        for m in sorted(program.graph.nodes(NodeKind.MODULE), key=lambda m: m.file or ""):
+            lv = self._visit(program, m)
+            if m.attrs.get("is_test"):
+                tests = tests + lv
+                continue
+            source = source + lv
+            f = folders[str(PurePosixPath(m.file or m.name).parent)]
+            f[0] += 1
+            f[1] = f[1] + lv
+        rows = [{"path": p, "modules": k, **lv.as_dict()} for p, (k, lv) in folders.items()]
+        program.metrics["liveness_score"] = {**source.as_dict(), "folders": sorted(rows, key=lambda r: (r["value"], r["path"])), "tests": tests.as_dict(), "formula": Liveness.formula}
 
     @staticmethod
     def _attributes_exempt(program: Program, cls: Node) -> bool:
