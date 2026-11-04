@@ -83,6 +83,8 @@ class PythonSpec(PythonFlow, LanguageSpec):
         pkg_dirs: list[str] = []
         d = sf.path.parent
         while d != sf.root.parent and (d / "__init__.py").exists():
+            if d == sf.root and not d.name.isidentifier():
+                break  # `my-repo/` or a clone's cache folder cannot be imported as a package, whatever its __init__.py says
             pkg_dirs.insert(0, d.name)
             if d == sf.root:
                 break

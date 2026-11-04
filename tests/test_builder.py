@@ -150,3 +150,14 @@ def test_every_middle_segment_of_a_chain_is_an_attribute_read():
     prog = Compiler("class C:\n    def m(self):\n        self.idx.items.append(1)\n        self.a.b = 2\n        return self.model.embed\n").run(opt_level=0, emit=()).program
     reads = prog.graph.meta["read_member_names"]
     assert {"idx", "items", "append", "a", "model", "embed"} <= set(reads) and "b" not in reads
+
+
+def test_a_root_folder_that_cannot_be_imported_is_not_part_of_module_names(tmp_path):
+    from vibepiler.ir.builder import build_program as build
+
+    for folder, expected in (("my-repo", "create_admin"), ("github.com__org__repo", "create_admin"), ("mypkg", "mypkg.create_admin")):
+        root = tmp_path / folder
+        root.mkdir()
+        (root / "__init__.py").write_text("")
+        (root / "create_admin.py").write_text("def main():\n    return 1\n")
+        assert build(root).graph.node("mod:create_admin.py").qualname == expected, folder
