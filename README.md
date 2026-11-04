@@ -393,10 +393,16 @@ responsibility_similarity = 0.32    # -O3; omit to use the per-model default
 
 ## Using it from Python
 
+`Compiler(source)` takes a project directory, one source file, or a code string. A path must exist; a string that is not on disk is source code when it has a newline or code-like characters, and its grammar is the one that parses it with the fewest errors unless you pass `language=`.
+
 ```python
+import vibepiler
 from vibepiler.compiler import Compiler
 
 result = Compiler("path/to/project").run(opt_level=2, emit=["json", "html"], out_dir="out")
+result = Compiler("path/to/one_file.py").run(emit=())                # just that file; config from its folder
+result = Compiler("def f():\n    return 1\n", language="python").run()   # a snippet; language is optional
+result = vibepiler.compile("owner/project-checkout", emit=["json"], out_dir="out")  # the one-call form
 program = result.program
 g = program.graph                       # ProgramGraph (networkx underneath)
 for d in program.diagnostics:           # Diagnostic(pass_name, code, severity, message, file, line, node_id, suggestion, data)

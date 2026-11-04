@@ -15,7 +15,7 @@ from pathlib import Path
 import pathspec
 from tree_sitter import Tree
 
-from vibepiler.frontend.parser import parse
+from vibepiler.frontend.parser import GRAMMARS, parse, walk
 
 DEFAULT_IGNORES: tuple[str, ...] = (
     ".git/",
@@ -48,6 +48,7 @@ DEFAULT_IGNORES: tuple[str, ...] = (
 )
 
 MAX_FILE_BYTES = 2_000_000
+STRING_ROOT = Path("<string>")  # the root of a program handed over as a string, named as Python names it
 
 # extension -> language name (must match a LanguageSpec name)
 EXTENSIONS: dict[str, str] = {
@@ -82,6 +83,16 @@ class SourceFile:
 
     def text(self, node) -> str:  # noqa: ANN001 - tree_sitter.Node
         return self.source[node.start_byte : node.end_byte].decode("utf-8", errors="replace")
+
+
+def source_from_string(code: str, language: str | None = None) -> SourceFile:
+    """One in-memory source file for a code string. Without `language`, the grammar with the fewest error nodes wins (python, javascript, typescript on a tie)."""
+    data = code.encode("utf-8")
+    if language is None:
+        errors = {name: sum(1 for n in walk(parse(name, data).root_node) if n.is_error or n.is_missing) for name in GRAMMARS}
+        language = min(errors, key=errors.__getitem__)
+    rel = "snippet" + next(ext for ext, name in EXTENSIONS.items() if name == language)
+    return SourceFile(path=STRING_ROOT / rel, rel=rel, language=language, root=STRING_ROOT, source=data)
 
 
 def _read_gitignore(root: Path) -> list[str]:
