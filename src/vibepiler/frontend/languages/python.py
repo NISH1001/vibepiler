@@ -298,7 +298,9 @@ class _Extractor:
         if t == "attribute":
             chain = self.chain_of(node)
             if chain is not None:
-                self.facts.refs.append(RefSite(chain=chain, line=self.spec.line(node), scope=scope))
+                p = node.parent
+                store = p is not None and p.type == "assignment" and p.child_by_field_name("left") == node
+                self.facts.refs.append(RefSite(chain=chain, line=self.spec.line(node), scope=scope, context="store" if store else "name"))
                 return
             obj = node.child_by_field_name("object")
             if obj is not None:

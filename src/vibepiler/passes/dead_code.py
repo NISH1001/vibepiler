@@ -34,6 +34,7 @@ class DeadCodePass(Pass):
             if n.kind is NodeKind.CLASS:
                 dead_classes.add(n.id)
             code, sev, why = self._classify(g, n, callers)
+            n.attrs["dead"] = code
             diags.append(
                 self.diag(
                     code,
@@ -51,6 +52,7 @@ class DeadCodePass(Pass):
         for m in g.nodes(NodeKind.MODULE):
             if m.attrs.get("reachable") or m.attrs.get("is_root"):
                 continue
+            m.attrs["dead"] = "unreachable-module"
             diags.append(
                 self.diag(
                     "unreachable-module",

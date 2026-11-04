@@ -111,6 +111,7 @@ class _Builder:
         self.scoped_bindings: dict[tuple[str, str], dict[str, Binding]] = {}
         self.import_records: dict[str, list[dict]] = {}
         self.used_member_names: Counter[str] = Counter()
+        self.read_member_names: Counter[str] = Counter()  # attribute names read anywhere, never counting a store
         self.stats: Counter[str] = Counter()
         self.parse_errors: list[str] = []
 
@@ -316,6 +317,8 @@ class _Builder:
             spec = self.specs[mid]
             for call in facts.calls:
                 self.stats["calls_total"] += 1
+                if len(call.chain) > 1:
+                    self.read_member_names[call.chain[-1]] += 1
                 src = self._scope_node(mid, call.scope)
                 res = self._resolve_chain(mid, call.scope, call.chain)
                 if res is None:
@@ -351,6 +354,8 @@ class _Builder:
                     if res.node_id != src and not self._is_own_class(mid, call.scope, call.chain, res.node_id):
                         self.graph.add_edge(Edge(src=src, dst=res.node_id, kind=EdgeKind.REFERENCES, line=call.line))
             for ref in facts.refs:
+                if len(ref.chain) > 1 and ref.context != "store":
+                    self.read_member_names[ref.chain[-1]] += 1
                 if ref.context == "base":
                     continue  # covered by inherits edges
                 self.stats["refs_total"] += 1
@@ -517,6 +522,7 @@ class _Builder:
                 "languages": dict(langs),
                 "parse_errors": self.parse_errors,
                 "used_member_names": dict(self.used_member_names),
+                "read_member_names": dict(self.read_member_names),
                 "resolution": dict(self.stats),
                 "modules": len(self.facts),
                 "symbols": sum(len(t) for t in self.symbols.values()),

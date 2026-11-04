@@ -127,3 +127,18 @@ def test_program_exposes_facts_per_module(program):
     facts = program.facts_for("mod:src/app/core.py")
     assert facts.module_name == "app.core"
     assert any(d.qualname == "process" for d in facts.defs)
+
+
+def test_attribute_reads_are_counted_by_name_but_stores_are_not():
+    from vibepiler.compiler import Compiler
+
+    prog = Compiler("class C:\n    def __init__(self):\n        self.cache = {}\n        self.hits = 0\n    def get(self):\n        return self.hits\n").run(opt_level=0, emit=()).program
+    reads = prog.graph.meta["read_member_names"]
+    assert reads.get("hits") == 1 and "cache" not in reads
+
+
+def test_javascript_this_reads_are_counted():
+    from vibepiler.compiler import Compiler
+
+    prog = Compiler("class C { constructor() { this.n = 0 } get() { return this.n } }", language="javascript").run(opt_level=0, emit=()).program
+    assert prog.graph.meta["read_member_names"].get("n") == 1
