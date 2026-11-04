@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import posixpath
 import re
 import sys
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Iterable
 
 # python import name -> distribution name, for the common mismatches
 PY_IMPORT_TO_DIST: dict[str, str] = {
@@ -73,6 +75,7 @@ NODE_BUILTINS = {
 class Manifest:
     file: str
     language: str  # "python" | "javascript"
+    dir: str = ""  # the folder it governs, relative to the project root ("" = the root)
     dependencies: dict[str, str] = field(default_factory=dict)  # normalized name -> raw spec
     dev_dependencies: dict[str, str] = field(default_factory=dict)
 
@@ -168,10 +171,30 @@ def _read_package_json(root: Path) -> Manifest | None:
     return m if m.dependencies or m.dev_dependencies else None
 
 
-def read_manifests(root: Path) -> list[Manifest]:
-    """Every dependency manifest the project has: pyproject (PEP 621 and poetry), requirements files, package.json."""
-    found = [_read_pyproject(root), *_read_requirements(root), _read_package_json(root)]
-    return [m for m in found if m is not None]
+def read_manifests(root: Path, dirs: Iterable[str] = ("",)) -> list[Manifest]:
+    """Every dependency manifest in the given folders: pyproject (PEP 621 and poetry), requirements files, package.json.
+    A monorepo keeps one per package (frontend/package.json beside the root pyproject.toml); each governs its own folder."""
+    out: list[Manifest] = []
+    for d in sorted(set(dirs)):
+        folder = root / d if d else root
+        if not folder.is_dir():
+            continue
+        for m in (_read_pyproject(folder), *_read_requirements(folder), _read_package_json(folder)):
+            if m is not None:
+                m.dir, m.file = d, posixpath.join(d, m.file) if d else m.file
+                out.append(m)
+    return out
+
+
+def governing(manifests: list[Manifest], language: str, rel: str) -> list[Manifest]:
+    """The manifests that govern a file: those of its language in the nearest folder above it that has any."""
+    mine = [m for m in manifests if m.language == language]
+    d = posixpath.dirname(rel)
+    while True:
+        here = [m for m in mine if m.dir == d]
+        if here or d == "":
+            return here
+        d = posixpath.dirname(d)
 
 
 def is_py_stdlib(name: str) -> bool:

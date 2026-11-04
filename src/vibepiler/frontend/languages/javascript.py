@@ -8,6 +8,7 @@ declarations (interfaces, abstract classes, enums, type aliases).
 from __future__ import annotations
 
 import posixpath
+from functools import cache
 from pathlib import Path
 
 from tree_sitter import Node
@@ -35,6 +36,19 @@ ENTRY_FILE_STEMS = {"index", "main", "server", "app", "cli", "worker", "entry"}
 NEXT_ROUTE_STEMS = {"page", "layout", "route", "loading", "error", "template", "default", "not-found", "middleware", "instrumentation", "global-error"}
 ENTRY_DIRS = {"pages", "app", "api", "routes"}
 TEST_DIRS = {"__tests__", "__mocks__", "test", "tests", "cypress", "e2e"}
+PROJECT_FILES = ("package.json", "tsconfig.json", "jsconfig.json")
+
+
+@cache
+def project_dir(root: Path, rel_dir: str) -> str:
+    """The folder `@/` and bare paths are anchored at: the nearest one above the file with a package.json or tsconfig.
+    A monorepo keeps its frontend in a subfolder; the repo root is the fallback ("")."""
+    d = rel_dir
+    while d not in ("", "."):
+        if any((root / d / f).is_file() for f in PROJECT_FILES):
+            return d
+        d = posixpath.dirname(d)
+    return ""
 ROUTE_METHODS = {"get", "post", "put", "delete", "patch", "all", "use", "ws", "head", "options", "route"}
 ROUTE_RECEIVERS = {"app", "router", "server", "api", "fastify", "koa", "hono", "express", "r"}
 TEST_CALLS = {"describe", "it", "test", "suite", "beforeEach", "afterEach", "beforeAll", "afterAll", "bench"}
@@ -129,13 +143,13 @@ class JavaScriptSpec(JavaScriptFlow, LanguageSpec):
             path = posixpath.normpath(posixpath.join(base_dir, spec))
             roots = ["" if path == "." else path]
         elif spec.startswith(("@/", "~/")):
-            roots = [f"src/{spec[2:]}", spec[2:]]
+            roots = self._anchored(spec[2:], facts)
         elif spec.startswith("/"):
             roots = [spec.lstrip("/")]
         elif spec.startswith(("#", "node:")):
             return []
         else:
-            roots = [f"src/{spec}", spec]  # tsconfig baseUrl-style bare paths
+            roots = self._anchored(spec, facts)  # tsconfig baseUrl-style bare paths
         out: list[str] = []
         for r in roots:
             r = self._strip_ext(r)
@@ -143,6 +157,12 @@ class JavaScriptSpec(JavaScriptFlow, LanguageSpec):
                 out.append(r)
             out.append(f"{r}/index" if r else "index")
         return out
+
+    @staticmethod
+    def _anchored(path: str, facts: FileFacts) -> list[str]:
+        base = project_dir(facts.file.root, posixpath.dirname(facts.rel)) if facts.file.root.is_dir() else ""
+        roots = [f"src/{path}", path]
+        return [posixpath.join(base, r) for r in roots] + (roots if base else [])
 
     def import_targets(self, imp: ImportDef, facts: FileFacts) -> list[ImportOption]:
         cands = self._module_candidates(imp.module, facts)

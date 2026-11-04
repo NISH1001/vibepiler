@@ -227,3 +227,38 @@ def test_accepted_findings_stamp_their_node():
     prog = build_program(FIX, config=cfg)
     run_passes(prog, opt_level=1)
     assert any(n.attrs.get("accepted") for n in prog.graph.nodes()) and not any(d.code == "dead-symbol" for d in prog.diagnostics)
+
+
+def test_migration_files_are_loaded_by_the_framework_not_dead(tmp_path):
+    (tmp_path / "alembic" / "versions").mkdir(parents=True)
+    (tmp_path / "app.py").write_text("def main():\n    return 1\n")
+    (tmp_path / "alembic" / "versions" / "001_initial.py").write_text(
+        'revision = "001"\n\n\ndef upgrade():\n    _helper()\n\n\ndef downgrade():\n    pass\n\n\ndef _helper():\n    return 1\n'
+    )
+    diags = run_pass("dead-code", build_program(tmp_path))
+    assert [d.message for d in diags if "001_initial" in (d.file or "")] == []
+
+
+def test_a_nested_package_json_declares_its_own_folder_s_imports(tmp_path):
+    (tmp_path / "package.json").write_text('{"name": "root", "devDependencies": {"prettier": "3"}}')
+    (tmp_path / "frontend" / "src").mkdir(parents=True)
+    (tmp_path / "frontend" / "package.json").write_text('{"name": "fe", "dependencies": {"react": "19", "left-pad": "1"}}')
+    (tmp_path / "frontend" / "src" / "index.tsx").write_text('import { useState } from "react";\nimport axios from "axios";\nexport const a = [useState, axios];\n')
+    diags = run_pass("bloat", build_program(tmp_path))
+    undeclared = [(d.data["package"], d.message.split(" in ")[-1]) for d in codes(diags, "undeclared-dependency")]
+    unused = [(d.data["package"], d.file) for d in codes(diags, "unused-dependency")]
+    assert undeclared == [("axios", "frontend/package.json")]  # react is declared by the folder's own manifest
+    assert unused == [("left-pad", "frontend/package.json")]
+
+
+def test_migrations_repeat_by_design_and_alembic_env_is_framework_run(tmp_path):
+    v = tmp_path / "alembic" / "versions"
+    v.mkdir(parents=True)
+    (tmp_path / "app.py").write_text("def main():\n    return 1\n")
+    (tmp_path / "alembic" / "env.py").write_text("def run_migrations_online():\n    return 1\n")
+    body = "def upgrade():\n    op.add_column('t', sa.Column('a', sa.String()))\n    op.create_index('i', 't', ['a'])\n    op.drop_column('t', 'b')\n    op.alter_column('t', 'c', nullable=True)\n"
+    (v / "001_a.py").write_text(body)
+    (v / "002_b.py").write_text(body)
+    prog = build_program(tmp_path)
+    assert [d.message for d in run_pass("duplicates", prog) if d.code == "duplicate-function"] == []
+    assert [d.message for d in run_pass("dead-code", prog) if (d.file or "").startswith("alembic")] == []

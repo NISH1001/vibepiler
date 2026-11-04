@@ -25,6 +25,14 @@ HOOK_DECORATORS = {
     "model_validator", "root_validator", "property", "setter", "cached_property",
     "staticmethod", "classmethod", "override", "overload", "app",
 }
+MIGRATION_DIRS = {"migrations", "alembic"}
+
+
+def is_migration_file(rel: str) -> bool:
+    """Alembic and Django migrations: the framework loads them by path, so nothing imports them and none of them is dead."""
+    return bool(MIGRATION_DIRS & set(Path(rel).parts[:-1]))  # alembic/env.py and alembic/versions/*, */migrations/*
+
+
 ENTRY_FUNCTION_NAMES = {"main", "handler", "lambda_handler", "run", "serve", "cli", "app", "application"}
 
 # identifiers that should never be treated as references
@@ -142,7 +150,7 @@ class PythonSpec(PythonFlow, LanguageSpec):
 
     def is_entry_module(self, rel: str) -> bool:
         name = Path(rel).name
-        return name in {"__init__.py", "__main__.py", "conftest.py", "setup.py", "manage.py", "wsgi.py", "asgi.py", "settings.py", "urls.py", "app.py", "main.py", "cli.py", "server.py"}
+        return is_migration_file(rel) or name in {"__init__.py", "__main__.py", "conftest.py", "setup.py", "manage.py", "wsgi.py", "asgi.py", "settings.py", "urls.py", "app.py", "main.py", "cli.py", "server.py"}
 
     # ---------------------------------------------------------------- AST hooks
     def body_statements(self, def_node: Node, sf: SourceFile) -> list[Node]:
@@ -572,6 +580,11 @@ class _Extractor:
             self.facts.entry_hints.append(EntryHint("dunder", d.qualname, line))
 
     def finish(self) -> None:
+        if is_migration_file(self.facts.rel):
+            self.facts.attrs["is_migration"] = True
+            for d in self.facts.defs:
+                if d.parent_qualname is None:
+                    self.facts.entry_hints.append(EntryHint("migration", d.qualname, d.start_line))
         if self.all_names is not None:
             self.facts.attrs["__all__"] = self.all_names
             allowed = set(self.all_names)
