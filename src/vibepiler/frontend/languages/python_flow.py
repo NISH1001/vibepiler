@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable, ClassVar
 
 from tree_sitter import Node
 
-from vibepiler.frontend.flow import GLOBAL, Branch, Def, Flow, Jump, Loop, Plain, Try, With, statements
+from vibepiler.frontend.flow import GLOBAL, Branch, Def, Jump, Loop, Plain, Try, With, contains_any, statements
 
 if TYPE_CHECKING:
     from vibepiler.frontend.loader import SourceFile
@@ -20,11 +20,6 @@ NESTED = frozenset({"function_definition", "lambda"})
 
 class PythonFlow:
     self_names: frozenset[str]
-
-    def classify(self, stmt: Node, sf: SourceFile) -> Flow:
-        n = stmt.named_children[0] if stmt.type == "expression_statement" and stmt.named_child_count == 1 else stmt
-        shape = _SHAPES.get(n.type)
-        return shape(self, stmt, n, sf) if shape else Plain(stmt, [], self.names_in(n, sf))
 
     # ----- names -------------------------------------------------------------------------------
     def names_in(self, node: Node | None, sf: SourceFile) -> set[str]:
@@ -93,7 +88,7 @@ class PythonFlow:
             right = right.child_by_field_name("right")
         if right is None:  # `x: int`, an annotation without a value
             return Plain(stmt, [], self.names_in(n.child_by_field_name("type"), sf))
-        has_call = _has(right, SIDE_EFFECTS)
+        has_call = contains_any(right, SIDE_EFFECTS)
         defs: list[Def] = []
         uses = self.names_in(right, sf)
         if n.type == "augmented_assignment":  # `acc |= x` may mutate in place: a read, never a store we could drop
@@ -197,6 +192,24 @@ class PythonFlow:
     def _global(self, stmt: Node, n: Node, sf: SourceFile) -> Plain:
         return Plain(stmt, [Def(GLOBAL + sf.text(c), stmt, "local") for c in n.named_children if c.type == "identifier"], set())
 
+    # node type -> the method that builds its flow shape; real references, so the linker sees the dispatch
+    flow_shapes: ClassVar[dict[str, Callable]] = {
+        "assignment": _assignment,
+        "augmented_assignment": _assignment,
+        "if_statement": _if,
+        "match_statement": _match,
+        "for_statement": _for,
+        "while_statement": _while,
+        "try_statement": _try,
+        "with_statement": _with,
+        "return_statement": _jump,
+        "raise_statement": _jump,
+        "break_statement": _jump,
+        "continue_statement": _jump,
+        "global_statement": _global,
+        "nonlocal_statement": _global,
+    }
+
 
 def constant(cond: Node | None, sf: SourceFile) -> bool | None:
     """The truth value of a literal condition; None for anything that is not a literal (TYPE_CHECKING, __debug__, names)."""
@@ -215,31 +228,3 @@ def constant(cond: Node | None, sf: SourceFile) -> bool | None:
         inner = constant(cond.child_by_field_name("argument"), sf)
         return None if inner is None else not inner
     return None
-
-
-def _has(node: Node, types: frozenset[str]) -> bool:
-    stack = [node]
-    while stack:
-        n = stack.pop()
-        if n.type in types:
-            return True
-        stack.extend(n.children)
-    return False
-
-
-_SHAPES = {
-    "assignment": PythonFlow._assignment,
-    "augmented_assignment": PythonFlow._assignment,
-    "if_statement": PythonFlow._if,
-    "match_statement": PythonFlow._match,
-    "for_statement": PythonFlow._for,
-    "while_statement": PythonFlow._while,
-    "try_statement": PythonFlow._try,
-    "with_statement": PythonFlow._with,
-    "return_statement": PythonFlow._jump,
-    "raise_statement": PythonFlow._jump,
-    "break_statement": PythonFlow._jump,
-    "continue_statement": PythonFlow._jump,
-    "global_statement": PythonFlow._global,
-    "nonlocal_statement": PythonFlow._global,
-}

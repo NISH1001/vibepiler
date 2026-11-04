@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable, ClassVar
 
 from tree_sitter import Node
 
-from vibepiler.frontend.flow import Branch, Def, Flow, Jump, Loop, Plain, Try, statements
+from vibepiler.frontend.flow import Branch, Def, Flow, Jump, Loop, Plain, Try, contains_any, statements
 
 if TYPE_CHECKING:
     from vibepiler.frontend.loader import SourceFile
@@ -21,11 +21,6 @@ BREAKABLE = LOOPS | {"switch_statement"}
 class JavaScriptFlow:
     self_names: frozenset[str]
     function_types: frozenset[str]
-
-    def classify(self, stmt: Node, sf: SourceFile) -> Flow:
-        n = stmt.named_children[0] if stmt.type == "expression_statement" and stmt.named_child_count == 1 else stmt
-        shape = _SHAPES.get(n.type)
-        return shape(self, stmt, n, sf) if shape else Plain(stmt, [], self.names_in(n, sf))
 
     # ----- names -------------------------------------------------------------------------------
     def names_in(self, node: Node | None, sf: SourceFile) -> set[str]:
@@ -115,7 +110,7 @@ class JavaScriptFlow:
             if value is None:  # `let x;` declares, it does not store
                 continue
             uses |= self.names_in(value, sf)
-            self._targets(decl.child_by_field_name("name"), stmt, sf, defs, uses, _has(value, SIDE_EFFECTS))
+            self._targets(decl.child_by_field_name("name"), stmt, sf, defs, uses, contains_any(value, SIDE_EFFECTS))
         return Plain(stmt, defs, uses)
 
     def _assignment(self, stmt: Node, n: Node, sf: SourceFile) -> Plain:
@@ -124,7 +119,7 @@ class JavaScriptFlow:
         uses = self.names_in(right, sf)
         if n.type == "augmented_assignment_expression":  # a read of the target; never a store we would drop
             return Plain(stmt, [], uses | self.names_in(n.child_by_field_name("left"), sf))
-        self._targets(n.child_by_field_name("left"), stmt, sf, defs, uses, _has(right, SIDE_EFFECTS) if right is not None else False)
+        self._targets(n.child_by_field_name("left"), stmt, sf, defs, uses, contains_any(right, SIDE_EFFECTS) if right is not None else False)
         return Plain(stmt, defs, uses)
 
     def _if(self, stmt: Node, n: Node, sf: SourceFile) -> Branch:
@@ -214,9 +209,33 @@ class JavaScriptFlow:
     def _jump(self, stmt: Node, n: Node, sf: SourceFile) -> Flow:
         kind = {"return_statement": "return", "throw_statement": "raise", "break_statement": "break", "continue_statement": "continue"}[n.type]
         label = n.child_by_field_name("label")
-        if kind == "break" and label is None and _nearest_breakable(n) == "switch_statement":
-            return Plain(stmt, [], set())  # leaves the switch, not a loop: falls through as far as the analysis cares
+        if kind == "break" and label is None:
+            p = n.parent
+            while p is not None and p.type not in BREAKABLE:
+                p = p.parent
+            if p is not None and p.type == "switch_statement":
+                return Plain(stmt, [], set())  # leaves the switch, not a loop: falls through as far as the analysis cares
         return Jump(stmt, kind, self.names_in(n, sf) if kind in ("return", "raise") else set(), sf.text(label) if label is not None else None)  # type: ignore[arg-type]
+
+    # node type -> the method that builds its flow shape; real references, so the linker sees the dispatch
+    flow_shapes: ClassVar[dict[str, Callable]] = {
+        "lexical_declaration": _declaration,
+        "variable_declaration": _declaration,
+        "assignment_expression": _assignment,
+        "augmented_assignment_expression": _assignment,
+        "if_statement": _if,
+        "switch_statement": _switch,
+        "for_statement": _for,
+        "for_in_statement": _for,
+        "while_statement": _while,
+        "do_statement": _while,
+        "labeled_statement": _labeled,
+        "try_statement": _try,
+        "return_statement": _jump,
+        "throw_statement": _jump,
+        "break_statement": _jump,
+        "continue_statement": _jump,
+    }
 
 
 def constant(cond: Node | None, sf: SourceFile) -> bool | None:
@@ -238,42 +257,3 @@ def _block(node: Node | None) -> list[Node]:
     if node is None:
         return []
     return statements(node) if node.type == "statement_block" else [node]
-
-
-def _nearest_breakable(n: Node) -> str | None:
-    p = n.parent
-    while p is not None:
-        if p.type in BREAKABLE:
-            return p.type
-        p = p.parent
-    return None
-
-
-def _has(node: Node, types: frozenset[str]) -> bool:
-    stack = [node]
-    while stack:
-        n = stack.pop()
-        if n.type in types:
-            return True
-        stack.extend(n.children)
-    return False
-
-
-_SHAPES = {
-    "lexical_declaration": JavaScriptFlow._declaration,
-    "variable_declaration": JavaScriptFlow._declaration,
-    "assignment_expression": JavaScriptFlow._assignment,
-    "augmented_assignment_expression": JavaScriptFlow._assignment,
-    "if_statement": JavaScriptFlow._if,
-    "switch_statement": JavaScriptFlow._switch,
-    "for_statement": JavaScriptFlow._for,
-    "for_in_statement": JavaScriptFlow._for,
-    "while_statement": JavaScriptFlow._while,
-    "do_statement": JavaScriptFlow._while,
-    "labeled_statement": JavaScriptFlow._labeled,
-    "try_statement": JavaScriptFlow._try,
-    "return_statement": JavaScriptFlow._jump,
-    "throw_statement": JavaScriptFlow._jump,
-    "break_statement": JavaScriptFlow._jump,
-    "continue_statement": JavaScriptFlow._jump,
-}

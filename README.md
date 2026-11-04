@@ -344,24 +344,27 @@ Every finding also carries an `action`, delete, fold or simplify, and the **elim
 
 ### Bootstrapped on itself
 
-The first thing it was run on was vibepiler. Four rounds of the loop, each measured with `--baseline`:
+The first thing it was run on was vibepiler. Five rounds of the loop, each measured with `--baseline`:
 
-![Bloat and tangle over the four bootstrap rounds, and the removable lines per round](docs/img/bootstrap.png)
+![Bloat and tangle over the five bootstrap rounds, and the removable lines per round](docs/img/bootstrap.png)
 
 *Left: bloat and tangle, two unitless shares on one axis. Right: the lines the analysis could show removable. Vector versions for papers: [`docs/img/bootstrap.svg`](docs/img/bootstrap.svg), [`docs/img/bootstrap.pdf`](docs/img/bootstrap.pdf); regenerate with `uv run --with matplotlib python scripts/bootstrap_figure.py`.*
 
-| | start | round 1 | round 2 | round 3 | round 4 |
-|---|---|---|---|---|---|
-| removable lines shown by analysis | 71 | 34 | 41 | 31 | 18 |
-| tangle | 0.30 | 0.31 | 0.27 | 0.26 | 0.25 |
-| bloat | 31% | 31% | 28% | 26% | 25% |
-| most tangled function | `BloatScorePass.run` 100 | same | `AbstractionPass.run` 57 | `read_manifests` 43 | `BloatPass._dependencies` 36 |
+| | start | round 1 | round 2 | round 3 | round 4 | round 5 |
+|---|---|---|---|---|---|---|
+| removable lines shown by analysis | 71 | 34 | 41 | 31 | 18 | 18 |
+| tangle | 0.30 | 0.31 | 0.27 | 0.26 | 0.25 | 0.23 |
+| bloat | 31% | 31% | 28% | 26% | 25% | 23% |
+| live | | | | | | 100% (3362 of 3362) |
+| most tangled function | `BloatScorePass.run` 100 | same | `AbstractionPass.run` 57 | `read_manifests` 43 | `BloatPass._dependencies` 36 | same, 37 |
 
 Round one was waste: five dead helpers in the tree-sitter wrapper left over from the first implementation, a constant nothing read, unused imports, the `extract` method every language adapter had copied, and two copies of the "does this class inherit from a framework" check. Rounds two and three were tangle: the tool's own scoring pass, at cyclomatic complexity 100, became five stages; the markdown emitter became one function per section; the CLI's printing moved into a terminal backend, which is what the mixed-responsibilities finding on `cli.py` meant; the abstraction and entry-point passes were split the same way.
 
 Self-findings the owner rejected became fixes to the tool, which is the other half of the loop: a module constant used only as a default argument was reported dead (the extractor skipped identifier defaults); typer's decorated callback was called a stub (decorated stubs are registered with a framework on purpose); and round two briefly *raised* waste by 7 lines because the section functions it created were charged as single-use helpers, so the rule now recognises a caller with three or more such helpers as a function made of named steps, not indirection.
 
 Round four split the manifest reader, the dead-code pass and the concept builder, folded the size line the terminal and the markdown report had each built, and taught the tool three things: a call resolved to a base-class method reaches every override (virtual dispatch, which had made a JavaScript constant look unreachable), `umap` imports under a different name than its distribution, and findings the owner judges intentional can be **accepted** in the config, counted and kept out of the plan, so the loop converges instead of repeating the same judgment calls.
+
+Round five added the liveness pass, about a thousand lines, and ran it on itself. The new code arrived with 55 removable lines of its own: the two flow mixins had each copied a helper and a `classify` method, and a single-use helper sat at the bottom of one. Folding those took waste from 73 lines back to 18. Liveness found one genuine leftover in the old code, a `th = program.config.thresholds` in the abstraction pass that nothing had read since round three split that function, and vibepiler is now 3362 of 3362 definitions live. Its first self-run also found two bugs in its own rules, both fixed test-first: a middle segment such as `self._model.embed` is a read of `_model`, and `uses |= ...` mutates a set in place, so an augmented assignment is never a droppable store. The refactor briefly made every flow-shape method look dead, because the dispatch table named them as strings; it now holds the functions themselves, so the linker sees the calls.
 
 What is left is honest: 59 functions over the complexity threshold, most of them tree-walkers that are long because the grammar is, and about 1,000 lines alive only by name because 54% of call sites link. The second number is the one a type-aware linker would move.
 

@@ -23,6 +23,7 @@ from vibepiler.passes.abstraction import AbstractionPass
 from vibepiler.passes.base import Pass
 from vibepiler.passes.dataflow import FunctionLiveness, Store, analyze
 from vibepiler.passes.diagnostic import Diagnostic, Severity
+from vibepiler.passes.entry_points import is_dunder
 from vibepiler.passes.metric import Metric
 from vibepiler.passes.unused_imports import is_binding, is_unused_import
 
@@ -31,10 +32,6 @@ DEAD_SYMBOL = frozenset({"dead-symbol", "unreachable-symbol"})  # an unused expo
 SCOPES = (NodeKind.FUNCTION, NodeKind.METHOD, NodeKind.CLASS)
 ATTRIBUTE_HOOKS = ("__getattr__", "__getattribute__", "__slots__")
 COMPOUND_TARGETS = ("loop", "with", "except")  # the statement is bigger than the binding: drop the name, keep the code
-
-
-def is_dunder(name: str) -> bool:
-    return name.startswith("__") and name.endswith("__")
 
 
 def span(first: TSNode, last: TSNode) -> list[int]:
