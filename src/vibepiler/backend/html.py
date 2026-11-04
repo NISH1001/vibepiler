@@ -13,7 +13,7 @@ import json
 from html import escape
 from importlib import resources
 
-from vibepiler.backend.common import summarize
+from vibepiler.backend.common import project_name, summarize
 from vibepiler.backend.json_out import emit_json
 from vibepiler.ir.program import Program
 from vibepiler.passes.registry import all_passes
@@ -32,7 +32,7 @@ def emit_html(program: Program) -> str:
     return (
         resources.files("vibepiler.backend").joinpath("viewer.html").read_text(encoding="utf-8")
         .replace("__CYTOSCAPE__", CYTOSCAPE)
-        .replace("__NAME__", escape(program.root.name))
+        .replace("__NAME__", escape(project_name(program)))
         .replace("__FILES__", str(s["files"]))
         .replace("__SYMBOLS__", str(s["symbols"]))
         .replace("__LINKED__", pct)

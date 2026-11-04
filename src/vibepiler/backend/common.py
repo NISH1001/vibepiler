@@ -105,3 +105,12 @@ def summarize(program: Program) -> dict:
         "severity": counts,
         "by_pass": dict(by_pass),
     }
+
+
+def project_name(program) -> str:  # noqa: ANN001 - a Program
+    """The name a report shows: a cloned repo is named after the repo (`repo@ref`), not its cache folder
+    (`host__owner__repo@ref`); anything else after its folder."""
+    root = program.root
+    if root.parent.name == "repos" and "__" in root.name:
+        return root.name.rsplit("__", 1)[-1]
+    return root.name

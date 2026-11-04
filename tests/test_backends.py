@@ -91,3 +91,21 @@ def test_html_graph_hides_test_modules_until_asked(program):
     html = emit_html(program)
     assert 'id="t-tests" aria-pressed="false"' in html  # off by default: the scores leave tests out, so does the graph
     assert "tests: false" in html and "!show.tests && isTest(n)" in html
+
+
+def test_a_cloned_repo_is_named_after_the_repo_not_its_cache_folder(tmp_path):
+    from vibepiler.backend.common import project_name
+    from vibepiler.ir.builder import build_program
+
+    root = tmp_path / "repos" / "github.com__owner__my-repo@dev"
+    root.mkdir(parents=True)
+    (root / "a.py").write_text("def f():\n    return 1\n")
+    prog = build_program(root)
+    assert project_name(prog) == "my-repo@dev"
+    assert "<span>my-repo@dev</span>" in emit_html(prog)
+    assert emit_markdown(prog).startswith("# Vibepiler report for `my-repo@dev`")
+
+
+def test_header_phases_never_shrink_under_the_meter(program):
+    # the meter does not wrap, so the phase tabs must not shrink into it; the header wraps the meter instead
+    assert ".phases { display: flex; flex: 1 0 auto;" in emit_html(program)

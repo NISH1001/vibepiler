@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from vibepiler.backend.common import liveness_parts, size_parts, summarize
+from vibepiler.backend.common import liveness_parts, project_name, size_parts, summarize
 from vibepiler.ir.program import Program
 from vibepiler.passes.diagnostic import Diagnostic
 from vibepiler.passes.registry import all_passes
@@ -121,7 +121,7 @@ def _findings(program: Program, max_per_pass: int) -> list[str]:
 def emit_markdown(program: Program, max_per_pass: int = 40) -> str:
     m = program.metrics
     b = m.get("bloat_score")
-    lines = [f"# Vibepiler report for `{program.root.name}`", ""]
+    lines = [f"# Vibepiler report for `{project_name(program)}`", ""]
     lines += _summary(program)
     if b:
         lines += _size(m)
