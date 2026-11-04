@@ -273,3 +273,49 @@ def test_a_nested_pyproject_declares_its_own_folder_s_imports(tmp_path):
     diags = run_pass("bloat", build_program(tmp_path))
     assert [(d.data["package"], d.message.split(" in ")[-1]) for d in codes(diags, "undeclared-dependency")] == [("httpx", "backend/pyproject.toml")]
     assert codes(diags, "unused-dependency") == []  # click is used by the root, fastapi by backend/
+
+
+def test_code_only_tests_reach_is_reported_as_test_only_not_dead(tmp_path):
+    (tmp_path / "app").mkdir()
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "app" / "main.py").write_text("from app.lib import used\n\n\ndef main():\n    return used()\n")
+    (tmp_path / "app" / "lib.py").write_text(
+        "def used():\n    return 1\n\n\ndef only_tested():\n    return _inner()\n\n\ndef _inner():\n    return 2\n\n\n"
+        "class OnlyTested:\n    def go(self):\n        return 3\n"
+    )
+    (tmp_path / "app" / "legacy.py").write_text("def old():\n    return 4\n")
+    (tmp_path / "tests" / "test_lib.py").write_text(
+        "from app.lib import only_tested, OnlyTested\nfrom app.legacy import old\n\n\n"
+        "def test_it():\n    assert only_tested() and OnlyTested().go() and old()\n"
+    )
+    prog = build_program(tmp_path)
+    run_pass("entry-points", prog)
+    diags = run_pass("dead-code", prog)
+    test_only = sorted((d.file, d.data["qualname"]) for d in diags if d.code == "test-only")
+    # the outermost unit only: a test-only module, not each function in it; a class, not each method
+    assert test_only == [("app/legacy.py", "legacy"), ("app/lib.py", "OnlyTested"), ("app/lib.py", "_inner"), ("app/lib.py", "only_tested")]
+    assert not [d for d in diags if d.code in ("dead-symbol", "unreachable-symbol", "unreachable-module")]
+    assert prog.metrics["dead_code"]["symbols"] == 0  # not dead: nothing to delete, something to look at
+
+
+def test_import_module_with_a_literal_name_is_an_import(tmp_path):
+    (tmp_path / "pkg" / "measures").mkdir(parents=True)
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "pkg" / "__init__.py").write_text("")
+    (tmp_path / "pkg" / "measures" / "__init__.py").write_text("")
+    (tmp_path / "main.py").write_text("from pkg.registry import ALL\n\n\ndef main():\n    return ALL\n")
+    (tmp_path / "pkg" / "registry.py").write_text(
+        "import importlib\nfrom importlib import import_module\n\nALL = []\n\n\ndef register(c):\n    ALL.append(c)\n    return c\n\n\n"
+        'import_module("pkg.measures.judge")\nimportlib.import_module("pkg.measures.safety")\n'
+    )
+    for name in ("judge", "safety"):
+        (tmp_path / "pkg" / "measures" / f"{name}.py").write_text(f"from pkg.registry import register\n\n\n@register\nclass {name.title()}:\n    pass\n")
+    (tmp_path / "tests" / "test_m.py").write_text("from pkg.measures.judge import Judge\n\n\ndef test_j():\n    assert Judge\n")
+    prog = build_program(tmp_path)
+    from vibepiler.ir.model import EdgeKind
+
+    targets = {e.dst for e in prog.graph.out_edges("mod:pkg/registry.py", EdgeKind.IMPORTS)}
+    assert {"mod:pkg/measures/judge.py", "mod:pkg/measures/safety.py"} <= targets
+    run_pass("entry-points", prog)
+    diags = run_pass("dead-code", prog)
+    assert not [d.message for d in diags if "measures" in (d.file or "")]
