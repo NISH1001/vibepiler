@@ -20,13 +20,14 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Callable
+from typing import Callable, ClassVar, Literal
 
 from vibepiler.ir.graph import ProgramGraph
 from vibepiler.ir.model import EdgeKind, Node, NodeKind
 from vibepiler.ir.program import Program
 from vibepiler.passes.base import Pass
 from vibepiler.passes.diagnostic import Diagnostic, Severity
+from vibepiler.passes.metric import Metric
 
 FORMULA = "bloat = 1 - (1 - waste)(1 - tangle)"
 BLOATED_MODULE = 0.4  # density at which a module gets its own finding...
@@ -70,8 +71,13 @@ def excess(value: float, limit: float) -> float:
 
 
 @dataclass(frozen=True)
-class Bloat:
+class Bloat(Metric):
     """The score as a value. `waste` and `tangle` are the two numbers; `score` combines them for sorting and gating."""
+
+    key: ClassVar[str] = "bloat"
+    label: ClassVar[str] = "bloat"
+    better: ClassVar[Literal["low", "high"]] = "low"
+    formula: ClassVar[str] = FORMULA
 
     loc: int
     removable_loc: float  # proven + inferred lines that could go
@@ -85,6 +91,13 @@ class Bloat:
     @property
     def score(self) -> float:
         return 1 - (1 - self.waste) * (1 - self.tangle)
+
+    @property
+    def value(self) -> float:
+        return self.score
+
+    def terms(self) -> dict[str, float]:
+        return {"waste": self.waste, "tangle": self.tangle}
 
     def as_dict(self) -> dict:
         return {"score": self.score, "waste": self.waste, "tangle": self.tangle, "removable_loc": self.removable_loc, "model_loc": self.model_loc}
