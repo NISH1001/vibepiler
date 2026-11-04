@@ -34,6 +34,7 @@ ignore = ["tests/fixtures/**"]                     # deliberately bloated sample
 accept = [                                         # self-findings judged intentional; counted, not reported
     "class-as-function:*Embedder",                 # they implement the Embedder protocol and hold a loaded model
     "thin-wrapper:ProgramGraph.*_edges",           # the public API is one accessor per direction
+    "duplicate-function:ProgramGraph.*_edges",     # ... and the two directions are mirror images on purpose
     "near-duplicate-function:Diagnostic.to_dict",  # every to_dict is a dict literal of its fields
     "single-use-helper:*_id",                      # module_id/symbol_id/package_id define the id scheme in one place
     "single-use-helper:get_pass",

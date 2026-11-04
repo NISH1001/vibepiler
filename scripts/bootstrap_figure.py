@@ -2,7 +2,7 @@
 # requires-python = ">=3.12"
 # dependencies = ["matplotlib>=3.8"]
 # ///
-"""The bootstrap figure for the README and for papers: bloat and tangle over the five rounds, and the removable lines.
+"""The bootstrap figure for the README and for papers: bloat and tangle over the six rounds, and the removable lines.
 
 Run:  uv run scripts/bootstrap_figure.py   (the block above declares matplotlib; uv installs it for this run only)
 Writes docs/img/bootstrap.{svg,pdf,png}. Colour-blind safe (validated adjacent pairs), hatched bars, vector output.
@@ -15,10 +15,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
-ROUNDS = ["start", "r1\ndelete", "r2\nsplit", "r3\nsplit", "r4\nfold", "r5\nliveness"]
-BLOAT = [0.31, 0.31, 0.28, 0.26, 0.25, 0.23]
-TANGLE = [0.30, 0.31, 0.27, 0.26, 0.25, 0.23]
-WASTE_LINES = [71, 34, 41, 31, 18, 18]
+ROUNDS = ["start", "r1\ndelete", "r2\nsplit", "r3\nsplit", "r4\nfold", "r5\nlive", "r6\nsplit"]
+BLOAT = [0.31, 0.31, 0.28, 0.26, 0.25, 0.23, 0.23]  # two decimals throughout, as each round was recorded
+TANGLE = [0.30, 0.31, 0.27, 0.26, 0.25, 0.23, 0.23]
+WASTE_LINES = [71, 34, 41, 31, 18, 18, 18]
 
 BLUE, ORANGE, AQUA = "#2a78d6", "#eb6834", "#1baf7a"  # categorical slots 1, 2, 3 of the reference palette
 INK, INK2, GRID = "#0b0b0b", "#52514e", "#dcdbd5"
@@ -62,14 +62,18 @@ def main() -> None:
     bx.set_xticks(list(x))
     bx.set_xticklabels(ROUNDS, fontsize=7.5)
     bx.set_title("Removable lines shown by analysis")
-    bx.set_ylabel("lines (of ~6,400)", labelpad=4)
+    bx.set_ylabel("lines (of ~6,400 to ~8,400)", labelpad=4)
     bx.grid(axis="y", color=GRID, lw=0.6, zorder=0)
     bx.set_axisbelow(True)
     ax.set_axisbelow(True)
 
-    fig.text(0.01, -0.06, "Each round: apply the top remarks of `vibepiler compile . -R`, re-run with --baseline. Round 1 deleted waste; rounds 2–3 split the most tangled functions; round 4 folded duplicates and accepted the judgment calls.\n"
+    fig.text(0.01, -0.06,
+             "Each round: apply the top remarks of `vibepiler compile . -R`, re-run with --baseline. Round 1 deleted waste;\n"
+             "rounds 2–3 split the most tangled functions; round 4 folded duplicates and accepted the judgment calls.\n"
              "Round 5 added the liveness pass, whose own new code brought 55 removable lines, and worked them off.\n"
-             "Tangle is the share-weighted noisy OR of per-function terms; bloat = 1 − (1 − waste)(1 − tangle). Measured at -O3, 54–56% of call sites linked.", fontsize=7, color=INK2, va="top")
+             "Round 6 followed v0.2: it split the dependency check (complexity 51 to 18) and folded the decorator code\n"
+             "both adapters had copied. Tangle is the share-weighted noisy OR of per-function terms;\n"
+             "bloat = 1 − (1 − waste)(1 − tangle). Measured at -O3, 54–56% of call sites linked.", fontsize=7, color=INK2, va="top")
 
     out = Path(__file__).resolve().parents[1] / "docs" / "img"
     out.mkdir(parents=True, exist_ok=True)

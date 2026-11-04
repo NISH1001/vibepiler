@@ -22,9 +22,9 @@ from vibepiler.frontend.facts import (
     SymbolDef,
 )
 from vibepiler.frontend.languages.base import (
+    DecoratorWalk,
     ImportOption,
     LanguageSpec,
-    decorator_parts,
 )
 from vibepiler.frontend.languages.javascript_flow import JavaScriptFlow
 from vibepiler.frontend.loader import SourceFile
@@ -272,7 +272,9 @@ def _walk_within_function(root: Node, function_types: frozenset[str]):
         stack.extend(reversed(n.children))
 
 
-class _Extractor:
+class _Extractor(DecoratorWalk):
+    call_type = "call_expression"
+
     def __init__(self, spec: JavaScriptSpec, sf: SourceFile, facts: FileFacts) -> None:
         self.spec = spec
         self.sf = sf
@@ -478,25 +480,6 @@ class _Extractor:
         for c in node.named_children:
             if name is None or c != name:
                 self.visit(c, scope, class_scope)
-
-    def visit_decorator(self, node: Node, scope: str | None) -> None:
-        expr, target = decorator_parts(node, "call_expression")
-        if expr is None:
-            return
-        chain = self.loose_chain_of(target) if target is not None else None
-        if chain is not None:
-            self.facts.refs.append(RefSite(chain=chain, line=self.line(node), scope=scope, context="decorator"))
-        if expr.type == "call_expression":
-            args = expr.child_by_field_name("arguments")
-            if args is not None:
-                self.visit(args, scope, None)
-
-    def decorator_name(self, dec: Node) -> str:
-        expr, target = decorator_parts(dec, "call_expression")
-        if expr is None:
-            return ""
-        chain = self.loose_chain_of(target) if target is not None else None
-        return ".".join(chain) if chain else self.text(expr)
 
     # --- declarations ---------------------------------------------------------
     def visit_export(self, node: Node, scope: str | None, class_scope: str | None) -> None:

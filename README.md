@@ -363,19 +363,19 @@ Every finding also carries an `action`, delete, fold or simplify, and the **elim
 
 ### Bootstrapped on itself
 
-The first thing it was run on was vibepiler. Five rounds of the loop, each measured with `--baseline`:
+The first thing it was run on was vibepiler. Six rounds of the loop, each measured with `--baseline`:
 
-![Bloat and tangle over the five bootstrap rounds, and the removable lines per round](docs/img/bootstrap.png)
+![Bloat and tangle over the six bootstrap rounds, and the removable lines per round](docs/img/bootstrap.png)
 
 *Left: bloat and tangle, two unitless shares on one axis. Right: the lines the analysis could show removable. Vector versions for papers: [`docs/img/bootstrap.svg`](docs/img/bootstrap.svg), [`docs/img/bootstrap.pdf`](docs/img/bootstrap.pdf); regenerate with `uv run scripts/bootstrap_figure.py` (the script declares matplotlib itself, PEP 723).*
 
-| | start | round 1 | round 2 | round 3 | round 4 | round 5 |
-|---|---|---|---|---|---|---|
-| removable lines shown by analysis | 71 | 34 | 41 | 31 | 18 | 18 |
-| tangle | 0.30 | 0.31 | 0.27 | 0.26 | 0.25 | 0.23 |
-| bloat | 31% | 31% | 28% | 26% | 25% | 23% |
-| live | | | | | | 100% (3362 of 3362) |
-| most tangled function | `BloatScorePass.run` 100 | same | `AbstractionPass.run` 57 | `read_manifests` 43 | `BloatPass._dependencies` 36 | same, 37 |
+| | start | round 1 | round 2 | round 3 | round 4 | round 5 | round 6 |
+|---|---|---|---|---|---|---|---|
+| removable lines shown by analysis | 71 | 34 | 41 | 31 | 18 | 18 | 18 |
+| tangle | 0.30 | 0.31 | 0.27 | 0.26 | 0.25 | 0.23 | 0.23 |
+| bloat | 31% | 31% | 28% | 26% | 25% | 23% | 23% |
+| live | | | | | | 100% (3362 of 3362) | 100% (3536 of 3536) |
+| most tangled function | `BloatScorePass.run` 100 | same | `AbstractionPass.run` 57 | `read_manifests` 43 | `BloatPass._dependencies` 36 | same, 37 | `_Extractor.visit` (JS) 35 |
 
 Round one was waste: five dead helpers in the tree-sitter wrapper left over from the first implementation, a constant nothing read, unused imports, the `extract` method every language adapter had copied, and two copies of the "does this class inherit from a framework" check. Rounds two and three were tangle: the tool's own scoring pass, at cyclomatic complexity 100, became five stages; the markdown emitter became one function per section; the CLI's printing moved into a terminal backend, which is what the mixed-responsibilities finding on `cli.py` meant; the abstraction and entry-point passes were split the same way.
 
@@ -385,7 +385,9 @@ Round four split the manifest reader, the dead-code pass and the concept builder
 
 Round five added the liveness pass, about a thousand lines, and ran it on itself. The new code arrived with 55 removable lines of its own: the two flow mixins had each copied a helper and a `classify` method, and a single-use helper sat at the bottom of one. Folding those took waste from 73 lines back to 18. Liveness found one genuine leftover in the old code, a `th = program.config.thresholds` in the abstraction pass that nothing had read since round three split that function, and vibepiler is now 3362 of 3362 definitions live. Its first self-run also found two bugs in its own rules, both fixed test-first: a middle segment such as `self._model.embed` is a read of `_model`, and `uses |= ...` mutates a set in place, so an augmented assignment is never a droppable store. The refactor briefly made every flow-shape method look dead, because the dispatch table named them as strings; it now holds the functions themselves, so the linker sees the calls.
 
-What is left is honest: 59 functions over the complexity threshold, most of them tree-walkers that are long because the grammar is, and about 1,000 lines alive only by name because 54% of call sites link. The second number is the one a type-aware linker would move.
+Round six came after v0.2, which added choosing paths, reporting scope and test-only code. Those features took bloat from 23.1% back up to 23.7%, and most of that was one function: supporting a manifest per folder and PEP 723 script blocks had grown `BloatPass._dependencies` from complexity 37 to 51. It became five named steps (collect the imported packages, then for each manifest the ones it never uses and the ones it never declares), at 18, and the set of local module names is now built once instead of once per package. The decorator handling both language adapters had copied (`visit_decorator`, `decorator_name`, a proven duplicate and a 97% near-duplicate) moved into one shared `DecoratorWalk`, and the mirrored `ProgramGraph.out_edges` / `in_edges` pair was accepted as intentional. Waste went from 26 lines to 18 and bloat from 23.7% to 23.2%. The new `test-only` finding, run on itself, flags just `vibepiler.compile`: nothing inside the repo calls the public API except its tests, which is what a library looks like.
+
+What is left is honest: 78 functions over the complexity threshold, most of them tree-walkers that are long because the grammar is, and about 1,165 lines alive only by name because 56% of call sites link. The second number is the one a type-aware linker would move.
 
 ## Liveness, the metric
 
