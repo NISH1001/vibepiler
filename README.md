@@ -36,7 +36,7 @@ Languages: **Python**, **JavaScript/TypeScript** (incl. JSX/TSX). Adding a langu
 You need [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`). Nothing else: no clone, no install step.
 
 ```bash
-# a project on disk (add @v0.2.1 after the URL to pin a release)
+# a project on disk (add @v0.3.0 after the URL to pin a release)
 uvx --from git+https://github.com/NISH1001/vibepiler vibepiler compile path/to/project
 
 # a repo on GitHub: owner/repo, owner/repo@branch, or any GitHub / git URL
@@ -100,7 +100,7 @@ Remote repos are shallow-cloned into `~/.cache/vibepiler/repos/` and reused on t
 
    ![A trace from the CLI module: reached modules lit amber, dashed paths with moving particles, the rest dimmed](docs/img/report-trace.png)
 3. **Findings tab** (or `report.md`): filter by pass and by finding type; the graph lights up the matches and "only flagged" isolates them. `dead-code`, `duplicates`, `wrappers` and `abstraction` remove the most lines per decision; `cycles`, `complexity` and `hotspots` tell you what is risky to touch.
-4. **Concepts tab** (`-O3`): the codebase grouped by meaning, with scattered concerns and mixed modules named.
+4. **Semantic tab** (`-O3`): every function on one map placed by meaning, coloured by health or by any measure with a live threshold, with calls flowing and copies tied together.
 5. **Link tab**: how much of the call graph was proven. A low "linked" percentage means dynamic dispatch; dead-code results stay safe (they are conservative), but there are fewer of them and the size line says how many lines are alive only by name.
 
 ### Five ways to use it
@@ -215,7 +215,7 @@ warning abstraction/single-implementation  src/app/core.py:6: abstract class `Ba
 
 | File | What it is |
 |---|---|
-| `report.html` | Self-contained interactive viewer organized by compiler phase: **Parse** (every file and its parse status), **Link** (name resolution: the call-resolution breakdown, each module's binding table, member names that could only be matched dynamically), **Program graph** (a living map: modules are orbs sized by lines with a red wedge for the share of lines that could go, traffic moves along import and call edges, unreachable code is grey and still; the layout is fixed and toggles never move nodes; double-click a module to open it, click a node and *Trace* to watch execution flow at a speed you choose; a *bloat ≥* slider hides everything scored below it, and the Findings filters, by pass and by finding type, decide which nodes "only flagged" keeps and light the matches up), **Concepts** (`-O3`: the semantic space, see below), **Passes** (every finding with its suggestion, click to jump into the graph). The header carries the size line: waste, tangle, bloat. |
+| `report.html` | Self-contained interactive viewer organized by compiler phase: **Parse** (every file and its parse status), **Link** (name resolution: the call-resolution breakdown, each module's binding table, member names that could only be matched dynamically), **Program graph** (a living map: modules are orbs sized by lines with a red wedge for the share of lines that could go, traffic moves along import and call edges, unreachable code is grey and still; the layout is fixed and toggles never move nodes; double-click a module to open it, click a node and *Trace* to watch execution flow at a speed you choose; a *bloat ≥* slider hides everything scored below it, and the Findings filters, by pass and by finding type, decide which nodes "only flagged" keeps and light the matches up), **Semantic** (`-O3`: every function placed by meaning, coloured by health or any measure with a threshold slider; see below), **Passes** (every finding with its suggestion, click to jump into the graph). The header carries the size line: waste, tangle, bloat. |
 | `report.md` | Summary with the size line and bloat per folder, "what can go" table, entry points, hotspots, complexity, concepts, the elimination plan, then every finding grouped by pass with a suggestion. |
 | `ir.json` | The whole IR: nodes (with all computed attributes), edges, diagnostics, metrics. Feed it to anything. |
 | `graph.dot`, `graph-symbols.dot` | Graphviz: `dot -Tsvg vibepiler-out/graph.dot -o graph.svg`. Cycle edges are red, unreachable nodes dashed, flagged nodes get a colored border. |
@@ -313,13 +313,23 @@ What the tier produces, concretely:
 
 1. **`semantic-duplicates`**: pairs of functions that do the same job with different code. Structural duplicate detection (`-O2`) cannot see these; this is the one thing embeddings add that nothing else can.
 2. **`responsibilities`**: modules whose functions fall into several unrelated groups, each group labelled by the words its names share (`{resolve · import} ×6, {emit · html} ×4`).
-3. **`concepts`**: the whole codebase partitioned by meaning. Every function is linked to its nearest neighbours by cosine similarity, communities in that graph (Louvain, fixed seed) become concepts, each labelled from identifier words and placed on a 2-D map of the concept centroids. The **Concepts** tab of the viewer is that map: distance is similarity of meaning, size is how many functions, lines are calls between concepts, amber means a concept spread over several modules with no home (a *scattered concern*, the mirror image of a mixed module). An interface implemented in every module, such as a `run` on every pass, is recognised as a pattern, not scattering.
+3. **`concepts`**: the whole codebase partitioned by meaning. Every function is linked to its nearest neighbours by cosine similarity; communities in that graph (Louvain, fixed seed) become concepts, labelled from identifier words, and concepts that sit close together group into themes. An interface implemented in every module, such as a `run` on every pass, is recognised as a pattern, not a scattered concern.
 
-![The Concepts tab: functions clustered by meaning on a 2-D map, one concept selected with its modules and members listed](docs/img/report-concepts.png)
+**The Semantic tab** draws all of it as one map. Every function is a dot placed by its embedding, so *nearby means similar*, wherever the files live; concept and theme labels sit on the functions they name. It is a plain `<canvas>` inside the single HTML file (no GPU, no library) and stays smooth with thousands of functions: drag to pan, scroll or pinch to zoom at the cursor, hover for names, click for detail.
 
-*The Concepts tab on vibepiler itself. Each dot is a concept; amber ones are spread over several modules with no home. The selected concept, "visit · extractor · hints", is the tree-walking code shared by the two language adapters.*
+![The Semantic tab on vibepiler itself: 469 functions placed by meaning, coloured by health: tangled functions amber, copies red, the rest dim; themes labelled in capitals](docs/img/report-semantic.png)
 
-The map is projected with PCA by default. Install `vibepiler[map]` to project with UMAP instead (seeded, so the map is the same on every run); it is a separate extra because umap-learn pulls in scikit-learn, scipy and numba, about 150 MB, and the rest of the tool should keep installing in seconds.
+*The Semantic tab on vibepiler itself, coloured by health. Tangled functions (complexity over the limit) are amber and cluster in the pass code at the bottom; red pairs are functions that do the same job.*
+
+- **Lenses.** *Map* shows functions only. *Flow* animates calls from caller to callee: streams between concepts when zoomed out, single calls when zoomed in; hover or click a stream for the calls it carries. *Copies* ties duplicates together: solid for the same code, dashed for the same shape, dotted for the same meaning.
+- **Colour.** *health* (the default) gives each function its worst status: copied, tangled, unused or healthy, with problems drawn on top. Or colour by a measure (**bloat, complexity, live, size, nesting, callers**) and drag the threshold slider: functions past the line light from dim to bright and the rest fade. The slider starts at the compiler's own limit and steps through the values that occur, so every notch changes the picture. *folder* and *theme* show where code lives.
+- **Click a function** to see what leads to it and what it sets off (its call cone, up to three hops), its copies, its numbers and the first lines of its code.
+
+![Flow on vibepiler itself: Compiler.run selected, its call cone drawn as moving dashed streams, the side panel listing its calls, complexity and code](docs/img/report-semantic-flow.png)
+
+*Flow with `Compiler.run` selected: the calls it sets off stream out to the passes and emitters; the panel shows it is tangled (complexity 18) and lists what it calls.*
+
+The map is projected with PCA by default. Install `vibepiler[map]` to project with UMAP instead, which keeps neighbourhoods far better (seeded, so the map is the same on every run); it is a separate extra because umap-learn pulls in scikit-learn, scipy and numba, about 150 MB, and the rest of the tool should keep installing in seconds.
 
 What it does and does not do: an embedding cannot tell `parse` from `dump`, so inverse operations will occasionally pair up. It is also not used anywhere exactness matters; call resolution, reachability and dead code stay deterministic, and lines the model thinks could merge are kept out of the bloat score.
 
