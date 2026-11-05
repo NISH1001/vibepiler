@@ -140,7 +140,6 @@ def build_concepts(program: Program) -> dict | None:
     nodes, vectors, model = symbol_vectors(program)
     if nodes is None:
         return None
-    import numpy as np
 
     result: dict = {"model": model, "symbols": len(nodes), "clustered": 0, "concepts": [], "themes": [], "points": [], "edges": []}
     if len(nodes) < MIN_CONCEPT:
