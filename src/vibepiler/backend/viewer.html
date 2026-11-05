@@ -196,7 +196,7 @@
     <button class="phase" role="tab" data-view="frontend"><span class="step">1 · frontend</span><span class="name">Parse</span><span class="count"><b class="num" data-count="__FILES__">0</b> files</span></button>
     <button class="phase" role="tab" data-view="semantic"><span class="step">2 · linker</span><span class="name">Link</span><span class="count"><b class="num" data-count="__SYMBOLS__">0</b> symbols, <b>__LINKED__</b> linked</span></button>
     <button class="phase" role="tab" data-view="graph" aria-selected="true"><span class="step">3 · ir</span><span class="name">Program graph</span><span class="count"><b class="num" data-count="__EDGES__">0</b> edges</span></button>
-    <button class="phase" role="tab" data-view="concepts"><span class="step">4 · semantic (-O3)</span><span class="name">Meaning</span><span class="count" id="concept-count">needs -O3</span></button>
+    <button class="phase" role="tab" data-view="concepts"><span class="step">4 · embeddings (-O3)</span><span class="name">Semantic</span><span class="count" id="concept-count">needs -O3</span></button>
     <button class="phase" role="tab" data-view="optimize"><span class="step">5 · optimize</span><span class="name">Passes</span><span class="count"><b class="num" data-count="__FINDINGS__">0</b> findings</span></button>
   </nav>
   <div class="meter" id="meter" hidden title="bloat = 1 − (1 − waste)(1 − tangle); waste = lines that could go / lines, tangle = structure harder than its job. live = definitions that reach a use / definitions"></div>
@@ -291,7 +291,7 @@
 
   <!-- ========== 4 semantic (-O3): the meaning map ========== -->
   <section class="view" id="view-concepts">
-    <div id="meaning" class="field" role="application" aria-label="Meaning map: every function placed by what it does" tabindex="0">
+    <div id="meaning" class="field" role="application" aria-label="Semantic map: every function placed by what it does" tabindex="0">
       <canvas id="mm-canvas"></canvas>
       <div class="toolbar mm-bar">
         <input type="text" id="mm-search" placeholder="find a function" list="mm-names" autocomplete="off" aria-label="Find a function"><datalist id="mm-names"></datalist>
@@ -953,7 +953,7 @@ function buildMeaning() {
     const scattered = C.filter(c => c.scattered).sort((a, b) => b.size - a.size), mixed = DATA.diagnostics.filter(d => d.code === 'mixed-responsibilities');
     const nCopies = { exact: 0, near: 0, meaning: 0 }; for (const pr of copies) nCopies[pr.kind]++;
     panel.innerHTML = `
-      <div class="section"><h3>The meaning map</h3><div class="meta2">Every function is a dot, placed by what it does: the code model <span class="mono">${esc(CONCEPTS.model)}</span> reads each one and ${esc(CONCEPTS.projection === 'umap' ? 'UMAP' : 'PCA')} lays them out, so <b>nearby means similar</b>, wherever the files live. Small labels are <b>concepts</b>, groups of functions that do one kind of thing (hover one and its functions glow); capitals are <b>themes</b>, groups of concepts. Zoom in for names; click a dot to see what calls it, what it calls and what it copies.</div>
+      <div class="section"><h3>The semantic map</h3><div class="meta2">Every function is a dot, placed by what it does: the code model <span class="mono">${esc(CONCEPTS.model)}</span> reads each one and ${esc(CONCEPTS.projection === 'umap' ? 'UMAP' : 'PCA')} lays them out, so <b>nearby means similar</b>, wherever the files live. Small labels are <b>concepts</b>, groups of functions that do one kind of thing (hover one and its functions glow); capitals are <b>themes</b>, groups of concepts. Zoom in for names; click a dot to see what calls it, what it calls and what it copies.</div>
         <div class="kv"><div><b>${P.length}</b><span>functions</span></div><div><b>${C.length}</b><span>concepts</span></div><div><b>${T.length}</b><span>themes</span></div></div>
         <div class="kv"><div><b>${nCopies.exact}</b><span>exact copies</span></div><div><b>${nCopies.near}</b><span>near copies</span></div><div><b>${nCopies.meaning}</b><span>same meaning</span></div></div></div>
       <div class="section"><h3>Themes</h3><ul class="list">${T.filter(t => t.size >= 12).map(t => `<li data-t="${t.i}"><span>${esc(t.label)}</span><span class="meta">${t.size} fns · ${t.concepts.length} concepts</span></li>`).join('')}</ul></div>
