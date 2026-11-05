@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="__CYTOSCAPE__"></script>
 <style>
+  [hidden] { display: none !important; } /* a class's display rule must never resurrect a hidden overlay */
   :root {
     color-scheme: light;
     --surface: #fcfcfb; --surface-2: #f3f2ef; --surface-3: #e9e8e3; --line: #dcdbd5;
@@ -86,7 +87,7 @@
   .mm-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--field-ink-2); text-align: center; padding: 24px; }
   #mm-panel pre { margin: 0; padding: 10px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; overflow: auto; max-height: 340px; font: 11.5px/1.5 "IBM Plex Mono", monospace; tab-size: 4; }
   #mm-panel .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
-  #mm-panel .kv { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+  #mm-panel .kv { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
   #mm-panel .kv div { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; } #mm-panel .kv b { display: block; font-size: 16px; }
   #mm-panel .kv span { color: var(--ink-3); font-size: 11px; }
   #mm-panel .copy { font-size: 11px; padding: 0 6px; border-radius: 8px; border: 1px solid var(--error); color: var(--error); white-space: nowrap; }
@@ -296,7 +297,7 @@
       <div class="toolbar mm-bar">
         <input type="text" id="mm-search" placeholder="find a function" list="mm-names" autocomplete="off" aria-label="Find a function"><datalist id="mm-names"></datalist>
         <div class="group" id="mm-lens" role="group" aria-label="Lens"><button data-lens="map" aria-pressed="true" title="Functions only">Map</button><button data-lens="flow" aria-pressed="false" title="Calls, flowing from caller to callee">Flow</button><button data-lens="copies" aria-pressed="false" title="Functions that duplicate each other">Copies</button></div>
-        <div class="group" id="mm-colour" role="group" aria-label="Colour by"><button data-colour="folder" aria-pressed="true">folder</button><button data-colour="theme" aria-pressed="false">theme</button></div>
+        <div class="group" id="mm-colour" role="group" aria-label="Colour by"><button data-colour="health" aria-pressed="true" title="Copies, tangled code and unused functions stand out">health</button><button data-colour="complexity" aria-pressed="false" title="Cyclomatic complexity">complexity</button><button data-colour="folder" aria-pressed="false">folder</button><button data-colour="theme" aria-pressed="false">theme</button></div>
       </div>
       <div class="legend mm-legend" id="mm-legend"></div>
       <div class="zoom"><button id="mm-in" aria-label="Zoom in">+</button><button id="mm-out" aria-label="Zoom out">−</button><button id="mm-fit" aria-label="Fit the map">fit</button></div>
@@ -606,6 +607,11 @@ const CONCEPTS = DATA.metrics.concepts && DATA.metrics.concepts.concepts && DATA
   el.innerHTML = `<b>${(CONCEPTS.points || []).length || CONCEPTS.symbols}</b> functions, <b>${CONCEPTS.concepts.length}</b> concepts`;
 })();
 const MM_PALETTE = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#9085e9', '#008300']; // validated on the field: fixed order, never cycled
+// health: one status per function, the worst one wins; healthy recedes so problems read at a glance
+const MM_HEALTH = [['#34446e', 'healthy'], ['#9aa5c0', 'unused'], ['#ffb020', 'tangled'], ['#ff6b6b', 'copied']];
+// complexity: one hue, dim to bright as it climbs; [highest cyclomatic complexity in the band, colour]
+const MM_CC = [[2, '#3a3a52'], [5, '#6b5a2e'], [10, '#a8781c'], [20, '#e9a21a'], [Infinity, '#ffd98a']];
+const MM_DEAD = new Set(['dead-symbol', 'unreachable-symbol']); // as liveness counts them: an unused export is live
 const MM_OTHER = '#5d6884', MM_COPY = '#ff6b6b', MM_DOWN = '#ffc53d', MM_UP = '#9fd4ff';
 const MM_CONTAINERS = new Set(['src', 'lib', 'app', 'apps', 'packages', 'frontend', 'backend', 'web', 'client', 'server']);
 function mmFolder(file) {
@@ -626,7 +632,7 @@ function buildMeaning() {
   const P = CONCEPTS.points.map((p, i) => {
     const n = nodeById[p.id] || { attrs: {} }; const q = n.qualname || n.name || p.id;
     return { i, id: p.id, x: p.x * 1000, y: p.y * 1000, c: p.c, q, name: q.split('.').pop(), file: n.file, line: n.start_line, loc: n.attrs.loc || 1,
-      folder: mmFolder(n.file), dead: n.attrs.reachable === false, test: !!n.attrs.test_only, in: [], out: [], twins: [] };
+      folder: mmFolder(n.file), cc: n.attrs.complexity || 1, dead: MM_DEAD.has(n.attrs.dead) && !n.attrs.accepted, test: !!n.attrs.test_only, in: [], out: [], twins: [] };
   });
   const byId = Object.fromEntries(P.map(p => [p.id, p]));
   const C = CONCEPTS.concepts.map((c, i) => ({ ...c, i, cx: c.x * 1000, cy: c.y * 1000 }));
@@ -639,11 +645,19 @@ function buildMeaning() {
     const ps = ids.map(id => byId[id]).filter(Boolean);
     for (let k = 1; k < ps.length; k++) { const pair = { a: ps[0], b: ps[k], kind, sim: d.data.similarity || 1, d }; copies.push(pair); ps[0].twins.push(pair); ps[k].twins.push(pair); }
   }
+  const complex = new Set(DATA.diagnostics.filter(d => d.code === 'high-complexity').map(d => d.node_id));
+  const ccLimit = Math.min(...DATA.diagnostics.filter(d => d.code === 'high-complexity').map(d => (d.data || {}).complexity || Infinity), Infinity) - 1;
+  for (const p of P) { p.complex = complex.has(p.id); p.health = p.twins.length ? 3 : p.complex ? 2 : p.dead ? 1 : 0; }
+  const ccBand = p => MM_CC.findIndex(([hi]) => p.cc <= hi);
   const folderCount = {}; for (const p of P) folderCount[p.folder] = (folderCount[p.folder] || 0) + 1;
   const folders = Object.keys(folderCount).sort((a, b) => folderCount[b] - folderCount[a] || a.localeCompare(b));
   const folderColour = Object.fromEntries(folders.map((f, i) => [f, i < MM_PALETTE.length ? MM_PALETTE[i] : MM_OTHER]));
   const themeColour = t => t >= 0 && t < MM_PALETTE.length ? MM_PALETTE[t] : MM_OTHER;
-  const colourOf = p => state.colour === 'theme' ? themeColour(p.c >= 0 ? C[p.c].theme : -1) : folderColour[p.folder];
+  const colourOf = p => state.colour === 'health' ? MM_HEALTH[p.health][0] : state.colour === 'complexity' ? MM_CC[ccBand(p)][1]
+    : state.colour === 'theme' ? themeColour(p.c >= 0 ? C[p.c].theme : -1) : folderColour[p.folder];
+  // problems draw last, so a red copy is never buried under a cloud of healthy dots
+  const drawOrder = () => state.colour === 'health' ? [...P].sort((a, b) => a.health - b.health) : state.colour === 'complexity' ? [...P].sort((a, b) => a.cc - b.cc) : P;
+  let order = null;
   const importance = p => p.in.length * 3 + Math.sqrt(p.loc);
   const byImportance = [...P].sort((a, b) => importance(b) - importance(a));
   const stacks = new Map(); for (const p of P) { const k = Math.round(p.x * 4) + ',' + Math.round(p.y * 4); (stacks.get(k) || stacks.set(k, []).get(k)).push(p); }
@@ -654,7 +668,7 @@ function buildMeaning() {
   // ---- camera: screen = world * k + t; `cur` eases toward `to` ----
   let W = 0, H = 0, DPR = 1, fitK = 1;
   const cur = { k: 1, x: 0, y: 0 }, to = { k: 1, x: 0, y: 0 };
-  const state = { lens: 'map', colour: 'folder', sel: null, concept: null, hover: null, hoverConcept: null, hoverTheme: null, hoverFlow: null, flowSel: null, cone: null, born: performance.now() };
+  const state = { lens: 'map', colour: 'health', sel: null, concept: null, hover: null, hoverConcept: null, hoverTheme: null, hoverFlow: null, flowSel: null, cone: null, born: performance.now() };
   // Flow, zoomed out: one stream per pair of concepts, width by traffic; each knows the function calls it carries
   const streams = (CONCEPTS.edges || []).slice(0, 160).map(e => ({ a: C[+e.src.split(':')[1]], b: C[+e.dst.split(':')[1]], n: e.calls, geo: null, pairs: null })).filter(st => st.a && st.b);
   const streamMax = Math.max(1, ...streams.map(st => st.n));
@@ -766,7 +780,7 @@ function buildMeaning() {
     // dots
     const r0 = Math.min(9, Math.max(1.8, 1.9 * Math.pow(s, 0.55))); fanR = r0 * 2 + 7; // just outside the selection ring
     const copyIds = state.lens === 'copies' ? new Set(copies.flatMap(pr => [pr.a.i, pr.b.i])) : null;
-    for (const p of P) {
+    for (const p of (order ||= drawOrder())) {
       if (!vis(p)) continue;
       const x = px(p), y = py(p), r = r0 * (0.7 + Math.min(1.6, Math.sqrt(p.loc) / 6)) * (0.6 + 0.4 * intro);
       let a = 0.92;
@@ -786,7 +800,8 @@ function buildMeaning() {
   }
   let boxes = []; // concept and theme labels drawn this frame, for hover and click
   function labels(s, focus) {
-    const placed = []; boxes = [];
+    const placed = [], rr = root.getBoundingClientRect(); boxes = [];
+    for (const el of root.querySelectorAll('.mm-bar, #mm-legend, .zoom')) { const b = el.getBoundingClientRect(); placed.push({ x: b.left - rr.left, y: b.top - rr.top, w: b.width, h: b.height }); } // labels keep clear of the controls
     const free = (x, y, w, h) => { for (const b of placed) if (x < b.x + b.w && x + w > b.x && y < b.y + b.h && y + h > b.y) return false; placed.push({ x, y, w, h }); return true; };
     function put(text, x, y, font, colour, alpha, anchor = 'center', halo = true, hit = null) {
       if (alpha <= 0.02) return; const w = textW(text, font), h = parseInt(font.match(/(\d+)px/)[1], 10) + 4;
@@ -885,7 +900,7 @@ function buildMeaning() {
   document.getElementById('mm-out').onclick = () => zoomAt(1 / 1.6, W / 2, H / 2);
   document.getElementById('mm-fit').onclick = () => { clear(); fit(); };
   const press = (groupId, attr, key) => document.querySelectorAll(`#${groupId} button`).forEach(b => b.addEventListener('click', () => {
-    state[key] = b.dataset[attr]; document.querySelectorAll(`#${groupId} button`).forEach(x => x.setAttribute('aria-pressed', x === b)); legend(); kick();
+    state[key] = b.dataset[attr]; document.querySelectorAll(`#${groupId} button`).forEach(x => x.setAttribute('aria-pressed', x === b)); order = null; legend(); kick();
   }));
   press('mm-lens', 'lens', 'lens'); press('mm-colour', 'colour', 'colour');
   const search = document.getElementById('mm-search'), names = {};
@@ -898,7 +913,7 @@ function buildMeaning() {
   function place(mx, my) { tipEl.hidden = false; const w = tipEl.offsetWidth, h = tipEl.offsetHeight; tipEl.style.left = Math.min(W - w - 8, mx + 14) + 'px'; tipEl.style.top = Math.min(H - h - 8, my + 14) + 'px'; }
   function tip(p, mx, my) {
     const c = p.c >= 0 ? C[p.c] : null;
-    tipEl.innerHTML = `<b>${esc(p.q)}</b><div class="f">${esc(p.file || '')}${p.line ? ':' + p.line : ''}</div><div class="n">${p.loc} lines · called by ${p.in.length} · calls ${p.out.length}${p.twins.length ? ` · <span style="color:${MM_COPY}">${p.twins.length} cop${p.twins.length > 1 ? 'ies' : 'y'}</span>` : ''}${p.dead ? ' · unreachable' : ''}</div>${c ? `<div class="n">in <b>${esc(c.label)}</b></div>` : ''}`;
+    tipEl.innerHTML = `<b>${esc(p.q)}</b><div class="f">${esc(p.file || '')}${p.line ? ':' + p.line : ''}</div><div class="n">${p.loc} lines · complexity ${p.cc}${p.dead ? " · unused" : ""} · called by ${p.in.length} · calls ${p.out.length}${p.twins.length ? ` · <span style="color:${MM_COPY}">${p.twins.length} cop${p.twins.length > 1 ? 'ies' : 'y'}</span>` : ''}${p.dead ? ' · unreachable' : ''}</div>${c ? `<div class="n">in <b>${esc(c.label)}</b></div>` : ''}`;
     place(mx, my);
   }
   function tipConcept(c, mx, my) { tipEl.innerHTML = `<b>${esc(c.label)}</b><div class="n">concept: ${c.size} functions across ${Object.keys(c.modules).length} files${c.scattered ? ' · <span style="color:var(--warning)">no home</span>' : ''}</div><div class="n">its functions glow; click to open</div>`; place(mx, my); }
@@ -968,8 +983,8 @@ function buildMeaning() {
       <div class="section"><div style="font-weight:600;font-size:14px;word-break:break-all" class="mono">${esc(p.q)}</div>
         <div class="meta2 mono" style="margin-top:2px">${esc(p.file || '')}${p.line ? ':' + p.line : ''}</div>
         <div class="meta2" style="margin-top:6px"><span class="swatch" style="background:${folderColour[p.folder]}"></span>${esc(p.folder)}${c ? ` · in ${conceptLink(c)}` : ''}${th ? ` · <span class="linkish" data-t="${th.i}">${esc(th.label)}</span>` : ''}</div>
-        <div class="kv"><div><b>${p.loc}</b><span>lines</span></div><div><b>${new Set(p.in).size}</b><span>called by</span></div><div><b>${new Set(p.out).size}</b><span>calls</span></div></div>
-        ${p.dead ? '<div class="meta2" style="margin-top:8px;color:var(--warning)">Nothing reachable calls this.</div>' : ''}
+        <div class="kv"><div><b>${p.loc}</b><span>lines</span></div><div><b style="color:${p.complex ? MM_HEALTH[2][0] : 'inherit'}">${p.cc}</b><span>complexity</span></div><div><b>${new Set(p.in).size}</b><span>called by</span></div><div><b>${new Set(p.out).size}</b><span>calls</span></div></div>
+        ${p.dead ? '<div class="meta2" style="margin-top:8px;color:var(--warning)">Unused: nothing reachable calls this.</div>' : ''}${p.complex ? `<div class="meta2" style="margin-top:4px;color:var(--warning)">Tangled: complexity ${p.cc}, over the limit.</div>` : ''}
         <div style="margin-top:10px"><button data-go="${esc(p.id)}">open in the program graph</button></div></div>
       ${p.twins.length ? `<div class="section"><h3>Copies (${p.twins.length})</h3><ul class="list">${p.twins.map(pr => { const o = pr.a === p ? pr.b : pr.a; return `<li data-p="${o.i}"><span class="copy">${copyLabel(pr)}</span><span class="mono" style="word-break:break-all">${esc(o.q)}</span><span class="meta">${esc((o.file || '').split('/').pop())}</span></li>`; }).join('')}</ul></div>` : ''}
       ${list('Called by', p.in, 'What leads here: pale blue on the map.')}
@@ -1000,9 +1015,13 @@ function buildMeaning() {
   }
   function legend() {
     const el = document.getElementById('mm-legend'); const items = [];
-    if (state.colour === 'folder') { folders.slice(0, MM_PALETTE.length).forEach(f => items.push(`<span class="k orb" style="--c:${folderColour[f]}">${esc(f)}</span>`)); if (folders.length > MM_PALETTE.length) items.push(`<span class="k orb" style="--c:${MM_OTHER}">other folders</span>`); }
+    if (state.colour === 'health') {
+      const n = h => P.filter(p => p.health === h).length;
+      MM_HEALTH.forEach(([c, label], h) => items.push(`<span class="k ${h === 1 ? 'ring' : 'orb'}" style="--c:${c}">${h === 2 && isFinite(ccLimit) ? label + ' (over ' + ccLimit + ')' : label} · ${n(h)}</span>`));
+    } else if (state.colour === 'complexity') MM_CC.forEach(([hi, c], k) => items.push(`<span class="k orb" style="--c:${c}">${k ? MM_CC[k - 1][0] + 1 : 1}${isFinite(hi) ? '–' + hi : '+'}</span>`));
+    else if (state.colour === 'folder') { folders.slice(0, MM_PALETTE.length).forEach(f => items.push(`<span class="k orb" style="--c:${folderColour[f]}">${esc(f)}</span>`)); if (folders.length > MM_PALETTE.length) items.push(`<span class="k orb" style="--c:${MM_OTHER}">other folders</span>`); }
     else { T.slice(0, MM_PALETTE.length).forEach((t, i) => items.push(`<span class="k orb" style="--c:${themeColour(i)}">${esc(t.label)}</span>`)); if (T.length > MM_PALETTE.length) items.push(`<span class="k orb" style="--c:${MM_OTHER}">other themes</span>`); }
-    items.push(`<span class="k ring" style="--c:#c8d3ee">unreachable</span>`);
+    if (state.colour !== 'health') items.push(`<span class="k ring" style="--c:#c8d3ee">unused</span>`);
     if (state.lens === 'flow') items.push(`<span class="k edge dashed" style="--c:#dfe7fb">calls, moving caller → callee (hover a stream)</span><span class="k edge" style="--c:${MM_DOWN}">out of</span><span class="k edge" style="--c:${MM_UP}">into</span>`);
     if (state.lens === 'copies') items.push(`<span class="k edge" style="--c:${MM_COPY}">same code</span><span class="k edge dashed" style="--c:${MM_COPY}">same shape · dotted: same meaning</span>`);
     el.innerHTML = items.join('');
