@@ -182,10 +182,13 @@ def test_hidden_overlays_never_cover_the_map():
     assert "[hidden] { display: none !important; }" in viewer
 
 
-def test_map_colours_by_health_by_default():
+def test_map_colours_by_any_measure_with_a_live_threshold():
+    """Health is the overview; every per-function measure the compiler stores can colour the map instead, with a
+    threshold slider the viewer applies on the spot, no recompile."""
     from importlib import resources
 
     viewer = resources.files("vibepiler.backend").joinpath("viewer.html").read_text(encoding="utf-8")
-    for mode in ("health", "complexity", "folder", "theme"):
-        assert f'data-colour="{mode}"' in viewer
-    assert 'data-colour="health" aria-pressed="true"' in viewer
+    for mode in ("health", "bloat", "complexity", "live", "size", "nesting", "callers", "folder", "theme"):
+        assert f'<option value="{mode}"' in viewer
+    assert '<option value="health" selected>' in viewer
+    assert 'id="mm-thresh"' in viewer and 'type="range"' in viewer
