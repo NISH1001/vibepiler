@@ -69,11 +69,28 @@
   .field { --field: #0d1426; --field-2: #182440; --field-ink: #eef1f8; --field-ink-2: #b3bdd1; --field-line: rgba(255,255,255,0.14);
     --module: #4f9cff; --class: #ff8a5c; --function: #3fd79a; --method: #a596ff; --variable: #ff8fb8; --package: #8e9bb3;
     --warning: #ffb020; --error: #ff6b6b; --trace: #ffc53d; }
-  #cy.field, #cy2.field { background: radial-gradient(ellipse 85% 75% at 50% 32%, var(--field-2) 0%, var(--field) 55%, #070b16 100%); }
+  #cy.field { background: radial-gradient(ellipse 85% 75% at 50% 32%, var(--field-2) 0%, var(--field) 55%, #070b16 100%); }
   #flow { position: absolute; left: 0; top: 0; z-index: 1; pointer-events: none; }
   #view-concepts { position: relative; }
-  #cy2 { flex: 1; min-width: 0; }
-  #view-concepts .hint { top: 10px; max-width: calc(100% - 430px); line-height: 1.5; }
+  #meaning { position: relative; flex: 1; min-width: 0; overflow: hidden; outline: none; touch-action: none;
+    background: radial-gradient(ellipse 85% 75% at 50% 40%, var(--field-2) 0%, var(--field) 60%, #070b16 100%); }
+  #mm-canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; }
+  #mm-canvas.drag { cursor: grabbing; } #mm-canvas.hit { cursor: pointer; }
+  .mm-bar { max-width: calc(100% - 20px); }
+  .mm-legend { max-width: calc(100% - 80px); }
+  .mm-legend .k.ring::before { background: none; border: 1.5px solid var(--c); border-radius: 50%; }
+  .mm-tip { position: absolute; z-index: 3; pointer-events: none; max-width: 340px; background: rgba(13, 20, 38, 0.94); color: var(--field-ink); border: 1px solid var(--field-line);
+    border-radius: 8px; padding: 7px 10px; font-size: 12px; line-height: 1.45; box-shadow: 0 8px 24px rgba(0,0,0,0.45); backdrop-filter: blur(6px); }
+  .mm-tip b { font-weight: 600; } .mm-tip .f { color: var(--field-ink-2); font-family: "IBM Plex Mono", monospace; font-size: 11px; word-break: break-all; }
+  .mm-tip .n { color: var(--field-ink-2); }
+  .mm-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--field-ink-2); text-align: center; padding: 24px; }
+  #mm-panel pre { margin: 0; padding: 10px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; overflow: auto; max-height: 340px; font: 11.5px/1.5 "IBM Plex Mono", monospace; tab-size: 4; }
+  #mm-panel .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
+  #mm-panel .kv { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+  #mm-panel .kv div { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; } #mm-panel .kv b { display: block; font-size: 16px; }
+  #mm-panel .kv span { color: var(--ink-3); font-size: 11px; }
+  #mm-panel .copy { font-size: 11px; padding: 0 6px; border-radius: 8px; border: 1px solid var(--error); color: var(--error); white-space: nowrap; }
+  #mm-panel .linkish { cursor: pointer; color: var(--module); } #mm-panel .linkish:hover { text-decoration: underline; }
   .status { color: #ffd166; font-weight: 600; margin-left: 6px; }
   .toolbar .slider { display: flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; font-size: 12px; white-space: nowrap; }
   .toolbar .slider input { width: 90px; margin: 0; }
@@ -179,7 +196,7 @@
     <button class="phase" role="tab" data-view="frontend"><span class="step">1 · frontend</span><span class="name">Parse</span><span class="count"><b class="num" data-count="__FILES__">0</b> files</span></button>
     <button class="phase" role="tab" data-view="semantic"><span class="step">2 · linker</span><span class="name">Link</span><span class="count"><b class="num" data-count="__SYMBOLS__">0</b> symbols, <b>__LINKED__</b> linked</span></button>
     <button class="phase" role="tab" data-view="graph" aria-selected="true"><span class="step">3 · ir</span><span class="name">Program graph</span><span class="count"><b class="num" data-count="__EDGES__">0</b> edges</span></button>
-    <button class="phase" role="tab" data-view="concepts"><span class="step">4 · semantic (-O3)</span><span class="name">Concepts</span><span class="count" id="concept-count">needs -O3</span></button>
+    <button class="phase" role="tab" data-view="concepts"><span class="step">4 · semantic (-O3)</span><span class="name">Meaning</span><span class="count" id="concept-count">needs -O3</span></button>
     <button class="phase" role="tab" data-view="optimize"><span class="step">5 · optimize</span><span class="name">Passes</span><span class="count"><b class="num" data-count="__FINDINGS__">0</b> findings</span></button>
   </nav>
   <div class="meter" id="meter" hidden title="bloat = 1 − (1 − waste)(1 − tangle); waste = lines that could go / lines, tangle = structure harder than its job. live = definitions that reach a use / definitions"></div>
@@ -272,17 +289,21 @@
     </aside>
   </section>
 
-  <!-- ========== 4 semantic (-O3): concepts ========== -->
+  <!-- ========== 4 semantic (-O3): the meaning map ========== -->
   <section class="view" id="view-concepts">
-    <div class="hint">Each dot is a <b>concept</b>: functions that do the same kind of thing, wherever they live. Nearby dots mean similar things; size is how many functions; amber is a concept spread over many modules with no home; lines are calls between concepts. Click a dot.</div>
-    <div id="cy2" class="field" role="img" aria-label="Concept map"></div>
-    <div class="legend field"><span class="k orb" style="--c:var(--module)">lives in one module</span><span class="k orb" style="--c:var(--method)">spans a few modules</span><span class="k orb" style="--c:var(--warning)">scattered, no home</span><span class="k edge" style="--c:var(--function)">calls between concepts</span><span>size = functions</span><span>distance = meaning</span></div>
-    <aside>
-      <div class="tabs" role="tablist"><button role="tab" data-cpanel="about" aria-selected="true">What this is</button><button role="tab" data-cpanel="concept">Concept</button><button role="tab" data-cpanel="modules">Modules</button></div>
-      <div class="panel cpanel" id="cp-about" data-active="true"><div id="c-about"></div></div>
-      <div class="panel cpanel" id="cp-concept"><div class="empty" id="c-empty">Select a concept on the map.</div><div id="c-node"></div></div>
-      <div class="panel cpanel" id="cp-modules"><div class="section"><h3>Modules by how many concepts they touch</h3><div class="meta2" style="margin-bottom:6px">A module across many concepts is doing several unrelated jobs.</div><ul class="list" id="c-modules"></ul></div></div>
-    </aside>
+    <div id="meaning" class="field" role="application" aria-label="Meaning map: every function placed by what it does" tabindex="0">
+      <canvas id="mm-canvas"></canvas>
+      <div class="toolbar mm-bar">
+        <input type="text" id="mm-search" placeholder="find a function" list="mm-names" autocomplete="off" aria-label="Find a function"><datalist id="mm-names"></datalist>
+        <div class="group" id="mm-lens" role="group" aria-label="Lens"><button data-lens="map" aria-pressed="true" title="Functions only">Map</button><button data-lens="flow" aria-pressed="false" title="Calls, flowing from caller to callee">Flow</button><button data-lens="copies" aria-pressed="false" title="Functions that duplicate each other">Copies</button></div>
+        <div class="group" id="mm-colour" role="group" aria-label="Colour by"><button data-colour="folder" aria-pressed="true">folder</button><button data-colour="theme" aria-pressed="false">theme</button></div>
+      </div>
+      <div class="legend mm-legend" id="mm-legend"></div>
+      <div class="zoom"><button id="mm-in" aria-label="Zoom in">+</button><button id="mm-out" aria-label="Zoom out">−</button><button id="mm-fit" aria-label="Fit the map">fit</button></div>
+      <div class="mm-tip" id="mm-tip" hidden></div>
+      <div class="mm-empty" id="mm-empty" hidden></div>
+    </div>
+    <aside><div class="panel" id="mm-panel" data-active="true"></div></aside>
   </section>
 
   <!-- ========== 5 optimize ========== -->
@@ -348,7 +369,7 @@ function showView(name) {
   document.querySelectorAll('.view').forEach(v => v.dataset.active = v.id === 'view-' + name);
   document.querySelectorAll('.phase').forEach(b => b.setAttribute('aria-selected', b.dataset.view === name));
   if (name === 'graph' && cy) { cy.resize(); sizeFlow(); }
-  if (name === 'concepts') { if (!cy2 && CONCEPTS) buildConcepts(); else if (cy2) cy2.resize(); }
+  if (name === 'concepts') { if (!mm) mm = buildMeaning(); else mm.resize(); }
 }
 document.querySelectorAll('.phase').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
 function showPanel(name) {
@@ -570,94 +591,363 @@ function flowFrame(t) {
 }
 function placeHint() { const tb = document.querySelector('#view-graph .toolbar'), h = document.querySelector('#view-graph .hint'); if (tb && h) h.style.top = (tb.offsetTop + tb.offsetHeight + 8) + 'px'; }
 placeHint();
-addEventListener('resize', () => { if (cy) { cy.resize(); sizeFlow(); } if (cy2) cy2.resize(); placeHint(); });
+addEventListener('resize', () => { if (cy) { cy.resize(); sizeFlow(); } placeHint(); });
 
-// ---------- concepts (-O3): the semantic space ----------
-// A concept is a community of functions by meaning (embeddings -> nearest-neighbour graph -> Louvain). The map is a
-// 2-D projection of the concept centroids, so distance is meaning; a deterministic nudge keeps dots from overlapping.
+// ---------- the meaning map (-O3) ----------
+// Every function is a dot placed by what it does: its embedding projected to 2-D, so distance is distance in meaning.
+// Concepts (groups of functions by meaning) and themes (groups of concepts) are labels on their middle member; hover one
+// and its functions light up wherever they landed. Structure is drawn on top
+// through lenses: Flow (calls, moving from caller to callee) and Copies (duplicated logic). Plain <canvas>, no GPU and
+// no library: one draw per frame, only while something moves; labels thin out by zoom so nothing collides.
 const CONCEPTS = DATA.metrics.concepts && DATA.metrics.concepts.concepts && DATA.metrics.concepts.concepts.length ? DATA.metrics.concepts : null;
-const conceptById = CONCEPTS ? Object.fromEntries(CONCEPTS.concepts.map(c => [c.id, c])) : {};
-let cy2 = null;
 (function initConceptTab() {
   const el = document.getElementById('concept-count');
   if (!CONCEPTS) { el.textContent = DATA.metrics.concepts && DATA.metrics.concepts.skipped ? 'needs vibepiler[semantic]' : 'needs -O3'; return; }
-  el.innerHTML = `<b>${CONCEPTS.concepts.length}</b> concepts, <b>${CONCEPTS.clustered}</b> functions`;
+  el.innerHTML = `<b>${(CONCEPTS.points || []).length || CONCEPTS.symbols}</b> functions, <b>${CONCEPTS.concepts.length}</b> concepts`;
 })();
-function conceptColor(c) { const k = Object.keys(c.modules).length; return c.scattered ? fcss('--warning') : k === 1 ? fcss('--module') : fcss('--method'); }
-function conceptPositions() {
-  const W = 1500, H = 820, cs = CONCEPTS.concepts;
-  const P = cs.map(c => ({ x: c.x * W, y: c.y * H, r: 14 + 5 * Math.sqrt(c.size) }));
-  for (let it = 0; it < 80; it++) for (let i = 0; i < P.length; i++) for (let j = i + 1; j < P.length; j++) {
-    const a = P[i], b = P[j]; let dx = b.x - a.x, dy = b.y - a.y; let d = Math.hypot(dx, dy); const min = a.r + b.r + 22;
-    if (d >= min) continue; if (d < 1e-6) { dx = 1; dy = 0.3; d = 1; }
-    const push = (min - d) / 2 / d; a.x -= dx * push; a.y -= dy * push; b.x += dx * push; b.y += dy * push;
+const MM_PALETTE = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#9085e9', '#008300']; // validated on the field: fixed order, never cycled
+const MM_OTHER = '#5d6884', MM_COPY = '#ff6b6b', MM_DOWN = '#ffc53d', MM_UP = '#9fd4ff';
+const MM_CONTAINERS = new Set(['src', 'lib', 'app', 'apps', 'packages', 'frontend', 'backend', 'web', 'client', 'server']);
+function mmFolder(file) {
+  const parts = (file || '').split('/').slice(0, -1); if (!parts.length) return '(root)';
+  const out = [parts[0]]; for (let i = 1; i < parts.length && i < 3 && MM_CONTAINERS.has(parts[i - 1]); i++) out.push(parts[i]);
+  return out.join('/');
+}
+let mm = null;
+function buildMeaning() {
+  const root = document.getElementById('meaning'), canvas = document.getElementById('mm-canvas'), ctx = canvas.getContext('2d');
+  const empty = document.getElementById('mm-empty');
+  if (!CONCEPTS || !(CONCEPTS.points || []).length) {
+    empty.hidden = false;
+    empty.textContent = !CONCEPTS ? 'The meaning map needs the semantic tier: compile with -O3 (pip install "vibepiler[semantic]").' : 'This report was written by an older vibepiler: compile again with -O3 to draw the map.';
+    return null;
   }
-  return Object.fromEntries(cs.map((c, i) => [c.id, { x: P[i].x, y: P[i].y, size: P[i].r * 2 }]));
+  // ---- data ----
+  const P = CONCEPTS.points.map((p, i) => {
+    const n = nodeById[p.id] || { attrs: {} }; const q = n.qualname || n.name || p.id;
+    return { i, id: p.id, x: p.x * 1000, y: p.y * 1000, c: p.c, q, name: q.split('.').pop(), file: n.file, line: n.start_line, loc: n.attrs.loc || 1,
+      folder: mmFolder(n.file), dead: n.attrs.reachable === false, test: !!n.attrs.test_only, in: [], out: [], twins: [] };
+  });
+  const byId = Object.fromEntries(P.map(p => [p.id, p]));
+  const C = CONCEPTS.concepts.map((c, i) => ({ ...c, i, cx: c.x * 1000, cy: c.y * 1000 }));
+  const T = (CONCEPTS.themes || []).map((t, i) => ({ ...t, i, cx: t.x * 1000, cy: t.y * 1000 }));
+  const calls = [];
+  for (const e of DATA.edges) if (e.kind === 'calls') { const a = byId[e.src], b = byId[e.dst]; if (a && b && a !== b) { calls.push([a, b]); a.out.push(b); b.in.push(a); } }
+  const copies = []; const KIND = { 'duplicate-function': 'exact', 'near-duplicate-function': 'near', 'semantic-duplicate': 'meaning' };
+  for (const d of DATA.diagnostics) {
+    const kind = KIND[d.code], ids = (d.data && d.data.ids) || []; if (!kind) continue;
+    const ps = ids.map(id => byId[id]).filter(Boolean);
+    for (let k = 1; k < ps.length; k++) { const pair = { a: ps[0], b: ps[k], kind, sim: d.data.similarity || 1, d }; copies.push(pair); ps[0].twins.push(pair); ps[k].twins.push(pair); }
+  }
+  const folderCount = {}; for (const p of P) folderCount[p.folder] = (folderCount[p.folder] || 0) + 1;
+  const folders = Object.keys(folderCount).sort((a, b) => folderCount[b] - folderCount[a] || a.localeCompare(b));
+  const folderColour = Object.fromEntries(folders.map((f, i) => [f, i < MM_PALETTE.length ? MM_PALETTE[i] : MM_OTHER]));
+  const themeColour = t => t >= 0 && t < MM_PALETTE.length ? MM_PALETTE[t] : MM_OTHER;
+  const colourOf = p => state.colour === 'theme' ? themeColour(p.c >= 0 ? C[p.c].theme : -1) : folderColour[p.folder];
+  const importance = p => p.in.length * 3 + Math.sqrt(p.loc);
+  const byImportance = [...P].sort((a, b) => importance(b) - importance(a));
+  // spatial hash for hit tests, in world units
+  const CELL = 12, grid = new Map(); for (const p of P) { const k = Math.floor(p.x / CELL) + ',' + Math.floor(p.y / CELL); (grid.get(k) || grid.set(k, []).get(k)).push(p); }
+
+  // ---- camera: screen = world * k + t; `cur` eases toward `to` ----
+  let W = 0, H = 0, DPR = 1, fitK = 1;
+  const cur = { k: 1, x: 0, y: 0 }, to = { k: 1, x: 0, y: 0 };
+  const state = { lens: 'map', colour: 'folder', sel: null, concept: null, hover: null, hoverConcept: null, cone: null, born: performance.now() };
+  function resize() {
+    const r = root.getBoundingClientRect(); W = r.width; H = r.height; DPR = Math.min(2, devicePixelRatio || 1);
+    canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR); kick();
+  }
+  function bounds(ps) { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const p of ps) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); } return { x0, y0, x1, y1 }; }
+  function frame(b, pad = 60, maxK = 40, snap = false) {
+    const k = Math.min(maxK, (W - 2 * pad) / Math.max(1, b.x1 - b.x0), (H - 2 * pad) / Math.max(1, b.y1 - b.y0));
+    to.k = k; to.x = W / 2 - (b.x0 + b.x1) / 2 * k; to.y = H / 2 - (b.y0 + b.y1) / 2 * k;
+    if (snap || REDUCED) Object.assign(cur, to); kick();
+  }
+  function fit(snap) { // frame the middle 98% of functions: a stray or two at the edge would shrink everything else
+    const q = (vals, f) => { const v = [...vals].sort((x, y) => x - y); return v[Math.min(v.length - 1, Math.max(0, Math.floor(f * (v.length - 1))))]; };
+    const xs = P.map(p => p.x), ys = P.map(p => p.y);
+    frame({ x0: q(xs, 0.01), x1: q(xs, 0.99), y0: q(ys, 0.01), y1: q(ys, 0.99) }, 50, 40, snap); fitK = to.k;
+  }
+  function zoomAt(f, sx, sy) {
+    const k = Math.max(fitK * 0.5, Math.min(fitK * 80, to.k * f)); const r = k / to.k;
+    to.x = sx - (sx - to.x) * r; to.y = sy - (sy - to.y) * r; to.k = k; kick();
+  }
+  const sx = x => x * cur.k + cur.x, sy = y => y * cur.k + cur.y;
+  const scale = () => cur.k / fitK; // 1 = whole map
+
+  // ---- the loop: draws only while something moves ----
+  let raf = 0;
+  function kick() { if (!raf) raf = requestAnimationFrame(tick); }
+  function tick() {
+    raf = 0; const now = performance.now(); // one clock: a frame's own timestamp can precede `born`
+    const e = REDUCED ? 1 : 0.2; let moving = false;
+    for (const key of ['k', 'x', 'y']) { const d = to[key] - cur[key]; if (Math.abs(d) > (key === 'k' ? cur.k * 1e-4 : 0.05)) { cur[key] += d * e; moving = true; } else cur[key] = to[key]; }
+    if (inertia && !drag) { to.x += inertia.vx; to.y += inertia.vy; inertia.vx *= 0.92; inertia.vy *= 0.92; if (Math.hypot(inertia.vx, inertia.vy) < 0.1) inertia = null; moving = true; }
+    draw(now);
+    const animated = !REDUCED && (state.lens !== 'map' || state.sel || now - state.born < 900);
+    if (moving || animated) kick();
+  }
+
+  // ---- drawing ----
+  const widths = new Map();
+  function textW(s, font) { const key = font + s; let w = widths.get(key); if (w === undefined) { ctx.font = font; w = ctx.measureText(s).width; widths.set(key, w); } return w; }
+  function draw(now) {
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.clearRect(0, 0, W, H);
+    const s = scale(), t = now / 1000, intro = REDUCED ? 1 : Math.max(0, Math.min(1, (now - state.born) / 700)); // canvas ignores alpha < 0 and keeps the last one
+    const focus = state.cone; // Set of point indexes in the selection's neighbourhood
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    const lit = focus ? null : state.hoverConcept ?? state.concept; // the concept whose functions glow
+    const vis = p => { const x = sx(p.x), y = sy(p.y); return x > -40 && x < W + 40 && y > -40 && y < H + 40; };
+    // edges, by lens
+    const dash = (on, off, speed) => { ctx.setLineDash([on, off]); ctx.lineDashOffset = REDUCED ? 0 : -t * speed; };
+    function curve(a, b, bend = 0.18) {
+      const x1 = sx(a.x), y1 = sy(a.y), x2 = sx(b.x), y2 = sy(b.y), mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+      ctx.moveTo(x1, y1); ctx.quadraticCurveTo(mx - (y2 - y1) * bend, my + (x2 - x1) * bend, x2, y2);
+    }
+    if (state.lens === 'flow' && !focus) {
+      if (s < 2.2) { // between concepts: one stream per pair, width by traffic
+        const top = (CONCEPTS.edges || []).slice(0, 160); const max = Math.max(1, ...top.map(e => e.calls));
+        for (const e of top) {
+          const a = C[+e.src.split(':')[1]], b = C[+e.dst.split(':')[1]]; if (!a || !b) continue;
+          ctx.beginPath(); curve({ x: a.cx, y: a.cy }, { x: b.cx, y: b.cy }, 0.22);
+          ctx.strokeStyle = '#dfe7fb'; ctx.globalAlpha = 0.12 + 0.3 * e.calls / max; ctx.lineWidth = 0.6 + 2.6 * Math.log2(1 + e.calls) / Math.log2(1 + max);
+          dash(3, 9, 22); ctx.stroke();
+        }
+      } else { // between functions on screen
+        ctx.strokeStyle = '#dfe7fb'; ctx.lineWidth = 1; ctx.globalAlpha = 0.28; dash(2, 7, 18); ctx.beginPath();
+        let n = 0; for (const [a, b] of calls) { if (n > 5000) break; if (vis(a) || vis(b)) { curve(a, b); n++; } } ctx.stroke();
+      }
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
+    }
+    if (state.lens === 'copies' || focus) {
+      const pulse = REDUCED ? 1 : 0.75 + 0.25 * Math.sin(t * 4);
+      for (const pr of copies) {
+        if (focus && !(focus.has(pr.a.i) && focus.has(pr.b.i))) continue;
+        if (!vis(pr.a) && !vis(pr.b)) continue;
+        ctx.beginPath(); curve(pr.a, pr.b, 0.08); ctx.strokeStyle = MM_COPY;
+        ctx.globalAlpha = (focus ? 0.95 : 0.75) * (focus ? pulse : 1);
+        ctx.lineWidth = pr.kind === 'exact' ? 2.4 : pr.kind === 'near' ? 1.8 : 1.6;
+        if (pr.kind === 'near') ctx.setLineDash([6, 4]); else if (pr.kind === 'meaning') ctx.setLineDash([1.5, 4]); else ctx.setLineDash([]);
+        ctx.stroke(); ctx.setLineDash([]);
+      }
+      ctx.globalAlpha = 1;
+    }
+    if (focus) { // the cone: what leads here (pale blue) and what this sets off (gold), moving in the call direction
+      for (const [a, b, dir] of state.coneEdges) {
+        ctx.beginPath(); curve(a, b); ctx.strokeStyle = dir > 0 ? MM_DOWN : MM_UP; ctx.globalAlpha = 0.8; ctx.lineWidth = 1.6; dash(4, 6, 26); ctx.stroke();
+      }
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
+    }
+    // dots
+    const r0 = Math.min(9, Math.max(1.8, 1.9 * Math.pow(s, 0.55)));
+    const copyIds = state.lens === 'copies' ? new Set(copies.flatMap(pr => [pr.a.i, pr.b.i])) : null;
+    for (const p of P) {
+      if (!vis(p)) continue;
+      const x = sx(p.x), y = sy(p.y), r = r0 * (0.7 + Math.min(1.6, Math.sqrt(p.loc) / 6)) * (0.6 + 0.4 * intro);
+      let a = 0.92;
+      if (focus) a = focus.has(p.i) ? 1 : 0.1; else if (copyIds) a = copyIds.has(p.i) ? 1 : 0.16;
+      else if (lit !== null) a = p.c === lit ? 1 : 0.18;
+      ctx.globalAlpha = a * intro; const col = colourOf(p);
+      if (lit !== null && p.c === lit) { ctx.beginPath(); ctx.arc(x, y, r * 3.2, 0, 6.2832); ctx.fillStyle = col; ctx.globalAlpha = 0.16; ctx.fill(); ctx.globalAlpha = a * intro; }
+      ctx.beginPath(); ctx.arc(x, y, r, 0, 6.2832);
+      if (p.dead) { ctx.strokeStyle = col; ctx.lineWidth = 1.3; ctx.stroke(); } else { ctx.fillStyle = col; ctx.fill(); }
+    }
+    ctx.globalAlpha = 1;
+    for (const p of [state.hover, state.sel].filter(Boolean)) { // rings
+      ctx.beginPath(); ctx.arc(sx(p.x), sy(p.y), r0 * 2 + 3, 0, 6.2832); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = p === state.sel ? 2 : 1.2;
+      ctx.shadowColor = '#ffffff'; ctx.shadowBlur = p === state.sel ? 14 : 6; ctx.stroke(); ctx.shadowBlur = 0;
+    }
+    labels(s, focus);
+  }
+  let boxes = []; // concept and theme labels drawn this frame, for hover and click
+  function labels(s, focus) {
+    const placed = []; boxes = [];
+    const free = (x, y, w, h) => { for (const b of placed) if (x < b.x + b.w && x + w > b.x && y < b.y + b.h && y + h > b.y) return false; placed.push({ x, y, w, h }); return true; };
+    function put(text, x, y, font, colour, alpha, anchor = 'center', halo = true, hit = null) {
+      if (alpha <= 0.02) return; const w = textW(text, font), h = parseInt(font.match(/(\d+)px/)[1], 10) + 4;
+      const bx = anchor === 'center' ? x - w / 2 : x, by = y - h / 2;
+      if (bx > W || bx + w < 0 || by > H || by + h < 0 || !free(bx - 3, by, w + 6, h)) return;
+      if (hit && alpha > 0.3) boxes.push({ x: bx - 3, y: by - 2, w: w + 6, h: h + 4, ...hit });
+      ctx.font = font; ctx.textBaseline = 'middle'; ctx.textAlign = anchor === 'center' ? 'center' : 'left'; ctx.globalAlpha = alpha;
+      if (halo) { ctx.lineWidth = 3.5; ctx.strokeStyle = 'rgba(9,14,28,0.85)'; ctx.strokeText(text, x, y); }
+      ctx.fillStyle = colour; ctx.fillText(text, x, y); ctx.globalAlpha = 1;
+    }
+    const ramp = (v, a, b) => Math.max(0, Math.min(1, (v - a) / (b - a)));
+    const fnFont = '500 11px "IBM Plex Mono", monospace';
+    for (const p of [state.sel, state.hover].filter(Boolean)) put(p.name, sx(p.x) + 10, sy(p.y), '600 12px "IBM Plex Mono", monospace', '#ffffff', 1, 'left');
+    if (focus) { for (const i of focus) { const p = P[i]; put(p.name, sx(p.x) + 7, sy(p.y), fnFont, '#eef1f8', 0.95, 'left'); } return; }
+    const tA = 1 - ramp(s, 1.3, 2.4), cA = ramp(s, 1.15, 1.7) * (1 - ramp(s, 9, 14)), fA = ramp(s, 2.6, 4);
+    if (fA > 0) { let n = 0; for (const p of byImportance) { if (n > 350) break; const x = sx(p.x), y = sy(p.y); if (x < 0 || x > W || y < 0 || y > H) continue; n++; put(p.name, x + 7, y, fnFont, '#dfe5f2', fA * (state.concept === null || p.c === state.concept ? 0.95 : 0.3), 'left'); } }
+    const litC = state.hoverConcept ?? state.concept;
+    if (litC !== null) { const c = C[litC]; put(c.label, sx(c.cx), sy(c.cy) - 16, '600 13px "IBM Plex Sans", sans-serif', '#ffffff', 1, 'center', true, { c: c.i }); }
+    if (tA > 0) for (const th of T.filter(x => x.size >= 12)) put(th.label.toUpperCase(), sx(th.cx), sy(th.cy), '600 13px "IBM Plex Sans", sans-serif', '#ffffff', tA * 0.95, 'center', true, { t: th.i });
+    if (cA > 0) for (const c of [...C].sort((a, b) => b.size - a.size)) put(c.label, sx(c.cx), sy(c.cy), '600 12px "IBM Plex Sans", sans-serif', '#f4f6fb', cA * (litC === null || litC === c.i ? 0.92 : 0.35), 'center', true, { c: c.i });
+  }
+
+  // ---- hit tests ----
+  function pointAt(mx, my) {
+    const wx = (mx - cur.x) / cur.k, wy = (my - cur.y) / cur.k, rad = Math.max(8, 2.2 * Math.min(9, 1.7 * Math.pow(scale(), 0.55)) + 4) / cur.k;
+    let best = null, bd = rad * rad; const c0 = Math.floor((wx - rad) / CELL), c1 = Math.floor((wx + rad) / CELL), r0 = Math.floor((wy - rad) / CELL), r1 = Math.floor((wy + rad) / CELL);
+    for (let cx = c0; cx <= c1; cx++) for (let cy = r0; cy <= r1; cy++) for (const p of grid.get(cx + ',' + cy) || []) {
+      if (state.cone && !state.cone.has(p.i)) continue; const d = (p.x - wx) ** 2 + (p.y - wy) ** 2; if (d < bd) { bd = d; best = p; }
+    }
+    return best;
+  }
+  function labelAt(mx, my) { for (let k = boxes.length - 1; k >= 0; k--) { const b = boxes[k]; if (mx >= b.x && mx <= b.x + b.w && my >= b.y && my <= b.y + b.h) return b; } return null; }
+
+  // ---- input: drag pans with inertia; pinch or the mouse wheel zooms at the cursor; a trackpad scroll pans ----
+  let drag = null, inertia = null, moved = false;
+  canvas.addEventListener('pointerdown', e => { canvas.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY, t: performance.now() }; moved = false; inertia = null; canvas.classList.add('drag'); });
+  canvas.addEventListener('pointermove', e => {
+    const r = canvas.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+    if (drag) {
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 2) moved = true;
+      to.x += dx; to.y += dy; cur.x += dx; cur.y += dy; const dt = Math.max(1, performance.now() - drag.t);
+      inertia = { vx: dx * 16 / dt, vy: dy * 16 / dt }; drag = { x: e.clientX, y: e.clientY, t: performance.now() }; hideTip(); kick(); return;
+    }
+    const lb = labelAt(mx, my), p = lb ? null : pointAt(mx, my), c = lb && lb.c !== undefined ? C[lb.c] : null, th = lb && lb.t !== undefined ? T[lb.t] : null;
+    if (p !== state.hover || (c ? c.i : null) !== state.hoverConcept) { state.hover = p; state.hoverConcept = c ? c.i : null; kick(); }
+    canvas.classList.toggle('hit', !!(p || lb)); if (p) tip(p, mx, my); else if (c) tipConcept(c, mx, my); else if (th) tipTheme(th, mx, my); else hideTip();
+  });
+  canvas.addEventListener('pointerup', e => {
+    canvas.classList.remove('drag'); const wasDrag = moved; drag = null; if (wasDrag) { kick(); return; } inertia = null;
+    const r = canvas.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+    const lb = labelAt(mx, my);
+    if (lb && lb.c !== undefined) return selectConcept(lb.c, true);
+    if (lb && lb.t !== undefined) return flyTheme(lb.t);
+    const p = pointAt(mx, my); if (p) return select(p, false);
+    clear();
+  });
+  canvas.addEventListener('pointerleave', () => { state.hover = null; state.hoverConcept = null; hideTip(); kick(); });
+  canvas.addEventListener('dblclick', e => { const r = canvas.getBoundingClientRect(); zoomAt(2.2, e.clientX - r.left, e.clientY - r.top); });
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault(); const r = canvas.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+    const mouseWheel = e.deltaMode === 1 || (e.deltaX === 0 && Math.abs(e.deltaY) >= 40 && Number.isInteger(e.deltaY));
+    if (e.ctrlKey || mouseWheel) zoomAt(Math.exp(-e.deltaY * (e.ctrlKey ? 0.012 : 0.0025) * (e.deltaMode === 1 ? 16 : 1)), mx, my);
+    else { to.x -= e.deltaX; to.y -= e.deltaY; kick(); }
+    hideTip();
+  }, { passive: false });
+  root.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT') return;
+    if (e.key === '+' || e.key === '=') zoomAt(1.5, W / 2, H / 2); else if (e.key === '-') zoomAt(1 / 1.5, W / 2, H / 2);
+    else if (e.key === '0') fit(); else if (e.key === 'Escape') clear(); else return; e.preventDefault();
+  });
+  document.getElementById('mm-in').onclick = () => zoomAt(1.6, W / 2, H / 2);
+  document.getElementById('mm-out').onclick = () => zoomAt(1 / 1.6, W / 2, H / 2);
+  document.getElementById('mm-fit').onclick = () => { clear(); fit(); };
+  const press = (groupId, attr, key) => document.querySelectorAll(`#${groupId} button`).forEach(b => b.addEventListener('click', () => {
+    state[key] = b.dataset[attr]; document.querySelectorAll(`#${groupId} button`).forEach(x => x.setAttribute('aria-pressed', x === b)); legend(); kick();
+  }));
+  press('mm-lens', 'lens', 'lens'); press('mm-colour', 'colour', 'colour');
+  const search = document.getElementById('mm-search'), names = {};
+  for (const p of byImportance) names[p.q] ||= p;
+  document.getElementById('mm-names').innerHTML = Object.keys(names).slice(0, 4000).map(q => `<option value="${esc(q)}">`).join('');
+  search.addEventListener('change', () => { const v = search.value.trim(); const p = names[v] || byImportance.find(x => x.q.toLowerCase().includes(v.toLowerCase())); if (p) select(p, true); });
+
+  // ---- tooltip ----
+  const tipEl = document.getElementById('mm-tip');
+  function place(mx, my) { tipEl.hidden = false; const w = tipEl.offsetWidth, h = tipEl.offsetHeight; tipEl.style.left = Math.min(W - w - 8, mx + 14) + 'px'; tipEl.style.top = Math.min(H - h - 8, my + 14) + 'px'; }
+  function tip(p, mx, my) {
+    const c = p.c >= 0 ? C[p.c] : null;
+    tipEl.innerHTML = `<b>${esc(p.q)}</b><div class="f">${esc(p.file || '')}${p.line ? ':' + p.line : ''}</div><div class="n">${p.loc} lines · called by ${p.in.length} · calls ${p.out.length}${p.twins.length ? ` · <span style="color:${MM_COPY}">${p.twins.length} cop${p.twins.length > 1 ? 'ies' : 'y'}</span>` : ''}${p.dead ? ' · unreachable' : ''}</div>${c ? `<div class="n">in <b>${esc(c.label)}</b></div>` : ''}`;
+    place(mx, my);
+  }
+  function tipConcept(c, mx, my) { tipEl.innerHTML = `<b>${esc(c.label)}</b><div class="n">concept: ${c.size} functions across ${Object.keys(c.modules).length} files${c.scattered ? ' · <span style="color:var(--warning)">no home</span>' : ''}</div><div class="n">its functions glow; click to open</div>`; place(mx, my); }
+  function tipTheme(t, mx, my) { tipEl.innerHTML = `<b>${esc(t.label)}</b><div class="n">theme: ${t.size} functions in ${t.concepts.length} concepts</div><div class="n">click to zoom in</div>`; place(mx, my); }
+  function hideTip() { tipEl.hidden = true; }
+
+  // ---- selection ----
+  function cone(p) {
+    const seen = new Set([p.i]), edges = []; const walk = (start, dir) => {
+      let frontier = [start]; for (let depth = 0; depth < 3 && frontier.length; depth++) { const next = [];
+        for (const a of frontier) for (const b of (dir > 0 ? a.out : a.in)) { edges.push(dir > 0 ? [a, b, dir] : [b, a, dir]); if (!seen.has(b.i) && seen.size < 240) { seen.add(b.i); next.push(b); } }
+        frontier = next; }
+    };
+    walk(p, 1); walk(p, -1); for (const pr of p.twins) { seen.add(pr.a.i); seen.add(pr.b.i); }
+    state.coneEdges = edges.filter(([a, b]) => seen.has(a.i) && seen.has(b.i)); return seen;
+  }
+  function select(p, fly) {
+    state.sel = p; state.concept = null; state.cone = cone(p); hideTip();
+    if (fly) { const b = bounds([...state.cone].map(i => P[i])); frame(b, 90, fitK * 30); }
+    panelFunction(p); kick();
+  }
+  function selectConcept(ci, fly) {
+    state.sel = null; state.cone = null; state.concept = ci; const c = C[ci];
+    if (fly) frame(bounds(c.members.map(id => byId[id]).filter(Boolean)), 80, fitK * 30);
+    panelConcept(c); kick();
+  }
+  function flyTheme(ti) { // zoom to the theme's core: the middle 80% of its functions, so a few strays do not zoom out
+    const th = T[ti], ps = th.concepts.flatMap(ci => C[ci].members.map(id => byId[id]).filter(Boolean));
+    const d = ps.map(p => Math.hypot(p.x - th.cx, p.y - th.cy)).sort((a, b) => a - b), cut = d[Math.floor(d.length * 0.8)] ?? Infinity;
+    clear(); frame(bounds(ps.filter(p => Math.hypot(p.x - th.cx, p.y - th.cy) <= cut)), 70, fitK * 20);
+  }
+  function clear() { state.sel = null; state.cone = null; state.concept = null; panelAbout(); kick(); }
+
+  // ---- side panel ----
+  const panel = document.getElementById('mm-panel');
+  const fnLink = p => `<span class="linkish mono" data-p="${p.i}">${esc(p.q)}</span>`;
+  const conceptLink = c => `<span class="linkish" data-c="${c.i}">${esc(c.label)}</span>`;
+  function wire() {
+    panel.querySelectorAll('[data-p]').forEach(el => el.addEventListener('click', () => select(P[+el.dataset.p], true)));
+    panel.querySelectorAll('[data-c]').forEach(el => el.addEventListener('click', () => selectConcept(+el.dataset.c, true)));
+    panel.querySelectorAll('[data-t]').forEach(el => el.addEventListener('click', () => flyTheme(+el.dataset.t)));
+    panel.querySelectorAll('[data-go]').forEach(el => el.addEventListener('click', () => { showView('graph'); select_graph(el.dataset.go); }));
+  }
+  const copyLabel = pr => pr.kind === 'exact' ? 'same code' : pr.kind === 'near' ? `${Math.round(pr.sim * 100)}% same shape` : `${Math.round(pr.sim * 100)}% same meaning`;
+  function panelAbout() {
+    const scattered = C.filter(c => c.scattered).sort((a, b) => b.size - a.size), mixed = DATA.diagnostics.filter(d => d.code === 'mixed-responsibilities');
+    const nCopies = { exact: 0, near: 0, meaning: 0 }; for (const pr of copies) nCopies[pr.kind]++;
+    panel.innerHTML = `
+      <div class="section"><h3>The meaning map</h3><div class="meta2">Every function is a dot, placed by what it does: the code model <span class="mono">${esc(CONCEPTS.model)}</span> reads each one and ${esc(CONCEPTS.projection === 'umap' ? 'UMAP' : 'PCA')} lays them out, so <b>nearby means similar</b>, wherever the files live. Small labels are <b>concepts</b>, groups of functions that do one kind of thing (hover one and its functions glow); capitals are <b>themes</b>, groups of concepts. Zoom in for names; click a dot to see what calls it, what it calls and what it copies.</div>
+        <div class="kv"><div><b>${P.length}</b><span>functions</span></div><div><b>${C.length}</b><span>concepts</span></div><div><b>${T.length}</b><span>themes</span></div></div>
+        <div class="kv"><div><b>${nCopies.exact}</b><span>exact copies</span></div><div><b>${nCopies.near}</b><span>near copies</span></div><div><b>${nCopies.meaning}</b><span>same meaning</span></div></div></div>
+      <div class="section"><h3>Themes</h3><ul class="list">${T.filter(t => t.size >= 12).map(t => `<li data-t="${t.i}"><span>${esc(t.label)}</span><span class="meta">${t.size} fns · ${t.concepts.length} concepts</span></li>`).join('')}</ul></div>
+      <div class="section"><h3>Concepts with no home</h3><div class="meta2" style="margin-bottom:6px">One kind of work spread over many files, none holding a third of it.</div><ul class="list">${scattered.slice(0, 30).map(c => `<li data-c="${c.i}"><span class="sev warning"></span><span>${esc(c.label)}</span><span class="meta">${c.size} fns · ${Object.keys(c.modules).length} files</span></li>`).join('') || '<li style="cursor:default;color:var(--ink-3)">none</li>'}</ul></div>
+      <div class="section"><h3>Files doing several jobs</h3><ul class="list">${mixed.map(d => `<li data-go="${esc(d.node_id)}"><span class="mono">${esc(d.file || d.data.qualname)}</span><span class="meta">${(d.data.clusters || []).map(c => esc(c.label)).join(' / ')}</span></li>`).join('') || '<li style="cursor:default;color:var(--ink-3)">none</li>'}</ul></div>`;
+    wire();
+  }
+  function panelFunction(p) {
+    const c = p.c >= 0 ? C[p.c] : null, th = c && c.theme >= 0 ? T[c.theme] : null, src = (DATA.sources || {})[p.id];
+    const list = (title, ps, note) => ps.length ? `<div class="section"><h3>${title} (${ps.length})</h3>${note ? `<div class="meta2" style="margin-bottom:4px">${note}</div>` : ''}<ul class="list">${[...new Set(ps)].slice(0, 40).map(x => `<li data-p="${x.i}"><span class="swatch" style="background:${colourOf(x)}"></span><span class="mono">${esc(x.q)}</span><span class="meta">${esc(x.folder)}</span></li>`).join('')}</ul></div>` : '';
+    panel.innerHTML = `
+      <div class="section"><div style="font-weight:600;font-size:14px;word-break:break-all" class="mono">${esc(p.q)}</div>
+        <div class="meta2 mono" style="margin-top:2px">${esc(p.file || '')}${p.line ? ':' + p.line : ''}</div>
+        <div class="meta2" style="margin-top:6px"><span class="swatch" style="background:${folderColour[p.folder]}"></span>${esc(p.folder)}${c ? ` · in ${conceptLink(c)}` : ''}${th ? ` · <span class="linkish" data-t="${th.i}">${esc(th.label)}</span>` : ''}</div>
+        <div class="kv"><div><b>${p.loc}</b><span>lines</span></div><div><b>${new Set(p.in).size}</b><span>called by</span></div><div><b>${new Set(p.out).size}</b><span>calls</span></div></div>
+        ${p.dead ? '<div class="meta2" style="margin-top:8px;color:var(--warning)">Nothing reachable calls this.</div>' : ''}
+        <div style="margin-top:10px"><button data-go="${esc(p.id)}">open in the program graph</button></div></div>
+      ${p.twins.length ? `<div class="section"><h3>Copies (${p.twins.length})</h3><ul class="list">${p.twins.map(pr => { const o = pr.a === p ? pr.b : pr.a; return `<li data-p="${o.i}"><span class="copy">${copyLabel(pr)}</span><span class="mono" style="word-break:break-all">${esc(o.q)}</span><span class="meta">${esc((o.file || '').split('/').pop())}</span></li>`; }).join('')}</ul></div>` : ''}
+      ${list('Called by', p.in, 'What leads here: pale blue on the map.')}
+      ${list('Calls', p.out, 'What this sets off: gold on the map.')}
+      ${src ? `<div class="section"><h3>Code</h3><pre>${esc(src)}</pre></div>` : ''}`;
+    wire();
+  }
+  function panelConcept(c) {
+    const members = c.members.map(id => byId[id]).filter(Boolean).sort((a, b) => b.loc - a.loc), th = c.theme >= 0 ? T[c.theme] : null;
+    const byFolder = {}; for (const p of members) byFolder[p.folder] = (byFolder[p.folder] || 0) + 1;
+    const inside = copies.filter(pr => pr.a.c === c.i && pr.b.c === c.i);
+    panel.innerHTML = `
+      <div class="section"><div style="font-weight:600;font-size:14px">${esc(c.label)}</div>
+        <div class="meta2" style="margin-top:4px">${c.size} functions across ${Object.keys(c.modules).length} files${th ? ` · theme <span class="linkish" data-t="${th.i}">${esc(th.label)}</span>` : ''}${c.scattered ? ' · <b style="color:var(--warning)">no home</b>' : ''}</div></div>
+      <div class="section"><h3>Where it lives</h3>${Object.entries(byFolder).sort((a, b) => b[1] - a[1]).map(([f, k]) => `<div class="cbar"><span class="n mono" title="${esc(f)}"><span class="swatch" style="background:${folderColour[f]}"></span>${esc(f)}</span><span class="b"><i style="width:${Math.round(100 * k / members.length)}%;background:${folderColour[f]}"></i></span><span class="c">${k}</span></div>`).join('')}</div>
+      ${inside.length ? `<div class="section"><h3>Copies inside (${inside.length})</h3><ul class="list">${inside.map(pr => `<li data-p="${pr.a.i}"><span class="copy">${copyLabel(pr)}</span><span class="mono" style="word-break:break-all">${esc(pr.a.name)} ⇄ ${esc(pr.b.name)}</span><span class="meta">${esc((pr.a.file || '').split('/').pop())} · ${esc((pr.b.file || '').split('/').pop())}</span></li>`).join('')}</ul></div>` : ''}
+      <div class="section"><h3>Functions (${members.length})</h3><ul class="list">${members.map(p => `<li data-p="${p.i}"><span class="swatch" style="background:${folderColour[p.folder]}"></span><span class="mono">${esc(p.q)}</span><span class="meta">${p.loc} lines</span></li>`).join('')}</ul></div>`;
+    wire();
+  }
+  function legend() {
+    const el = document.getElementById('mm-legend'); const items = [];
+    if (state.colour === 'folder') { folders.slice(0, MM_PALETTE.length).forEach(f => items.push(`<span class="k orb" style="--c:${folderColour[f]}">${esc(f)}</span>`)); if (folders.length > MM_PALETTE.length) items.push(`<span class="k orb" style="--c:${MM_OTHER}">other folders</span>`); }
+    else { T.slice(0, MM_PALETTE.length).forEach((t, i) => items.push(`<span class="k orb" style="--c:${themeColour(i)}">${esc(t.label)}</span>`)); if (T.length > MM_PALETTE.length) items.push(`<span class="k orb" style="--c:${MM_OTHER}">other themes</span>`); }
+    items.push(`<span class="k ring" style="--c:#c8d3ee">unreachable</span>`);
+    if (state.lens === 'flow') items.push(`<span class="k edge dashed" style="--c:#dfe7fb">calls, moving caller → callee</span>`);
+    if (state.lens === 'copies') items.push(`<span class="k edge" style="--c:${MM_COPY}">same code</span><span class="k edge dashed" style="--c:${MM_COPY}">same shape · dotted: same meaning</span>`);
+    el.innerHTML = items.join('');
+  }
+  new ResizeObserver(resize).observe(root);
+  resize(); fit(true); legend(); panelAbout();
+  return { resize, select: id => byId[id] && select(byId[id], true) };
 }
-function buildConcepts() {
-  const pos = conceptPositions(); const els = [];
-  for (const c of CONCEPTS.concepts) els.push({ group: 'nodes', position: { x: pos[c.id].x, y: pos[c.id].y }, data: { id: c.id, label: c.label, size: pos[c.id].size, color: conceptColor(c), scattered: c.scattered } });
-  for (const e of CONCEPTS.edges) els.push({ group: 'edges', data: { id: e.src + '>' + e.dst, source: e.src, target: e.dst, calls: e.calls, w: 1 + Math.log2(e.calls) } });
-  const ink = fcss('--field-ink'), field = fcss('--field');
-  cy2 = cytoscape({ container: document.getElementById('cy2'), elements: els, layout: { name: 'preset', fit: true, padding: 60 }, wheelSensitivity: 0.25, minZoom: 0.2, maxZoom: 4, boxSelectionEnabled: false, style: [
-    { selector: 'node', style: { shape: 'ellipse', width: 'data(size)', height: 'data(size)', 'background-color': 'data(color)', 'background-opacity': 0.95, 'border-width': 0, label: 'data(label)', 'font-family': 'IBM Plex Sans, sans-serif', 'font-size': 11, 'font-weight': 600, color: ink, 'text-outline-color': field, 'text-outline-width': 2, 'text-outline-opacity': 0.85, 'text-valign': 'bottom', 'text-margin-y': 6, 'text-wrap': 'wrap', 'text-max-width': 150, 'underlay-color': 'data(color)', 'underlay-opacity': 0.25, 'underlay-padding': 10, 'underlay-shape': 'ellipse', 'min-zoomed-font-size': 5, 'transition-property': 'opacity, underlay-opacity', 'transition-duration': 150 } },
-    { selector: 'node[?scattered]', style: { 'border-width': 2, 'border-color': '#ffffff', 'border-opacity': 0.7, 'underlay-opacity': 0.35 } },
-    { selector: 'edge', style: { width: 'data(w)', 'curve-style': 'bezier', 'line-color': fcss('--function'), 'target-arrow-color': fcss('--function'), 'target-arrow-shape': 'triangle', 'arrow-scale': 0.7, opacity: 0.3, 'line-cap': 'round', 'transition-property': 'opacity', 'transition-duration': 150 } },
-    { selector: '.faded', style: { opacity: 0.12 } },
-    { selector: 'node.focus', style: { 'underlay-opacity': 0.6, 'underlay-padding': 16 } },
-    { selector: 'edge.near', style: { opacity: 0.95 } },
-  ] });
-  cy2.on('tap', 'node', evt => selectConcept(evt.target.id()));
-  cy2.on('tap', evt => { if (evt.target === cy2) { cy2.elements().removeClass('faded near focus'); } });
-  cy2.on('mouseover', 'node', evt => { if (cy2.nodes('.focus').length) return; cy2.elements().addClass('faded'); evt.target.closedNeighborhood().removeClass('faded').addClass('near'); });
-  cy2.on('mouseout', 'node', () => { if (cy2.nodes('.focus').length) return; cy2.elements().removeClass('faded near'); });
-  if (!REDUCED) { cy2.nodes().style({ opacity: 0 }); cy2.nodes().forEach((n, i) => setTimeout(() => n.removeStyle('opacity'), 25 * i + 50)); }
-  renderConceptAbout(); renderConceptModules();
-}
-function showCPanel(name) {
-  document.querySelectorAll('#view-concepts .cpanel').forEach(p => p.dataset.active = p.id === 'cp-' + name);
-  document.querySelectorAll('#view-concepts [role=tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.cpanel === name));
-}
-document.querySelectorAll('#view-concepts [role=tab]').forEach(b => b.addEventListener('click', () => showCPanel(b.dataset.cpanel)));
-function selectConcept(id) {
-  const c = conceptById[id]; if (!c || !cy2) return;
-  cy2.elements().removeClass('faded near focus'); cy2.elements().addClass('faded'); const n = cy2.getElementById(id); n.closedNeighborhood().removeClass('faded').addClass('near'); n.addClass('focus');
-  cy2.animate({ center: { eles: n } }, { duration: REDUCED ? 0 : 300 });
-  const total = c.size; const mods = Object.entries(c.modules);
-  const byMod = {}; for (const m of c.members) { const s = nodeById[m]; if (s) (byMod[s.module] ||= []).push(s); }
-  document.getElementById('c-empty').style.display = 'none';
-  document.getElementById('c-node').innerHTML = `
-    <div class="section"><div style="display:flex;gap:8px;align-items:baseline"><span class="pill" style="background:color-mix(in srgb, ${conceptColor(c)} 35%, transparent)">concept</span><b style="font-size:14px">${esc(c.label)}</b></div>
-      <div class="meta2" style="margin-top:4px">${total} functions across ${mods.length} module${mods.length === 1 ? '' : 's'} · cohesion ${c.cohesion.toFixed(2)}${c.scattered ? ' · <b style="color:var(--warning)">scattered: no module holds half of it</b>' : ''}</div>
-      <div class="meta2" style="margin-top:4px">most typical: <span class="mono" data-go="${esc(c.exemplar)}" style="cursor:pointer;color:var(--module)">${esc(nodeById[c.exemplar] ? nodeById[c.exemplar].qualname : c.exemplar)}</span></div></div>
-    <div class="section"><h3>Where it lives</h3>${mods.map(([m, k]) => `<div class="cbar"><span class="n mono" title="${esc(m)}">${esc(nodeById[m] ? nodeById[m].name : m)}</span><span class="b"><i style="width:${Math.round(100 * k / total)}%"></i></span><span class="c">${k}</span></div>`).join('')}</div>
-    <div class="section"><h3>Members (${total})</h3>${Object.entries(byMod).map(([m, ss]) => `<div class="meta2 mono" style="margin-top:6px">${esc(nodeById[m] ? nodeById[m].name : m)}</div><ul class="list">${ss.map(sx => `<li data-go="${esc(sx.id)}"><span class="pill">${esc(sx.kind)}</span><span class="mono">${esc(sx.qualname)}</span><span class="meta">${sx.attrs.loc || ''} lines</span></li>`).join('')}</ul>`).join('')}</div>`;
-  document.querySelectorAll('#c-node [data-go]').forEach(el => el.addEventListener('click', () => { showView('graph'); select(el.dataset.go, true); }));
-  showCPanel('concept');
-}
-function renderConceptAbout() {
-  const m = DATA.metrics; const sem = (m.semantic_duplicates || {}).pairs ?? DATA.diagnostics.filter(d => d.code === 'semantic-duplicate').length;
-  const mixed = DATA.diagnostics.filter(d => d.code === 'mixed-responsibilities'), scattered = CONCEPTS.concepts.filter(c => c.scattered);
-  document.getElementById('c-about').innerHTML = `
-    <div class="section"><h3>How the semantic tier works</h3><ol class="howto">
-      <li>Every function's source is turned into a vector by a code embedding model (<span class="mono">${esc(CONCEPTS.model)}</span>). Two functions that do the same job land close together even when their code differs.</li>
-      <li>Each function is linked to its nearest neighbours by meaning; communities in that graph are the <b>concepts</b> on this map (${CONCEPTS.concepts.length} of them, covering ${CONCEPTS.clustered} of ${CONCEPTS.symbols} functions). Labels are the words their names share.</li>
-      <li>The map position comes from projecting each concept's centre to 2-D (${esc(CONCEPTS.projection || 'pca')}): distance is similarity of meaning.</li></ol></div>
-    <div class="section"><h3>What it outputs</h3><ol class="howto">
-      <li><b>${sem}</b> semantic duplicates: pairs that do the same thing with different code (tab 5, pass <span class="mono">semantic-duplicates</span>).</li>
-      <li><b>${mixed.length}</b> mixed modules: files whose functions fall into several unrelated groups (<span class="mono">responsibilities</span>).</li>
-      <li><b>${scattered.length}</b> scattered concepts: one idea spread over many modules with no home (<span class="mono">concepts</span>).</li></ol></div>
-    <div class="section"><h3>Scattered concepts</h3><ul class="list" id="c-scattered">${scattered.map(c => `<li data-c="${esc(c.id)}"><span class="sev warning"></span><span>${esc(c.label)}</span><span class="meta">${c.size} fns · ${Object.keys(c.modules).length} modules</span></li>`).join('') || '<li style="cursor:default;color:var(--ink-3)">none: every concept has a home</li>'}</ul></div>
-    <div class="section"><h3>Mixed modules</h3><ul class="list" id="c-mixed">${mixed.map(d => `<li data-go="${esc(d.node_id)}"><span class="sev info"></span><span class="mono">${esc(d.data.qualname)}</span><span class="meta">${(d.data.clusters || []).map(c => c.label).join(' / ')}</span></li>`).join('') || '<li style="cursor:default;color:var(--ink-3)">none</li>'}</ul></div>`;
-  document.querySelectorAll('#c-scattered [data-c]').forEach(li => li.addEventListener('click', () => selectConcept(li.dataset.c)));
-  document.querySelectorAll('#c-mixed [data-go]').forEach(li => li.addEventListener('click', () => { showView('graph'); select(li.dataset.go, true); }));
-}
-function renderConceptModules() {
-  const spread = {}; for (const c of CONCEPTS.concepts) for (const m of Object.keys(c.modules)) (spread[m] ||= []).push(c);
-  const rows = Object.entries(spread).sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0])).slice(0, 40);
-  document.getElementById('c-modules').innerHTML = rows.map(([m, cs]) => `<li data-go="${esc(m)}"><span class="mono">${esc(nodeById[m] ? nodeById[m].name : m)}</span><span class="meta">${cs.length} concept${cs.length === 1 ? '' : 's'}</span></li>`).join('');
-  document.querySelectorAll('#c-modules [data-go]').forEach(li => li.addEventListener('click', () => { showView('graph'); select(li.dataset.go, true); }));
-}
+function select_graph(id) { select(id, true); }
 function focusTop() {
   const vis = cy.nodes(':visible'); if (!vis.length) return;
   cy.fit(vis, 40);

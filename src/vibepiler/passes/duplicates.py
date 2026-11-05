@@ -60,6 +60,7 @@ class DuplicatesPass(Pass):
                     node=first,
                     suggestion=f"Keep one and delete the rest ({sum(m.loc for m in members[1:])} lines), or parameterize the differences.",
                     members=[m.qualname for m in members],
+                    ids=[m.id for m in members],
                     locations=[m.location for m in members],
                     loc=sum(m.loc for m in members),
                 )
@@ -93,6 +94,7 @@ class DuplicatesPass(Pass):
                                 node=a,
                                 suggestion="Consider merging them behind a parameter.",
                                 members=[a.qualname, b.qualname],
+                                ids=[a.id, b.id],
                                 locations=[a.location, b.location],
                                 similarity=round(sim, 3),
                             )

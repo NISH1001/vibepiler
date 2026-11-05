@@ -59,6 +59,7 @@ class SemanticDuplicatesPass(Pass):
                         node=a,
                         suggestion=f"Keep one. `{a.qualname}` ({a.loc} lines) vs `{b.qualname}` ({b.loc} lines): pick the clearer one and delete the other.",
                         members=[a.qualname, b.qualname],
+                        ids=[a.id, b.id],
                         locations=[a.location, b.location],
                         similarity=round(s, 3),
                         loc=min(a.loc, b.loc),
