@@ -171,3 +171,21 @@ def test_report_draws_the_meaning_map(program):
     run_pass("concepts", program)
     html = emit_html(program)
     assert 'id="meaning"' in html and "<canvas" in html and "cy2" not in html
+
+
+def test_hidden_overlays_never_cover_the_map():
+    """The map's empty-state layer covers the canvas; a class `display` rule beats the `hidden` attribute unless one rule
+    says otherwise, and then the invisible layer swallows every hover, click, drag and scroll."""
+    from importlib import resources
+
+    viewer = resources.files("vibepiler.backend").joinpath("viewer.html").read_text(encoding="utf-8")
+    assert "[hidden] { display: none !important; }" in viewer
+
+
+def test_map_colours_by_health_by_default():
+    from importlib import resources
+
+    viewer = resources.files("vibepiler.backend").joinpath("viewer.html").read_text(encoding="utf-8")
+    for mode in ("health", "complexity", "folder", "theme"):
+        assert f'data-colour="{mode}"' in viewer
+    assert 'data-colour="health" aria-pressed="true"' in viewer
