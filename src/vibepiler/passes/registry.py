@@ -83,10 +83,12 @@ def run_pass(name: str, program: Program) -> list[Diagnostic]:
 
 
 def is_accepted(d: Diagnostic, patterns: list[str]) -> bool:
-    """`accept = ["class-as-function:*Embedder", "single-use-helper"]`: a code, or a code and a qualname glob."""
+    """`accept = ["class-as-function:*Embedder", "single-use-helper"]`: a code, or a code and a qualname glob. A finding
+    about several functions (a duplicate pair or group) matches when the glob names any of them."""
+    names = [d.data.get("qualname", "") or "", *(m for m in d.data.get("members", []) if isinstance(m, str))]
     for pat in patterns:
         code, _, glob = pat.partition(":")
-        if d.code == code and (not glob or fnmatch.fnmatch(d.data.get("qualname", "") or "", glob)):
+        if d.code == code and (not glob or any(fnmatch.fnmatch(n, glob) for n in names)):
             return True
     return False
 
