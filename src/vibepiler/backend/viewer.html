@@ -654,7 +654,11 @@ function buildMeaning() {
   // ---- camera: screen = world * k + t; `cur` eases toward `to` ----
   let W = 0, H = 0, DPR = 1, fitK = 1;
   const cur = { k: 1, x: 0, y: 0 }, to = { k: 1, x: 0, y: 0 };
-  const state = { lens: 'map', colour: 'folder', sel: null, concept: null, hover: null, hoverConcept: null, cone: null, born: performance.now() };
+  const state = { lens: 'map', colour: 'folder', sel: null, concept: null, hover: null, hoverConcept: null, hoverTheme: null, hoverFlow: null, flowSel: null, cone: null, born: performance.now() };
+  // Flow, zoomed out: one stream per pair of concepts, width by traffic; each knows the function calls it carries
+  const streams = (CONCEPTS.edges || []).slice(0, 160).map(e => ({ a: C[+e.src.split(':')[1]], b: C[+e.dst.split(':')[1]], n: e.calls, geo: null, pairs: null })).filter(st => st.a && st.b);
+  const streamMax = Math.max(1, ...streams.map(st => st.n));
+  const pairsOf = st => st.pairs ||= calls.filter(([x, y]) => x.c === st.a.i && y.c === st.b.i);
   function resize() {
     const r = root.getBoundingClientRect(); W = r.width; H = r.height; DPR = Math.min(2, devicePixelRatio || 1);
     canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR); kick();
@@ -712,16 +716,31 @@ function buildMeaning() {
     }
     if (state.lens === 'flow' && !focus) {
       if (s < 2.2) { // between concepts: one stream per pair, width by traffic
-        const top = (CONCEPTS.edges || []).slice(0, 160); const max = Math.max(1, ...top.map(e => e.calls));
-        for (const e of top) {
-          const a = C[+e.src.split(':')[1]], b = C[+e.dst.split(':')[1]]; if (!a || !b) continue;
-          ctx.beginPath(); curve({ x: a.cx, y: a.cy }, { x: b.cx, y: b.cy }, 0.22);
-          ctx.strokeStyle = '#dfe7fb'; ctx.globalAlpha = 0.12 + 0.3 * e.calls / max; ctx.lineWidth = 0.6 + 2.6 * Math.log2(1 + e.calls) / Math.log2(1 + max);
-          dash(3, 9, 22); ctx.stroke();
+        // what is in focus: a stream (hovered or clicked), or the concepts under a hovered concept or theme label
+        const one = state.hoverFlow || state.flowSel;
+        const around = state.hoverConcept !== null ? new Set([state.hoverConcept]) : state.hoverTheme !== null ? new Set(T[state.hoverTheme].concepts) : null;
+        for (const st of streams) {
+          const x1 = sx(st.a.cx), y1 = sy(st.a.cy), x2 = sx(st.b.cx), y2 = sy(st.b.cy);
+          st.geo = [x1, y1, (x1 + x2) / 2 - (y2 - y1) * 0.22, (y1 + y2) / 2 + (x2 - x1) * 0.22, x2, y2];
+          const w = 0.6 + 2.6 * Math.log2(1 + st.n) / Math.log2(1 + streamMax);
+          let colour = '#dfe7fb', alpha = 0.12 + 0.3 * st.n / streamMax, width = w;
+          if (one) { if (st === one) { colour = '#ffffff'; alpha = 0.95; width = w + 1.5; } else alpha = 0.05; }
+          else if (around) {
+            const out = around.has(st.a.i), inn = around.has(st.b.i);
+            if (out || inn) { colour = out ? MM_DOWN : MM_UP; alpha = 0.85; width = w + 0.8; } else alpha = 0.05;
+          }
+          ctx.beginPath(); ctx.moveTo(x1, y1); ctx.quadraticCurveTo(st.geo[2], st.geo[3], x2, y2);
+          ctx.strokeStyle = colour; ctx.globalAlpha = alpha; ctx.lineWidth = width; dash(3, 9, 22); ctx.stroke();
         }
       } else { // between functions on screen
         ctx.strokeStyle = '#dfe7fb'; ctx.lineWidth = 1; ctx.globalAlpha = 0.28; dash(2, 7, 18); ctx.beginPath();
         let n = 0; for (const [a, b] of calls) { if (n > 5000) break; if (vis(a) || vis(b)) { curve(a, b); n++; } } ctx.stroke();
+      }
+      if (state.hover) { // a hovered function's own calls, before any click
+        for (const [list, colour, out] of [[state.hover.out, MM_DOWN, true], [state.hover.in, MM_UP, false]]) {
+          ctx.strokeStyle = colour; ctx.globalAlpha = 0.9; ctx.lineWidth = 1.4; dash(4, 6, 26); ctx.beginPath();
+          for (const q of list) out ? curve(state.hover, q) : curve(q, state.hover); ctx.stroke();
+        }
       }
       ctx.setLineDash([]); ctx.globalAlpha = 1;
     }
@@ -797,7 +816,23 @@ function buildMeaning() {
     for (let cx = c0; cx <= c1; cx++) for (let cy = r0; cy <= r1; cy++) for (const p of grid.get(cx + ',' + cy) || []) {
       if (state.cone && !state.cone.has(p.i)) continue; const d = (px(p) - mx) ** 2 + (py(p) - my) ** 2; if (d < bd) { bd = d; best = p; }
     }
-    return best;
+    hitD = bd; return best;
+  }
+  let hitD = Infinity, flowD = Infinity; // squared distances of the last dot and stream hits: the closer one wins
+  function flowAt(mx, my) { // the stream under the cursor, sampled along its curve
+    if (state.lens !== 'flow' || state.cone || scale() >= 2.2) return null;
+    let best = null, bd = 36;
+    for (const st of streams) {
+      const g = st.geo; if (!g) continue;
+      let x0 = g[0], y0 = g[1];
+      for (let k = 1; k <= 32; k++) { // distance to the polyline through 32 samples, not to the samples themselves
+        const t = k / 32, u = 1 - t, x1 = u * u * g[0] + 2 * u * t * g[2] + t * t * g[4], y1 = u * u * g[1] + 2 * u * t * g[3] + t * t * g[5];
+        const dx = x1 - x0, dy = y1 - y0, L = dx * dx + dy * dy || 1, f = Math.max(0, Math.min(1, ((mx - x0) * dx + (my - y0) * dy) / L));
+        const d = (x0 + f * dx - mx) ** 2 + (y0 + f * dy - my) ** 2; if (d < bd) { bd = d; best = st; }
+        x0 = x1; y0 = y1;
+      }
+    }
+    flowD = bd; return best;
   }
   function labelAt(mx, my) { for (let k = boxes.length - 1; k >= 0; k--) { const b = boxes[k]; if (mx >= b.x && mx <= b.x + b.w && my >= b.y && my <= b.y + b.h) return b; } return null; }
 
@@ -811,9 +846,14 @@ function buildMeaning() {
       to.x += dx; to.y += dy; cur.x += dx; cur.y += dy; const dt = Math.max(1, performance.now() - drag.t);
       inertia = { vx: dx * 16 / dt, vy: dy * 16 / dt }; drag = { x: e.clientX, y: e.clientY, t: performance.now() }; hideTip(); kick(); return;
     }
-    const lb = labelAt(mx, my), p = lb ? null : pointAt(mx, my), c = lb && lb.c !== undefined ? C[lb.c] : null, th = lb && lb.t !== undefined ? T[lb.t] : null;
-    if (p !== state.hover || (c ? c.i : null) !== state.hoverConcept) { state.hover = p; state.hoverConcept = c ? c.i : null; kick(); }
-    canvas.classList.toggle('hit', !!(p || lb)); if (p) tip(p, mx, my); else if (c) tipConcept(c, mx, my); else if (th) tipTheme(th, mx, my); else hideTip();
+    const lb = labelAt(mx, my), c = lb && lb.c !== undefined ? C[lb.c] : null, th = lb && lb.t !== undefined ? T[lb.t] : null;
+    let p = lb ? null : pointAt(mx, my), st = lb ? null : flowAt(mx, my);
+    if (p && st) { if (flowD < hitD) p = null; else st = null; }
+    if (p !== state.hover || (c ? c.i : null) !== state.hoverConcept || (th ? th.i : null) !== state.hoverTheme || st !== state.hoverFlow) {
+      state.hover = p; state.hoverConcept = c ? c.i : null; state.hoverTheme = th ? th.i : null; state.hoverFlow = st; kick();
+    }
+    canvas.classList.toggle('hit', !!(p || lb || st));
+    if (p) tip(p, mx, my); else if (c) tipConcept(c, mx, my); else if (th) tipTheme(th, mx, my); else if (st) tipFlow(st, mx, my); else hideTip();
   });
   canvas.addEventListener('pointerup', e => {
     canvas.classList.remove('drag'); const wasDrag = moved; drag = null; if (wasDrag) { kick(); return; } inertia = null;
@@ -821,10 +861,13 @@ function buildMeaning() {
     const lb = labelAt(mx, my);
     if (lb && lb.c !== undefined) return selectConcept(lb.c, true);
     if (lb && lb.t !== undefined) return flyTheme(lb.t);
-    const p = pointAt(mx, my); if (p) return select(p, false);
+    let p = pointAt(mx, my), st = flowAt(mx, my);
+    if (p && st) { if (flowD < hitD) p = null; else st = null; }
+    if (p) return select(p, false);
+    if (st) return selectFlow(st);
     clear();
   });
-  canvas.addEventListener('pointerleave', () => { state.hover = null; state.hoverConcept = null; hideTip(); kick(); });
+  canvas.addEventListener('pointerleave', () => { state.hover = null; state.hoverConcept = null; state.hoverTheme = null; state.hoverFlow = null; hideTip(); kick(); });
   canvas.addEventListener('dblclick', e => { const r = canvas.getBoundingClientRect(); zoomAt(2.2, e.clientX - r.left, e.clientY - r.top); });
   canvas.addEventListener('wheel', e => {
     e.preventDefault(); const r = canvas.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
@@ -860,6 +903,11 @@ function buildMeaning() {
   }
   function tipConcept(c, mx, my) { tipEl.innerHTML = `<b>${esc(c.label)}</b><div class="n">concept: ${c.size} functions across ${Object.keys(c.modules).length} files${c.scattered ? ' · <span style="color:var(--warning)">no home</span>' : ''}</div><div class="n">its functions glow; click to open</div>`; place(mx, my); }
   function tipTheme(t, mx, my) { tipEl.innerHTML = `<b>${esc(t.label)}</b><div class="n">theme: ${t.size} functions in ${t.concepts.length} concepts</div><div class="n">click to zoom in</div>`; place(mx, my); }
+  function tipFlow(st, mx, my) {
+    const ps = pairsOf(st), top = ps.slice(0, 3);
+    tipEl.innerHTML = `<b>${esc(st.a.label)}</b> <span class="n">→</span> <b>${esc(st.b.label)}</b><div class="n">${st.n} call${st.n > 1 ? 's' : ''} from one concept into the other</div>${top.map(([x, y]) => `<div class="f">${esc(x.name)} → ${esc(y.name)}</div>`).join('')}${ps.length > 3 ? `<div class="n">+ ${ps.length - 3} more; click to list them</div>` : '<div class="n">click to list them</div>'}`;
+    place(mx, my);
+  }
   function hideTip() { tipEl.hidden = true; }
 
   // ---- selection ----
@@ -887,7 +935,8 @@ function buildMeaning() {
     const d = ps.map(p => Math.hypot(p.x - th.cx, p.y - th.cy)).sort((a, b) => a - b), cut = d[Math.floor(d.length * 0.8)] ?? Infinity;
     clear(); frame(bounds(ps.filter(p => Math.hypot(p.x - th.cx, p.y - th.cy) <= cut)), 70, fitK * 20);
   }
-  function clear() { state.sel = null; state.cone = null; state.concept = null; panelAbout(); kick(); }
+  function selectFlow(st) { state.sel = null; state.cone = null; state.concept = null; state.flowSel = st; panelFlow(st); kick(); }
+  function clear() { state.sel = null; state.cone = null; state.concept = null; state.flowSel = null; panelAbout(); kick(); }
 
   // ---- side panel ----
   const panel = document.getElementById('mm-panel');
@@ -940,12 +989,21 @@ function buildMeaning() {
       <div class="section"><h3>Functions (${members.length})</h3><ul class="list">${members.map(p => `<li data-p="${p.i}"><span class="swatch" style="background:${folderColour[p.folder]}"></span><span class="mono">${esc(p.q)}</span><span class="meta">${p.loc} lines</span></li>`).join('')}</ul></div>`;
     wire();
   }
+  function panelFlow(st) {
+    const ps = pairsOf(st), callers = new Set(ps.map(([x]) => x)).size, callees = new Set(ps.map(([, y]) => y)).size;
+    panel.innerHTML = `
+      <div class="section"><div class="meta2">calls flowing from</div><div style="font-weight:600;font-size:14px">${conceptLink(st.a)}</div>
+        <div class="meta2" style="margin:2px 0">into</div><div style="font-weight:600;font-size:14px">${conceptLink(st.b)}</div>
+        <div class="kv"><div><b>${st.n}</b><span>calls</span></div><div><b>${callers}</b><span>callers</span></div><div><b>${callees}</b><span>callees</span></div></div></div>
+      <div class="section"><h3>The calls (${ps.length})</h3><ul class="list">${ps.map(([x, y]) => `<li data-p="${x.i}"><span class="mono" style="word-break:break-all">${esc(x.name)} <span style="color:var(--ink-3)">→</span> ${esc(y.name)}</span><span class="meta">${esc((x.file || '').split('/').pop())} → ${esc((y.file || '').split('/').pop())}</span></li>`).join('') || '<li style="cursor:default;color:var(--ink-3)">The calls are between functions not drawn on the map.</li>'}</ul></div>`;
+    wire();
+  }
   function legend() {
     const el = document.getElementById('mm-legend'); const items = [];
     if (state.colour === 'folder') { folders.slice(0, MM_PALETTE.length).forEach(f => items.push(`<span class="k orb" style="--c:${folderColour[f]}">${esc(f)}</span>`)); if (folders.length > MM_PALETTE.length) items.push(`<span class="k orb" style="--c:${MM_OTHER}">other folders</span>`); }
     else { T.slice(0, MM_PALETTE.length).forEach((t, i) => items.push(`<span class="k orb" style="--c:${themeColour(i)}">${esc(t.label)}</span>`)); if (T.length > MM_PALETTE.length) items.push(`<span class="k orb" style="--c:${MM_OTHER}">other themes</span>`); }
     items.push(`<span class="k ring" style="--c:#c8d3ee">unreachable</span>`);
-    if (state.lens === 'flow') items.push(`<span class="k edge dashed" style="--c:#dfe7fb">calls, moving caller → callee</span>`);
+    if (state.lens === 'flow') items.push(`<span class="k edge dashed" style="--c:#dfe7fb">calls, moving caller → callee (hover a stream)</span><span class="k edge" style="--c:${MM_DOWN}">out of</span><span class="k edge" style="--c:${MM_UP}">into</span>`);
     if (state.lens === 'copies') items.push(`<span class="k edge" style="--c:${MM_COPY}">same code</span><span class="k edge dashed" style="--c:${MM_COPY}">same shape · dotted: same meaning</span>`);
     el.innerHTML = items.join('');
   }
