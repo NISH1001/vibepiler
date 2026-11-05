@@ -108,3 +108,66 @@ def test_projection_falls_back_to_pca_and_uses_umap_when_installed(monkeypatch):
     monkeypatch.setitem(sys.modules, "umap", types.SimpleNamespace(UMAP=FakeUMAP))
     xy3, method3 = project_2d(M)
     assert method3 == "umap" and xy3.shape == (12, 2) and xy3.min() >= 0 and xy3.max() <= 1
+
+
+# ---------------------------------------------------------------- the meaning map
+
+
+def test_every_embedded_function_gets_a_point_on_the_map(program):
+    from vibepiler.semantic.embed import symbol_vectors
+
+    result = build_concepts(program)
+    nodes, _, _ = symbol_vectors(program)
+    points = result["points"]
+    assert [p["id"] for p in points] == [n.id for n in nodes]
+    assert all(0 <= p["x"] <= 1 and 0 <= p["y"] <= 1 for p in points)
+    owner = {m: ci for ci, c in enumerate(result["concepts"]) for m in c["members"]}
+    assert all(p["c"] == owner.get(p["id"], -1) for p in points)
+
+
+def test_concepts_nest_in_themes_and_sit_on_a_member(program):
+    result = build_concepts(program)
+    concepts, themes = result["concepts"], result["themes"]
+    assert themes and sorted(ci for t in themes for ci in t["concepts"]) == list(range(len(concepts)))
+    for ti, t in enumerate(themes):
+        assert t["label"] and t["size"] == sum(concepts[ci]["size"] for ci in t["concepts"])
+        assert all(concepts[ci]["theme"] == ti for ci in t["concepts"])
+    at = {p["id"]: (p["x"], p["y"]) for p in result["points"]}
+    for c in concepts:
+        assert (c["x"], c["y"]) in {at[m] for m in c["members"]}  # labelled on a function it has, not between clumps
+
+
+def test_labels_do_not_repeat_a_word_as_its_plural():
+    from vibepiler.semantic.concepts import label_for
+
+    docs = [["tool", "call"], ["tool", "calls"], ["tools", "call"]]
+    label, words = label_for(docs, {"tool": 1.0, "tools": 1.0, "call": 1.0, "calls": 1.0})
+    assert sorted(words) == ["call", "tool"]
+
+
+def test_react_hook_prefix_is_not_a_concept_word():
+    assert identifier_words("useValidationStream") == ["validation", "stream"]
+
+
+def test_migrations_are_not_embedded(tmp_path):
+    from vibepiler.semantic.embed import symbol_vectors
+
+    (tmp_path / "alembic" / "versions").mkdir(parents=True)
+    (tmp_path / "alembic" / "versions" / "0001_init.py").write_text("def upgrade():\n    op = 1\n    return op\n\ndef downgrade():\n    op = 2\n    return op\n")
+    (tmp_path / "app.py").write_text("def handler(x):\n    y = x + 1\n    return y\n")
+    prog = build_program(tmp_path)
+    nodes, _, _ = symbol_vectors(prog)
+    assert [n.name for n in nodes] == ["handler"]
+
+
+def test_duplicate_findings_name_their_nodes(program):
+    for name in ("duplicates", "semantic-duplicates"):
+        for d in run_pass(name, program):
+            ids = d.data.get("ids")
+            assert ids and all(program.graph.has_node(i) for i in ids) and len(ids) == len(d.data["members"])
+
+
+def test_report_draws_the_meaning_map(program):
+    run_pass("concepts", program)
+    html = emit_html(program)
+    assert 'id="meaning"' in html and "<canvas" in html and "cy2" not in html
