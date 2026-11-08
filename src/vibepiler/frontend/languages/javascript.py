@@ -520,65 +520,60 @@ class _Extractor(DecoratorWalk):
         decorators = [c for c in node.children if c.type == "decorator"]
         for d in decorators:
             self.visit_decorator(d, scope)
-        is_default = any(c.type == "default" for c in node.children)
         source = node.child_by_field_name("source")
         decl = node.child_by_field_name("declaration")
         value = node.child_by_field_name("value")
         line = self.line(node)
-        if source is not None:  # re-export
-            spec = self.string_value(source) or ""
-            clause = next((c for c in node.named_children if c.type == "export_clause"), None)
-            if clause is not None:
-                for es in clause.named_children:
-                    if es.type != "export_specifier":
-                        continue
-                    nm = es.child_by_field_name("name")
-                    al = es.child_by_field_name("alias")
-                    if nm is None:
-                        continue
-                    name = self.text(nm)
-                    self.facts.imports.append(ImportDef(module=spec, name=name, alias=self.text(al) if al else name, line=line, kind="member", scope=scope))
-            elif any(c.type == "namespace_export" for c in node.named_children):
-                ns = next(c for c in node.named_children if c.type == "namespace_export")
-                ident = next((c for c in ns.named_children if c.type == "identifier"), None)
-                self.facts.imports.append(ImportDef(module=spec, alias=self.text(ident) if ident else None, line=line, kind="namespace", scope=scope))
-            else:
-                self.facts.imports.append(ImportDef(module=spec, line=line, kind="wildcard", scope=scope))
-            return
-        if decl is not None:
-            self.visit(decl, scope, class_scope, exported=True, default=is_default, decorators=decorators)
-            return
-        if value is not None:  # export default <expression>
-            v = self._unwrap(value)
-            if v.type == "identifier":
-                self.default_name = self.text(v)
-                self.export_names.add(self.default_name)
-                self.facts.refs.append(RefSite(chain=(self.default_name,), line=line, scope=scope, context="export"))
-            elif v.type in ("arrow_function", "function_expression", "class", "function"):
-                kind_default = v.type in ("class",)
-                if kind_default:
-                    self.visit_class(v, scope, True, True, decorators)
-                else:
-                    self.visit_function(v, scope, class_scope, True, True, decorators)
-            else:
-                self.visit(v, scope, class_scope)
-            return
         clause = next((c for c in node.named_children if c.type == "export_clause"), None)
+        if source is not None:
+            self._reexport(node, clause, self.string_value(source) or "", line, scope)
+        elif decl is not None:
+            self.visit(decl, scope, class_scope, exported=True, default=any(c.type == "default" for c in node.children), decorators=decorators)
+        elif value is not None:
+            self._export_default(self._unwrap(value), line, scope, class_scope, decorators)
+        elif clause is not None:
+            for nm, _ in self._specifiers(clause):
+                self._mark_export(self.text(nm), line, scope)
+        else:
+            for c in node.named_children:  # `export = x`
+                if c.type == "identifier":
+                    self._mark_export(self.text(c), line, scope)
+
+    def _specifiers(self, clause: Node):  # noqa: ANN202 - yields (name, alias or None)
+        for es in clause.named_children:
+            nm = es.child_by_field_name("name") if es.type == "export_specifier" else None
+            if nm is not None:
+                yield nm, es.child_by_field_name("alias")
+
+    def _mark_export(self, name: str, line: int, scope: str | None) -> None:
+        self.export_names.add(name)
+        self.facts.refs.append(RefSite(chain=(name,), line=line, scope=scope, context="export"))
+
+    def _reexport(self, node: Node, clause: Node | None, spec: str, line: int, scope: str | None) -> None:
+        """`export {a as b} from`, `export * as ns from`, `export * from`: imports that also export."""
         if clause is not None:
-            for es in clause.named_children:
-                if es.type != "export_specifier":
-                    continue
-                nm = es.child_by_field_name("name")
-                if nm is None:
-                    continue
+            for nm, al in self._specifiers(clause):
                 name = self.text(nm)
-                self.export_names.add(name)
-                self.facts.refs.append(RefSite(chain=(name,), line=line, scope=scope, context="export"))
+                self.facts.imports.append(ImportDef(module=spec, name=name, alias=self.text(al) if al else name, line=line, kind="member", scope=scope))
             return
-        for c in node.named_children:  # `export = x`
-            if c.type == "identifier":
-                self.export_names.add(self.text(c))
-                self.facts.refs.append(RefSite(chain=(self.text(c),), line=line, scope=scope, context="export"))
+        ns = next((c for c in node.named_children if c.type == "namespace_export"), None)
+        if ns is None:
+            self.facts.imports.append(ImportDef(module=spec, line=line, kind="wildcard", scope=scope))
+            return
+        ident = next((c for c in ns.named_children if c.type == "identifier"), None)
+        self.facts.imports.append(ImportDef(module=spec, alias=self.text(ident) if ident else None, line=line, kind="namespace", scope=scope))
+
+    def _export_default(self, v: Node, line: int, scope: str | None, class_scope: str | None, decorators: list[Node]) -> None:
+        """`export default <expression>`: a name, a function or class defined in place, or anything else."""
+        if v.type == "identifier":
+            self.default_name = self.text(v)
+            self._mark_export(self.default_name, line, scope)
+        elif v.type == "class":
+            self.visit_class(v, scope, True, True, decorators)
+        elif v.type in ("arrow_function", "function_expression", "function"):
+            self.visit_function(v, scope, class_scope, True, True, decorators)
+        else:
+            self.visit(v, scope, class_scope)
 
     def visit_import(self, node: Node, scope: str | None) -> None:
         source = node.child_by_field_name("source")
