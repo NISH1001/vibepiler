@@ -319,3 +319,67 @@ def test_import_module_with_a_literal_name_is_an_import(tmp_path):
     run_pass("entry-points", prog)
     diags = run_pass("dead-code", prog)
     assert not [d.message for d in diags if "measures" in (d.file or "")]
+
+
+def test_imports_under_type_checking_or_inside_a_function_do_not_close_a_cycle(tmp_path):
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "__init__.py").write_text(
+        "from typing import TYPE_CHECKING\n\nif TYPE_CHECKING:\n    from pkg.driver import run\n\n\n"
+        "def __getattr__(name):\n    from pkg import driver\n\n    return getattr(driver, name)\n"
+    )
+    (tmp_path / "pkg" / "driver.py").write_text("from pkg import VERSION\n\n\ndef run():\n    return VERSION\n")
+    (tmp_path / "pkg" / "a.py").write_text("from pkg.b import y\n\nx = 1\n")
+    (tmp_path / "pkg" / "b.py").write_text("y = 2\n\n\ndef f():\n    from pkg.a import x\n\n    return x\n")
+    prog = build_program(tmp_path)
+    assert run_pass("cycles", prog) == []
+    assert [d.message for d in run_pass("unused-imports", prog) if "TYPE_CHECKING" in d.message] == []
+
+
+def test_an_import_in_the_else_of_type_checking_still_runs(tmp_path):
+    (tmp_path / "a.py").write_text("from typing import TYPE_CHECKING\n\nif TYPE_CHECKING:\n    pass\nelse:\n    from b import y\n")
+    (tmp_path / "b.py").write_text("from a import TYPE_CHECKING\n\ny = 1\n")
+    assert len(run_pass("cycles", build_program(tmp_path))) == 1
+
+
+def test_pytest_importorskip_with_a_literal_name_uses_the_dependency(tmp_path):
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "p"\nversion = "0"\ndependencies = []\n\n[dependency-groups]\ndev = ["complexipy"]\n')
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_x.py").write_text('import pytest\n\n\ndef test_x():\n    cx = pytest.importorskip("complexipy")\n    assert cx\n')
+    assert codes(run_pass("bloat", build_program(tmp_path)), "unused-dependency") == []
+
+
+def test_what_a_top_level_package_re_exports_is_public_api_not_test_only(tmp_path):
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "lib" / "__init__.py").write_text(
+        "from typing import TYPE_CHECKING\n\nfrom lib.core import load, _private\n\nif TYPE_CHECKING:\n    from lib.core import compile\n"
+    )
+    (tmp_path / "lib" / "core.py").write_text(
+        "def load():\n    return 1\n\n\ndef compile():\n    return 2\n\n\ndef _private():\n    return 3\n\n\ndef helper():\n    return 4\n"
+    )
+    (tmp_path / "tests" / "test_core.py").write_text(
+        "from lib.core import _private, compile, helper, load\n\n\ndef test_all():\n    assert load() + compile() + _private() + helper()\n"
+    )
+    prog = build_program(tmp_path)
+    run_pass("entry-points", prog)
+    test_only = sorted(d.data["qualname"] for d in run_pass("dead-code", prog) if d.code == "test-only")
+    assert test_only == ["_private", "helper"]  # load and compile are the package's API; underscores never are
+
+
+def test_all_narrows_the_public_api_of_a_package(tmp_path):
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "lib" / "__init__.py").write_text('from lib.core import a, b\n\n__all__ = ["a"]\n')
+    (tmp_path / "lib" / "core.py").write_text("def a():\n    return 1\n\n\ndef b():\n    return 2\n")
+    (tmp_path / "tests" / "test_core.py").write_text("from lib.core import a, b\n\n\ndef test_ab():\n    assert a() + b()\n")
+    prog = build_program(tmp_path)
+    run_pass("entry-points", prog)
+    assert [d.data["qualname"] for d in run_pass("dead-code", prog) if d.code == "test-only"] == ["b"]
+
+
+def test_names_in_a_string_annotation_are_used(tmp_path):
+    (tmp_path / "m.py").write_text(
+        "from typing import TYPE_CHECKING\n\nif TYPE_CHECKING:\n    import os\n    from pathlib import Path\n    from collections import OrderedDict\n\n\n"
+        'def main(p: "Path", q: list["os.PathLike"]) -> "dict[str, int]":\n    x: "OrderedDict | None" = None\n    return {str(p): len(q), "x": x}\n'
+    )
+    assert run_pass("unused-imports", build_program(tmp_path)) == []

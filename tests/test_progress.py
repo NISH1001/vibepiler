@@ -131,7 +131,7 @@ def test_zero_lifts_the_cap_to_the_models_own_context(monkeypatch):
     cfg = Config(embedding_max_tokens=0)
     prog = Compiler(f"def huge():\n{body}    return 1\n\n\ndef small():\n    return 2\n", cfg, language="python").run(opt_level=3, emit=()).program
     assert made.max_tokens is None  # not cut by us: the model keeps its own context
-    nodes, _, _ = embed.symbol_vectors(prog)
+    embed.symbol_vectors(prog)  # runs without a cap
     assert embed.text_cap(prog.config) is None
 
 

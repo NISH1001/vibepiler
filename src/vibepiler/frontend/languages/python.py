@@ -34,11 +34,15 @@ def is_migration_file(rel: str) -> bool:
     return bool(MIGRATION_DIRS & set(Path(rel).parts[:-1]))  # alembic/env.py and alembic/versions/*, */migrations/*
 
 
-DYNAMIC_IMPORTS = {"import_module", "__import__"}  # importlib.import_module("a.b"), __import__("a.b")
+DYNAMIC_IMPORTS = {"import_module", "__import__", "importorskip"}  # importlib.import_module("a.b"), __import__("a.b"), pytest.importorskip("a")
 
 ENTRY_FUNCTION_NAMES = {"main", "handler", "lambda_handler", "run", "serve", "cli", "app", "application"}
 
 # identifiers that should never be treated as references
+# a string annotation is a type expression the parser saw as a string: lex its dotted names, nested quotes left out
+_ANNOTATION_NAME = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*")
+_NESTED_STRING = re.compile(r"'[^']*'|\"[^\"]*\"")
+
 _SKIP_IDENT_PARENTS = {
     "keyword_argument": "name",
     "function_definition": "name",
@@ -367,6 +371,19 @@ class _Extractor(DecoratorWalk):
         if t == "identifier":
             self.visit_identifier(node, scope)
             return
+        if t == "string" and any(a.type == "type" for a in _ancestors(node, 6)):
+            self.visit_string_annotation(node, scope)
+            return
+        if t == "if_statement" and self.is_type_checking_guard(node):
+            # the body is for type checkers: its imports never run, so they bind names but load nothing
+            self.visit(node.child_by_field_name("condition"), scope, class_scope)
+            start = len(self.facts.imports)
+            self.visit(node.child_by_field_name("consequence"), scope, class_scope)
+            for imp in self.facts.imports[start:]:
+                imp.type_only = True
+            for alt in node.children_by_field_name("alternative"):
+                self.visit(alt, scope, class_scope)
+            return
         if t == "if_statement" and scope is None and self.is_main_guard(node):
             self.facts.has_main_guard = True
             self.facts.entry_hints.append(EntryHint(kind="main_guard", qualname=None, line=self.spec.line(node)))
@@ -401,6 +418,12 @@ class _Extractor(DecoratorWalk):
         name = self.text(node)
         ctx = "type" if any(a.type == "type" for a in _ancestors(node, 3)) else "name"
         self.facts.refs.append(RefSite(chain=(name,), line=self.spec.line(node), scope=scope, context=ctx))
+
+    def visit_string_annotation(self, node: Node, scope: str | None) -> None:
+        """`p: "Path"`, `-> "a.B | None"`: forward references read by type checkers, so their names are used."""
+        content = "".join(self.text(c) for c in node.children if c.type == "string_content")
+        for m in _ANNOTATION_NAME.finditer(_NESTED_STRING.sub("", content)):
+            self.facts.refs.append(RefSite(chain=tuple(m.group().split(".")), line=self.spec.line(node), scope=scope, context="type"))
 
     def visit_function(self, node: Node, scope: str | None, class_scope: str | None, decorators: list[Node]) -> None:
         name_node = node.child_by_field_name("name")
@@ -577,6 +600,10 @@ class _Extractor(DecoratorWalk):
             return None  # a prefixed literal: f"", b"", r""
         name = text.strip("\"'")
         return name if re.fullmatch(r"[A-Za-z_][\w]*(\.[A-Za-z_][\w]*)*", name) else None
+
+    def is_type_checking_guard(self, node: Node) -> bool:
+        cond = node.child_by_field_name("condition")
+        return cond is not None and self.text(cond) in ("TYPE_CHECKING", "typing.TYPE_CHECKING")
 
     def is_main_guard(self, node: Node) -> bool:
         cond = node.child_by_field_name("condition")
