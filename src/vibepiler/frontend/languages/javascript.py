@@ -78,6 +78,8 @@ class JavaScriptSpec(JavaScriptFlow, LanguageSpec):
         "function_declaration", "function_expression", "arrow_function", "method_definition", "class_declaration",
     })
     function_types = frozenset({"function_declaration", "function_expression", "arrow_function", "method_definition", "generator_function_declaration", "generator_function"})
+    cog_structures = frozenset({"if_statement", "for_statement", "for_in_statement", "while_statement", "do_statement", "catch_clause", "switch_statement", "ternary_expression"})
+    call_types = frozenset({"call_expression"})
     leaf_types = frozenset({
         "identifier", "property_identifier", "shorthand_property_identifier", "shorthand_property_identifier_pattern", "private_property_identifier",
         "string", "string_fragment", "template_string", "number", "true", "false", "null", "undefined", "regex", "this",
@@ -195,6 +197,13 @@ class JavaScriptSpec(JavaScriptFlow, LanguageSpec):
             op = node.child_by_field_name("operator")
             return op is not None and sf.text(op) in ("&&", "||", "??")
         return False
+
+    def bool_op(self, node: Node, sf: SourceFile) -> str | None:
+        op = node.child_by_field_name("operator") if node.type == "binary_expression" else None
+        return t if op is not None and (t := sf.text(op)) in ("&&", "||", "??") else None
+
+    def labeled_jump(self, node: Node) -> bool:
+        return node.type in ("break_statement", "continue_statement") and any(c.type == "statement_identifier" for c in node.children)
 
     def body_statements(self, def_node: Node, sf: SourceFile) -> list[Node]:
         body = def_node.child_by_field_name("body")

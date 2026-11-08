@@ -68,6 +68,11 @@ class PythonSpec(PythonFlow, LanguageSpec):
     })  # radon's rules: `with` and `match` add nothing, each `case` does
     loop_else_parents = frozenset({"for_statement", "while_statement", "try_statement"})
     opaque_branch_types = frozenset({"assert_statement"})  # one check, whatever its condition holds
+    cog_structures = frozenset({"if_statement", "for_statement", "while_statement", "except_clause", "conditional_expression", "match_statement", "for_in_clause"})
+    cog_flat = frozenset({"elif_clause", "if_clause"})
+    lambda_types = frozenset({"lambda"})
+    comprehension_types = frozenset({"list_comprehension", "set_comprehension", "dictionary_comprehension", "generator_expression"})
+    call_types = frozenset({"call"})
     nesting_types = frozenset({
         "if_statement", "for_statement", "while_statement", "try_statement", "with_statement",
         "function_definition", "class_definition", "match_statement",
@@ -85,6 +90,10 @@ class PythonSpec(PythonFlow, LanguageSpec):
             pattern = next((c for c in node.children if c.type == "case_pattern"), None)
             return not (pattern is not None and [c.type for c in pattern.children] == ["_"])  # `case _:` is the else
         return node.type in self.branch_types
+
+    def bool_op(self, node: Node, sf: SourceFile) -> str | None:
+        op = node.child_by_field_name("operator") if node.type == "boolean_operator" else None
+        return sf.text(op) if op is not None else None
 
     # ------------------------------------------------------------------ naming
     def module_name(self, sf: SourceFile) -> tuple[str, list[str]]:

@@ -71,6 +71,13 @@ class LanguageSpec(ABC):
     #: node types that define a function body (for clone detection / complexity scope)
     function_types: frozenset[str] = frozenset()
     opaque_branch_types: frozenset[str] = frozenset()  # a branch whose inside adds nothing more (radon's `assert`)
+    # cognitive complexity (SonarSource 2017): structures cost 1 + their nesting and nest what they hold; flat ones cost 1;
+    # lambdas only nest; a run of one boolean operator costs 1; a bare-name call to the function itself costs 1
+    cog_structures: frozenset[str] = frozenset()
+    cog_flat: frozenset[str] = frozenset()
+    lambda_types: frozenset[str] = frozenset()
+    comprehension_types: frozenset[str] = frozenset()  # the element nests under the `for`
+    call_types: frozenset[str] = frozenset()
 
     @abstractmethod
     def module_name(self, sf: SourceFile) -> tuple[str, list[str]]:
@@ -117,6 +124,14 @@ class LanguageSpec(ABC):
     # --- AST hooks used by passes -------------------------------------------
     def is_branch(self, node: Node, sf: SourceFile) -> bool:
         return node.type in self.branch_types
+
+    def bool_op(self, node: Node, sf: SourceFile) -> str | None:
+        """The operator of a short-circuit boolean node, or None."""
+        return None
+
+    def labeled_jump(self, node: Node) -> bool:
+        """A break or continue to a label: a jump the reader has to follow."""
+        return False
 
     def body_statements(self, def_node: Node, sf: SourceFile) -> list[Node]:
         """Statements of a function body, without docstrings/comments."""

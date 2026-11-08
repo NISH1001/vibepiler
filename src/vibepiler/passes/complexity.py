@@ -1,4 +1,4 @@
-"""complexity: cyclomatic complexity, length, nesting and parameter count per function."""
+"""complexity: cyclomatic and cognitive complexity, length, nesting and parameter count per function."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from vibepiler.frontend.languages.base import LanguageSpec
 from vibepiler.frontend.loader import SourceFile
 from vibepiler.passes.astutil import max_nesting
 from vibepiler.passes.base import Pass
+from vibepiler.passes.cognitive import cognitive
 from vibepiler.passes.diagnostic import Diagnostic, Severity
 
 
@@ -29,7 +30,7 @@ def cyclomatic(body: TSNode, spec: LanguageSpec, sf: SourceFile) -> int:
 
 class ComplexityPass(Pass):
     name = "complexity"
-    description = "Cyclomatic complexity, function length, nesting depth and parameter counts over thresholds."
+    description = "Cyclomatic and cognitive complexity, function length, nesting depth and parameter counts over thresholds."
     analogue = "control-flow analysis"
     cost = 1
 
@@ -46,11 +47,13 @@ class ComplexityPass(Pass):
             body = d.node
             cc = cyclomatic(body, spec, sf)
             nesting = max_nesting(body, spec.nesting_types, spec.function_types)
+            cog = cognitive(n.name, body, spec, sf)
             n.attrs["complexity"] = cc
+            n.attrs["cognitive"] = cog
             n.attrs["nesting"] = nesting
             n.attrs["loc"] = n.loc
             n.attrs["param_count"] = len(n.attrs.get("params", []))
-            rows.append({"id": n.id, "qualname": n.qualname, "file": n.file, "line": n.start_line, "complexity": cc, "loc": n.loc, "nesting": nesting})
+            rows.append({"id": n.id, "qualname": n.qualname, "file": n.file, "line": n.start_line, "complexity": cc, "cognitive": cog, "loc": n.loc, "nesting": nesting})
             if cc > th.complexity:
                 diags.append(
                     self.diag(
@@ -60,6 +63,17 @@ class ComplexityPass(Pass):
                         node=n,
                         suggestion="Split into smaller functions, replace branch ladders with lookup tables or early returns.",
                         complexity=cc,
+                    )
+                )
+            if cog > th.cognitive:
+                diags.append(
+                    self.diag(
+                        "high-cognitive-complexity",
+                        Severity.WARNING,
+                        f"`{n.qualname}` has cognitive complexity {cog} (threshold {th.cognitive})",
+                        node=n,
+                        suggestion="Flatten it: return early, pull nested blocks into named functions, split long boolean chains.",
+                        cognitive=cog,
                     )
                 )
             if n.loc > th.function_loc:

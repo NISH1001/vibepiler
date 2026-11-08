@@ -10,7 +10,8 @@ from typing import Any
 
 @dataclass
 class Thresholds:
-    complexity: int = 10  # cyclomatic complexity per function
+    complexity: int = 10  # cyclomatic complexity per function (McCabe; NIST SP 500-235)
+    cognitive: int = 15  # cognitive complexity per function (SonarQube's default)
     function_loc: int = 60  # lines per function
     nesting: int = 4  # max nesting depth
     params: int = 6  # parameters per function
