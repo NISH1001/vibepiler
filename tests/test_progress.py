@@ -90,3 +90,41 @@ def test_the_cap_is_a_setting(tmp_path):
 
     (tmp_path / "pyproject.toml").write_text("[tool.vibepiler]\nembedding_max_tokens = 1024\n")
     assert Config.load(tmp_path).embedding_max_tokens == 1024 and Config().embedding_max_tokens == 2048
+
+
+def test_zero_lifts_the_cap_to_the_models_own_context(monkeypatch):
+    from vibepiler.compiler import Compiler
+    from vibepiler.config import Config
+
+    made = CappableEmbedder()
+    monkeypatch.setattr(embed, "EMBEDDER_FACTORY", lambda model: made)
+    body = "".join(f"    x{i} = {i}\n" for i in range(5000))
+    cfg = Config(embedding_max_tokens=0)
+    prog = Compiler(f"def huge():\n{body}    return 1\n\n\ndef small():\n    return 2\n", cfg, language="python").run(opt_level=3, emit=()).program
+    assert made.max_tokens is None  # not cut by us: the model keeps its own context
+    nodes, _, _ = embed.symbol_vectors(prog)
+    assert embed.text_cap(prog.config) is None
+
+
+def test_max_tokens_is_a_command_line_option(monkeypatch, tmp_path):
+    made = CappableEmbedder()
+    monkeypatch.setattr(embed, "EMBEDDER_FACTORY", lambda model: made)
+    res = CliRunner().invoke(app, ["compile", FIX, "-O3", "--max-tokens", "512", "--emit", "json", "-o", str(tmp_path), "-q"])
+    assert res.exit_code == 0, res.output
+    assert made.max_tokens == 512
+
+
+def test_max_tokens_is_a_compiler_keyword_over_the_projects_config(monkeypatch, tmp_path):
+    import vibepiler
+    from vibepiler.compiler import Compiler
+
+    made = CappableEmbedder()
+    monkeypatch.setattr(embed, "EMBEDDER_FACTORY", lambda model: made)
+    (tmp_path / "pyproject.toml").write_text("[tool.vibepiler]\nembedding_max_tokens = 1024\nexclude = ['skip/']\n")
+    (tmp_path / "m.py").write_text("def f(a):\n    return a + 1\n\n\ndef g(b):\n    return b * 2\n")
+    c = Compiler(tmp_path, max_tokens=512)
+    assert c.config.embedding_max_tokens == 512 and "skip/" in c.config.exclude  # only the one setting changes
+    c.run(opt_level=3, emit=())
+    assert made.max_tokens == 512
+    assert Compiler(tmp_path).config.embedding_max_tokens == 1024
+    assert vibepiler.compile(tmp_path, max_tokens=0, opt_level=1, emit=()).program.config.embedding_max_tokens == 0
