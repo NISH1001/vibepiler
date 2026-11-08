@@ -14,6 +14,7 @@ from rich.table import Table
 from vibepiler.backend.common import liveness_parts, size_parts
 from vibepiler.ir.program import Program
 from vibepiler.passes.diagnostic import Severity
+from vibepiler.passes.measures import METRICS
 
 console = Console()
 err_console = Console(stderr=True)
@@ -95,6 +96,10 @@ def print_baseline(program: Program, path: Path) -> None:
     was, now = Liveness.of(before.get("liveness_score") or {}), Liveness.of(program)
     if was and now and now.moved(was):
         moved.append(f"live {was.value:.1%} → {now.value:.1%} ({(now.value - was.value) * 100:+.1f} pts, {now.live - now.defined - (was.live - was.defined):+d} dead)")
+    for cls in METRICS:
+        was, now = cls.of(before.get(f"{cls.key}_score") or {}), cls.of(program)
+        if was and now and now.moved(was):
+            moved.append(f"{cls.label} {was.value:.1%} → {now.value:.1%} ({(now.value - was.value) * 100:+.1f} pts)")
     console.print("[bold]since baseline[/bold]: " + ("; ".join(moved) if moved else "no change"))
 
 

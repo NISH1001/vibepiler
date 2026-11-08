@@ -127,3 +127,16 @@ def test_baseline_reports_a_live_move(tmp_path):
 def test_size_command_has_a_live_column():
     res = runner.invoke(app, ["size", str(FIX)])
     assert res.exit_code == 0 and "live" in res.output and "definitions" in res.output
+
+
+def test_baseline_reports_a_metric_move_and_a_metric_gates(tmp_path):
+    import json
+
+    first = runner.invoke(app, ["compile", str(FIX), "-q", "--emit", "json", "-o", str(tmp_path)])
+    ir = json.loads((tmp_path / "ir.json").read_text())
+    ir["metrics"]["typed_score"].update({"have": 1, "total": 100})
+    (tmp_path / "ir.json").write_text(json.dumps(ir))
+    second = runner.invoke(app, ["compile", str(FIX), "-q", "--emit", "json", "-o", str(tmp_path / "2"), "--baseline", str(tmp_path / "ir.json")])
+    assert first.exit_code == 0 and "typed 1.0% →" in second.output
+    gated = runner.invoke(app, ["compile", str(FIX), "-q", "--fail-on", "documented<1.01"])
+    assert gated.exit_code == 1 and "documented" in gated.output
