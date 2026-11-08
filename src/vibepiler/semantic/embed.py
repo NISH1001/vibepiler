@@ -147,10 +147,18 @@ class FastEmbedEmbedder:
         self.truncate(spec.max_length)
 
     def truncate(self, tokens: int) -> None:
-        """Embed at most `tokens` of each text (never past the model's own context)."""
-        limit = min(tokens, self._spec.max_length) if self._spec else tokens
+        """Embed at most `tokens` of each text, never past the model's own context: ours for the models we ship, the
+        tokenizer's own limit (as fastembed set it, read once) for any other."""
         try:  # fastembed takes the stricter of the tokenizer config's two length keys; we set the one we mean
-            self._model.model.tokenizer.enable_truncation(max_length=limit)
+            tokenizer = self._model.model.tokenizer
+            if self._spec is not None:
+                own = self._spec.max_length
+            else:
+                if getattr(self, "_context", None) is None:
+                    self._context = (getattr(tokenizer, "truncation", None) or {}).get("max_length") or tokens
+                own = self._context
+            limit = min(tokens, own)
+            tokenizer.enable_truncation(max_length=limit)
             self.max_tokens = limit
         except AttributeError:
             warnings.warn(f"could not set the tokenizer length for {self.name}; fastembed's internals changed", RuntimeWarning, stacklevel=2)
@@ -245,14 +253,18 @@ def _hash(text: str) -> str:
     return hashlib.sha1(text.encode("utf-8", errors="replace")).hexdigest()
 
 
+BATCH_SQUARE_BUDGET = BATCH_MAX * 800**2  # attention costs count x width^2: 32 short functions, or one long one
+
+
 def batches(texts: Sequence[str], max_batch: int = BATCH_MAX, char_budget: int = BATCH_CHAR_BUDGET) -> list[list[int]]:
-    """Indices grouped for embedding: sorted by length, each batch bounded by count and padded width."""
+    """Indices grouped for embedding: sorted by length, each batch bounded by count, padded width, and the attention's
+    quadratic cost, so a batch of long functions never costs more than the longest of them alone."""
     order = sorted(range(len(texts)), key=lambda i: len(texts[i]))
     out: list[list[int]] = []
     i = 0
     while i < len(order):
         j = i + 1
-        while j < len(order) and j - i < max_batch and len(texts[order[j]]) * (j - i + 1) <= char_budget:
+        while j < len(order) and j - i < max_batch and (w := len(texts[order[j]])) * (j - i + 1) <= char_budget and (j - i + 1) * w * w <= BATCH_SQUARE_BUDGET:
             j += 1
         out.append(order[i:j])
         i = j
@@ -260,44 +272,57 @@ def batches(texts: Sequence[str], max_batch: int = BATCH_MAX, char_budget: int =
 
 
 def embed_texts(embedder: Embedder, texts: Sequence[str], cache_dir: Path | None = None):
-    """Embed texts, reusing cached vectors for texts seen before (keyed by content hash and model)."""
+    """Embed texts, reusing cached vectors for texts seen before (keyed by content hash, model and token cap).
+
+    The cache is one file per model and cap, shared by every project. While a run embeds, it checkpoints only the
+    vectors it made to a part file of its own; at the end everything is merged into the shared file once. A part left
+    by a killed run is picked up and merged by the next one."""
     import numpy as np
 
     cache_dir = cache_dir or CACHE_DIR
     cache_dir.mkdir(parents=True, exist_ok=True)
     cap = getattr(embedder, "max_tokens", None)  # the same text embeds differently under another cap
-    path = cache_dir / f"{_slug(embedder.name)}{f'__{cap}t' if cap else ''}.npz"
+    stem = f"{_slug(embedder.name)}{f'__{cap}t' if cap else ''}"
+    path = cache_dir / f"{stem}.npz"
+    parts = sorted(cache_dir.glob(f"{stem}.part-*.npz"))
     cached: dict[str, "np.ndarray"] = {}
-    if path.is_file():
-        try:
-            data = np.load(path, allow_pickle=False)
-            cached = dict(zip(data["hashes"].tolist(), data["vectors"]))
-        except (OSError, ValueError, KeyError):
-            cached = {}
+    for f in [path, *parts]:
+        cached.update(_load(f))
     hashes = [_hash(t) for t in texts]
+    by_hash = dict(zip(hashes, texts))
     missing = sorted({h for h in hashes if h not in cached})
-    log.debug("cache %s: %d reused, %d to embed with %s", str(path).replace(str(Path.home()), "~", 1), len(set(hashes)) - len(missing), len(missing), embedder.name)
+    new: dict[str, "np.ndarray"] = {}
     if missing:
-        by_hash = {_hash(t): t for t in texts}
-        todo = [by_hash[h] for h in missing]
-        plan, done, start = batches(todo), 0, time.perf_counter()
-        saved_at, unsaved = start, 0
-        try:
-            for b, batch in enumerate(plan, 1):
-                t = time.perf_counter()
-                for k, v in zip(batch, embedder.embed([todo[k] for k in batch])):
-                    cached[missing[k]] = np.asarray(v, dtype=np.float32)
-                done += len(batch)
-                unsaved += len(batch)
-                rate = done / max(time.perf_counter() - start, 1e-9)
-                log.debug("batch %d/%d  %d functions, longest %d chars  %.2f s  %s", b, len(plan), len(batch), max(len(todo[k]) for k in batch), time.perf_counter() - t, mem_text())
-                progress("embedding", done, len(todo), batch=b, batches=len(plan), rate=rate)
-                if time.perf_counter() - saved_at >= CHECKPOINT_SECONDS:  # a killed run keeps what it embedded
-                    _save(path, cached)
-                    saved_at, unsaved = time.perf_counter(), 0
-        finally:  # done, stopped or failed: keep every vector embedded so far
-            if unsaved:
-                _save(path, cached)
+        borrowed = _other_caps(cache_dir, _slug(embedder.name), path, cap, {h: by_hash[h] for h in missing})
+        new.update(borrowed)
+        cached.update(borrowed)
+        missing = [h for h in missing if h not in borrowed]
+    log.debug("cache %s: %d reused, %d to embed with %s%s", str(path).replace(str(Path.home()), "~", 1), len(set(hashes)) - len(missing), len(missing), embedder.name, f" ({len(new)} reused from another token cap)" if new else "")
+    own_part = cache_dir / f"{stem}.part-{os.getpid()}-{time.time_ns()}.npz"
+    try:
+        if missing:
+            todo = [by_hash[h] for h in missing]
+            plan, done, start = batches(todo), 0, time.perf_counter()
+            saved_at, unsaved = start, 0
+            try:
+                for b, batch in enumerate(plan, 1):
+                    t = time.perf_counter()
+                    for k, v in zip(batch, embedder.embed([todo[k] for k in batch])):
+                        new[missing[k]] = cached[missing[k]] = np.asarray(v, dtype=np.float32)
+                    done += len(batch)
+                    unsaved += len(batch)
+                    rate = done / max(time.perf_counter() - start, 1e-9)
+                    log.debug("batch %d/%d  %d functions, longest %d chars  %.2f s  %s", b, len(plan), len(batch), max(len(todo[k]) for k in batch), time.perf_counter() - t, mem_text())
+                    progress("embedding", done, len(todo), batch=b, batches=len(plan), rate=rate)
+                    if time.perf_counter() - saved_at >= CHECKPOINT_SECONDS:  # a killed run keeps what it embedded
+                        _save(own_part, new, "checkpoint")
+                        saved_at, unsaved = time.perf_counter(), 0
+            finally:
+                if unsaved:
+                    _save(own_part, new, "checkpoint")
+    finally:  # done, stopped or failed: one merged write of everything, then the parts go
+        if new or parts:
+            _finish(path, cached, [*parts, own_part])
     mat = np.stack([cached[h] for h in hashes]) if hashes else np.zeros((0, 1), dtype=np.float32)
     norms = np.linalg.norm(mat, axis=1, keepdims=True)
     norms[norms == 0] = 1.0
@@ -333,21 +358,70 @@ def symbol_vectors(program: Program, min_loc: int = 2):
     return nodes, vectors, embedder.name
 
 
-CHECKPOINT_SECONDS = 30.0  # while embedding, the cache is written at least this often
+CHECKPOINT_SECONDS = 30.0  # while embedding, this run's new vectors are checkpointed at least this often
 
 
-def _save(path: Path, cached: dict) -> None:
-    """Write the cache whole to a temporary file, then move it into place: a run killed mid-write leaves the old one."""
+def _load(path: Path) -> dict:
+    """A cache file's vectors by hash; an unreadable one (half-written, from an older numpy) is rebuilt, never fatal."""
     import numpy as np
 
-    tmp = path.with_name(path.name + ".tmp.npz")
+    if not path.is_file():
+        return {}
     try:
-        keys = list(cached)
-        np.savez(tmp, hashes=np.array(keys), vectors=np.stack([cached[k] for k in keys]))
+        with np.load(path, allow_pickle=False) as data:
+            return dict(zip(data["hashes"].tolist(), data["vectors"]))
+    except Exception as exc:  # noqa: BLE001 - zipfile, EOF, value and key errors all mean "start this file again"
+        warnings.warn(f"embedding cache {path.name} unreadable ({type(exc).__name__}); rebuilding it", RuntimeWarning, stacklevel=3)
+        return {}
+
+
+def _save(path: Path, vectors: dict, what: str = "cache") -> None:
+    """Write whole to a temporary file of this process's own, then move it into place: a run killed mid-write, or
+    another run writing at the same moment, never leaves a half-written file under the real name."""
+    import tempfile
+
+    import numpy as np
+
+    if not vectors:
+        return
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.stem}.", suffix=".tmp.npz")
+    os.close(fd)
+    try:
+        keys = list(vectors)
+        np.savez(tmp, hashes=np.array(keys), vectors=np.stack([vectors[k] for k in keys]))
         os.replace(tmp, path)
-        log.debug("cache saved, %d vectors", len(keys))
+        log.debug("cache saved (%s), %d vectors", what, len(keys))
     except OSError as exc:
         warnings.warn(f"embedding cache not written ({exc}); vectors will be recomputed next run", RuntimeWarning, stacklevel=2)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+def _finish(path: Path, cached: dict, parts: list[Path]) -> None:
+    """Merge everything into the shared cache file once, then drop the part files it now holds."""
+    _save(path, cached, "merged")
+    for p in parts:
+        p.unlink(missing_ok=True)
+
+
+def _other_caps(cache_dir: Path, slug: str, path: Path, cap: int | None, texts: dict[str, str]) -> dict:
+    """Vectors cached for the same model under another token cap, for texts too short for either cap to have cut:
+    a token is at least one byte, so a text of fewer bytes than both caps (less two special tokens) embedded whole
+    both times."""
+    pattern = re.compile(rf"^{re.escape(slug)}(?:__(\d+)t)?\.npz$")
+    found: dict = {}
+    for f in sorted(cache_dir.glob(f"{slug}*.npz")):
+        m = pattern.match(f.name)
+        if m is None or f == path:
+            continue
+        other = int(m.group(1)) if m.group(1) else None
+        limit = min(c for c in (cap, other, 10**9) if c is not None) - 2
+        fits = {h for h, t in texts.items() if h not in found and len(t.encode()) <= limit}
+        if fits:
+            vectors = _load(f)
+            found.update({h: vectors[h] for h in fits if h in vectors})
+    return found
 
 
 def unit_vectors(program: Program):
@@ -368,7 +442,7 @@ def unit_vectors(program: Program):
         if n.module:
             members.setdefault(n.module, []).append(i)
         p = g.parent(n.id)
-        while p is not None and p.kind is not NodeKind.MODULE:
+        while p is not None and p.kind is not NodeKind.MODULE and p.kind not in CALLABLE_KINDS:  # a class made inside a function is its own
             if p.kind is NodeKind.CLASS:
                 members.setdefault(p.id, []).append(i)
             p = g.parent(p.id)
@@ -405,7 +479,11 @@ def nearest(vectors, k: int, block: int | None = None):  # noqa: ANN001, ANN201 
         top = np.argpartition(-part, k - 1, axis=1)[:, :k]
         val = np.take_along_axis(part, top, axis=1)
         order = np.lexsort((top, -val), axis=1)
-        idx[start : start + block] = np.take_along_axis(top, order, axis=1)
-        sims[start : start + block] = np.take_along_axis(val, order, axis=1)
+        top, val = np.take_along_axis(top, order, axis=1), np.take_along_axis(val, order, axis=1)
+        kth = val[:, -1:]
+        for r in np.nonzero((part == kth).sum(axis=1) > (val == kth).sum(axis=1))[0]:  # argpartition chose among equals
+            top[r] = np.argsort(-part[r], kind="stable")[:k]
+            val[r] = part[r, top[r]]
+        idx[start : start + block], sims[start : start + block] = top, val
     return idx, sims
 

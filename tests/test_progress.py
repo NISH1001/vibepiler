@@ -160,3 +160,102 @@ def test_long_runs_save_the_cache_as_they_go(tmp_path, monkeypatch, caplog):
     with caplog.at_level(logging.DEBUG, logger="vibepiler"):
         embed.embed_texts(FakeEmbedder(), texts, cache_dir=tmp_path)
     assert sum(r.getMessage().startswith("cache saved") for r in caplog.records) >= len(embed.batches(texts))
+
+
+# ----- review of feature/semantic-scale --------------------------------------------------------------------------------
+class _Tok:
+    def __init__(self, limit):
+        self.truncation = {"max_length": limit}
+
+    def enable_truncation(self, max_length):
+        self.truncation = {"max_length": max_length}
+
+
+def _fastembed_without_spec(limit):
+    """A FastEmbedEmbedder for a model outside MODELS, without loading anything."""
+    from types import SimpleNamespace
+
+    e = embed.FastEmbedEmbedder.__new__(embed.FastEmbedEmbedder)
+    e.name, e._spec, e.max_tokens = "some/custom-model", None, None
+    e._model = SimpleNamespace(model=SimpleNamespace(tokenizer=_Tok(limit)))
+    return e
+
+
+def test_a_custom_model_is_never_raised_past_its_own_context():
+    e = _fastembed_without_spec(512)
+    e.truncate(4096)
+    assert e._model.model.tokenizer.truncation["max_length"] == 512 and e.max_tokens == 512
+    e.truncate(256)
+    assert e.max_tokens == 256
+
+
+def test_a_damaged_cache_is_rebuilt_not_fatal(tmp_path):
+    e = CappableEmbedder()
+    e.truncate(4096)
+    embed.embed_texts(e, ["def f():\n    return 1\n"], cache_dir=tmp_path)
+    (cache,) = tmp_path.glob("*.npz")
+    cache.write_bytes(cache.read_bytes()[: cache.stat().st_size // 2])
+    with pytest.warns(RuntimeWarning, match="unreadable"):
+        out = embed.embed_texts(e, ["def f():\n    return 1\n"], cache_dir=tmp_path)
+    assert out.shape[0] == 1
+
+
+def test_checkpoints_hold_only_this_runs_vectors_and_a_killed_runs_are_merged(tmp_path, monkeypatch):
+    import numpy as np
+
+    e = CappableEmbedder()
+    e.truncate(4096)
+    old = [f"def old{i}():\n    return {i}\n" for i in range(200)]
+    embed.embed_texts(e, old, cache_dir=tmp_path)  # a big shared cache already on disk
+    monkeypatch.setattr(embed, "CHECKPOINT_SECONDS", 0.0)
+    new = [f"def new{i}(x):\n    return x * {i}\n" for i in range(100)]
+    dies = Dies(allowed=2)
+    dies.max_tokens = 4096
+    monkeypatch.setattr(embed, "_finish", lambda *a, **k: None)  # as if killed before the final merge
+    with pytest.raises(KeyboardInterrupt):
+        embed.embed_texts(dies, new, cache_dir=tmp_path)
+    (part,) = tmp_path.glob("*.part-*.npz")
+    assert len(np.load(part)["hashes"]) == 2 * 32  # only what this run embedded, not the 200 already cached
+    monkeypatch.undo()
+    counting = Dies(allowed=10**6)
+    counting.max_tokens = 4096
+    embed.embed_texts(counting, new, cache_dir=tmp_path)
+    assert counting.calls == len(embed.batches(new)) - 2 and not list(tmp_path.glob("*.part-*"))
+
+
+def test_vectors_cached_under_another_cap_are_reused_where_the_cap_cannot_matter(tmp_path):
+    import numpy as np
+
+    e = CappableEmbedder()
+    texts = ["def short():\n    return 1\n", "def long():\n" + "    x = 1\n" * 400]
+    embed.embed_texts(e, texts, cache_dir=tmp_path)  # uncapped: the cache from before the cap
+    assert [p.name for p in tmp_path.glob("*.npz")] == ["fake.npz"]
+    seen = []
+
+    class Recording(FakeEmbedder):
+        max_tokens = 1024
+
+        def embed(self, batch):
+            seen.extend(batch)
+            return super().embed(batch)
+
+    embed.embed_texts(Recording(), texts, cache_dir=tmp_path)
+    assert seen == [texts[1]]  # only the long one: the short one fits under any cap, so its old vector stands
+    assert np.load(tmp_path / "fake__1024t.npz")["hashes"].shape == (2,)
+
+
+def test_batches_bound_the_quadratic_cost_of_long_functions():
+    texts = ["x" * 100] * 64 + ["y" * 5000] * 4
+    plan = embed.batches(texts)
+    long_batches = [b for b in plan if len(texts[b[0]]) == 5000]
+    assert all(len(b) * max(len(texts[i]) for i in b) ** 2 <= max(embed.BATCH_SQUARE_BUDGET, max(len(texts[i]) for i in b) ** 2) for b in plan)
+    assert len(long_batches) == 4  # one long function a batch: its attention dominates
+    assert sorted(i for b in plan for i in b) == list(range(len(texts)))
+
+
+def test_the_cli_restores_the_loggers_level_and_verbose_beats_quiet(tmp_path):
+    log = logging.getLogger("vibepiler")
+    before = log.level
+    res = CliRunner().invoke(app, ["compile", FIX, "-O3", "-v", "-q", "--emit", "json", "-o", str(tmp_path)])
+    assert res.exit_code == 0, res.output
+    assert "batch 1/" in res.output and log.level == before

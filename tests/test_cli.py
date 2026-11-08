@@ -150,3 +150,19 @@ def test_a_file_path_names_its_module():
     prog = build_program(FIX, config=Config.load(FIX))
     mod = next(n for n in prog.graph.nodes() if n.kind.value == "module" and n.file and n.file.endswith("utils.py"))
     assert _find_symbol(prog, mod.file) == mod.id
+
+
+def test_a_bare_name_that_is_a_module_and_a_function_stays_ambiguous(tmp_path):
+    import pytest
+    import typer
+
+    from vibepiler.cli import _find_symbol
+    from vibepiler.config import Config
+    from vibepiler.ir.builder import build_program
+
+    (tmp_path / "parse.py").write_text("def other():\n    return 1\n")
+    (tmp_path / "cli.py").write_text("def parse(x):\n    return x\n")
+    prog = build_program(tmp_path, config=Config.load(tmp_path))
+    with pytest.raises(typer.BadParameter, match="ambiguous"):
+        _find_symbol(prog, "parse")
+    assert _find_symbol(prog, "parse.py") == "mod:parse.py"

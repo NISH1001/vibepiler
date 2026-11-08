@@ -166,8 +166,8 @@ def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
             n = len(diags)
             console.print(f"      [dim]pass[/dim] {p.name:19} {n:4} finding{'s' if n != 1 else ''}  [dim]{secs * 1000:.0f} ms[/dim]")
 
-    log = logging.getLogger("vibepiler")
-    if not quiet:
+    log, level = logging.getLogger("vibepiler"), logging.getLogger("vibepiler").level
+    if verbose or not quiet:  # -v asks for the detail even under -q
         log.addHandler(passlog)
         log.setLevel(logging.DEBUG if verbose else logging.INFO)
     try:
@@ -183,6 +183,7 @@ def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
     finally:
         passlog.finish()
         log.removeHandler(passlog)
+        log.setLevel(level)
     program = result.program
     print_skipped(program)
     if not quiet:
@@ -302,8 +303,9 @@ def _find_symbol(program: Program, query: str) -> str:
         elif full.endswith("." + query) or (n.file and n.file.endswith(query)):
             suffix.append(n.id)
     hits = exact or suffix
-    if len(hits) > 1 and len(modules := [h for h in hits if g.node(h).kind is NodeKind.MODULE]) == 1:
-        hits = modules  # a file path names its module, not every symbol in the file
+    path_like = "/" in query or query.endswith((".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"))
+    if path_like and len(hits) > 1 and len(modules := [h for h in hits if g.node(h).kind is NodeKind.MODULE]) == 1:
+        hits = modules  # a file path names its module, not every symbol in the file; a bare name stays ambiguous
     if not hits:
         raise typer.BadParameter(f"no symbol matches {query!r}")
     if len(hits) > 1:
@@ -364,12 +366,13 @@ def similar(
     path: str = typer.Argument(".", help="Project root, owner/repo, or git URL."),
     symbol: str = typer.Argument(..., help="A function or method (app.utils.sum_even), a class, or a module or its file path."),
     top: int = typer.Option(10, "-n", "--top", help="How many neighbours to show."),
+    max_tokens: Optional[int] = typer.Option(None, "--max-tokens", min=0, help="Tokens embedded per function, as for compile (0: whole functions); match the compile run to reuse its cache."),
 ) -> None:
     """Find what is most similar in meaning to SYMBOL: functions for a function, classes for a class, modules for a module (embedding tier; needs vibepiler[semantic])."""
     from vibepiler.semantic.similar import similar_symbols
 
     root, _ = _resolve_source(path, None)
-    program = build_program(root)
+    program = build_program(root, config=Config.load(root, embedding_max_tokens=max_tokens))
     start = _find_symbol(program, symbol)
     try:
         hits = similar_symbols(program, start, top=top)
