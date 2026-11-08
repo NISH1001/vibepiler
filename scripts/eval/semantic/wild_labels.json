@@ -1,0 +1,17 @@
+[
+ {"repo": "vibepiler", "rank": 1, "label": "TP", "reason": "JS and Python constant-condition folders: same job, per-grammar node types"},
+ {"repo": "vibepiler", "rank": 2, "label": "FP", "reason": "unused vs undeclared dependency: mirror-image checks, not the same job"},
+ {"repo": "vibepiler", "rank": 3, "label": "unclear", "reason": "module vs symbol DOT edges: same loop shape over different edge sets"},
+ {"repo": "vibepiler", "rank": 4, "label": "FP", "reason": "Compiler.run is a one-line wrapper calling Compiler._run"},
+ {"repo": "vibepiler", "rank": 5, "label": "FP", "reason": "_block calls statements: caller/callee, not twins"},
+ {"repo": "rich", "rank": 1, "label": "TP", "reason": "two blank_lines closures, near copies (one also yields new_line); closures in methods (see bug)"},
+ {"repo": "rich", "rank": 2, "label": "FP", "reason": "foo/bar: deliberate mutual recursion in an example script"},
+ {"repo": "rich", "rank": 3, "label": "TP", "reason": "split_cells repeats _split_cells' logic with a fast path; duplication is real (intentional for caching)"},
+ {"repo": "rich", "rank": 4, "label": "FP", "reason": "module-level print_json delegates to Console.print_json (wrapper, same signature)"},
+ {"repo": "rich", "rank": 5, "label": "TP", "reason": "cell_len re-implements cached_cell_len's fallback body"},
+ {"repo": "django", "rank": 1, "label": "TP", "reason": "identical async generator closures in QuerySet and RawQuerySet __aiter__"},
+ {"repo": "django", "rank": 2, "label": "TP", "reason": "identical one-line quote_name delegators (trivial, low value)"},
+ {"repo": "django", "rank": 3, "label": "FP", "reason": "many_to_one / one_to_many are inverses of each other"},
+ {"repo": "django", "rank": 4, "label": "TP", "reason": "date_trunc_sql and datetime_trunc_sql have identical bodies"},
+ {"repo": "django", "rank": 5, "label": "TP", "reason": "MySQL vs Oracle geometry converters differ only in value vs value.read()"}
+]

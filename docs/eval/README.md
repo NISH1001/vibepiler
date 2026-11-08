@@ -33,4 +33,13 @@ Machine: Apple M3 Max, 14 cores, 36 GB, CPU only. The JS/TS timings ran while ot
 
 The corpus code was never installed or run. One exception: knip loads each JS/TS repo's config files (`next.config.js`, vite and drizzle configs), which executes them. That was caught after a few runs; from then on knip and depcheck ran in a macOS sandbox with the network denied (`scripts/eval/javascript/nonet.sb`), and every reported number comes from those runs.
 
-The semantic tier (`-O3`) has its own evaluation, which will be added here.
+## Semantic tier (`-O3`)
+
+Full report: [semantic/RESULTS.md](semantic/RESULTS.md); harness: `bash scripts/eval/semantic/run_all.sh` (about 1.5 h; datasets and models go to `.eval/semantic/`, never `~/.cache`). Labelled data: CodeNet Python800 (2,000 programs, 100 problems) and the Python type-4 split of GPTCloneBench (6,843 functions).
+
+- **Quality.** CodeRankEmbed int8 reaches MAP@R 0.559 on CodeNet (P@1 0.887), tied with fp32 (0.580) and jina int8 (0.574) within their confidence intervals, and about 2.3× the static and general-text models.
+- **The mutual-nearest-neighbour rule.** At the same 0.72 threshold it raises precision 7.5× over a plain threshold (0.055 → 0.41) and cuts the list 10× (1,627 → 156 pairs), and its F1 (0.36) beats the best plain threshold picked with hindsight (0.25). 0.72 is well calibrated for CodeRankEmbed; the defaults for jina, potion and bge are not.
+- **int8 against fp32.** MAP@R −0.022 (CodeNet) and −0.004 (GCB), the same pair-detection F1, top-10 overlap 0.88–0.91. int8 is about 1.4× faster (not the 2× the main README says), needs half the memory (3.0 GB vs 6.2 GB on django), loads in 0.5 s instead of 5 s, and installs in 166 MB instead of 912 MB with PyTorch.
+- **Structural tools cannot see these.** On 19,000 same-problem pairs, vibepiler's own near-duplicate rule finds 0.35%, an exact shape hash 0.18% and jscpd at most 0.31%. CodeRankEmbed at 0.72 finds 42%.
+- **Embedding cache.** A second `-O3` run is 4.6–5.2× faster (django: 264 s → 51 s).
+- **In real repos, precision is about 0.53–0.60** (8 right, 6 wrong, 1 unclear in the top 15 across vibepiler, rich and django). Most wrong pairs are a function and the function it calls or wraps (31 of 177 reported pairs), which a call-edge filter would remove. Two bugs: closures inside methods are embedded although the README says closures are skipped, and the 100-pair cap truncates django's list silently.
