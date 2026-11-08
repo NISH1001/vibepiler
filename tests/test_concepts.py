@@ -188,7 +188,7 @@ def test_map_colours_by_any_measure_with_a_live_threshold():
     from importlib import resources
 
     viewer = resources.files("vibepiler.backend").joinpath("viewer.html").read_text(encoding="utf-8")
-    for mode in ("health", "bloat", "complexity", "live", "size", "nesting", "callers", "folder", "theme"):
+    for mode in ("health", "bloat", "cognitive", "cyclomatic", "mi", "typed", "documented", "live", "size", "nesting", "callers", "folder", "theme"):
         assert f'<option value="{mode}"' in viewer
     assert '<option value="health" selected>' in viewer
     assert 'id="mm-thresh"' in viewer and 'type="range"' in viewer
