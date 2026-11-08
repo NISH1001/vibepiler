@@ -155,7 +155,7 @@ vibepiler compile <path | owner/repo[@ref] | git url> [paths...] [-O0|-O1|-O2|-O
 vibepiler size    <path> [paths...] [--exclude ...] [--isolate] [-O1|-O2|-O3] [--top N]   # waste, tangle and bloat per folder
 vibepiler graph   <path> [paths...] [--exclude ...] [--isolate] [--level module|symbol] [--format dot|mermaid|json] [--packages]
 vibepiler paths   <path> --from <symbol> [--to <symbol>] [--depth N]
-vibepiler similar <path> <symbol> [-n 10]          # -O3 tier: nearest functions by meaning
+vibepiler similar <path> <symbol> [-n 10]          # -O3 tier: nearest by meaning (functions, classes or modules)
 vibepiler passes
 ```
 
@@ -288,6 +288,8 @@ uvx --from "vibepiler[semantic] @ git+https://github.com/NISH1001/vibepiler" vib
 uv tool install "vibepiler[semantic] @ git+https://github.com/NISH1001/vibepiler"
 vibepiler compile owner/repo -O3
 vibepiler similar . app.utils.sum_even      # the functions closest in meaning to one you point at
+vibepiler similar . LivenessPass            # a class: the classes closest in meaning
+vibepiler similar . src/app/utils.py        # a module (by its file): the modules closest in meaning
 ```
 
 - **Default model**: [`nomic-ai/CodeRankEmbed`](https://huggingface.co/nomic-ai/CodeRankEmbed), a 137M-parameter encoder trained for code retrieval (CoIR 60.1, the best open model under 200M). The upstream release needs PyTorch and custom model code, so vibepiler runs an int8 ONNX build of it, [`nishparadox/CodeRankEmbed-onnx-int8`](https://huggingface.co/nishparadox/CodeRankEmbed-onnx-int8) (138 MB, pinned to a commit), through [fastembed](https://github.com/qdrant/fastembed): no PyTorch anywhere. Model files land in `~/.cache/vibepiler/models/`; vectors are cached by content hash in `~/.cache/vibepiler/embeddings/`, so only the first run of a repo pays for embedding.
@@ -327,6 +329,7 @@ The map follows the page theme: a deep field on screen in the dark theme, paper 
 
 - **Lenses.** *Map* shows functions only. *Flow* animates calls from caller to callee: streams between concepts when zoomed out, single calls when zoomed in; hover or click a stream for the calls it carries. *Copies* ties duplicates together: solid for the same code, dashed for the same shape, dotted for the same meaning.
 - **Colour.** *health* (the default) gives each function its worst status: copied, tangled, unused or healthy, with problems drawn on top. Or colour by a measure (**bloat, cognitive or cyclomatic complexity, maintainability, typed, documented, live, size, nesting, callers**) and drag the threshold slider: functions past the line light from dim to bright and the rest fade. The slider starts at the compiler's own limit and steps through the values that occur, so every notch changes the picture. *folder* and *theme* show where code lives.
+- **Classes and modules** get a meaning too: the line-weighted mean of their functions' embeddings, so a module means what all of its code does, not only the top of the file, at no extra embedding cost. A class's or module's panel lists its closest classes or modules, and `vibepiler similar` takes a class or a file.
 - **Click a function** to see what leads to it and what it sets off (its call cone, up to three hops), its copies, its numbers and the first lines of its code.
 
 ![Flow on vibepiler itself: Compiler.run selected, its call cone drawn as dashed streams, the side panel with its metrics as 0–1 bars, its calls and code](docs/img/report-semantic-flow.png)

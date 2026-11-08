@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+from vibepiler.ir.model import NodeKind
 from vibepiler.ir.program import Program
 from vibepiler.passes.base import Pass
 from vibepiler.passes.diagnostic import Diagnostic, Severity
 from vibepiler.passes.semantic_duplicates import SKIP_HINT
 from vibepiler.semantic.concepts import build_concepts
+from vibepiler.semantic.embed import nearest, unit_vectors
 
 MAX_REPORTED = 10
+NEAREST = 3  # closest classes or modules kept on each, for the panel
 
 
 class ConceptsPass(Pass):
@@ -23,6 +26,7 @@ class ConceptsPass(Pass):
             program.metrics["concepts"] = {"skipped": SKIP_HINT}
             return []
         program.metrics["concepts"] = result
+        self._nearest_units(program)
         g = program.graph
         diags: list[Diagnostic] = []
         scattered = sorted((c for c in result["concepts"] if c["scattered"]), key=lambda c: (-len(c["modules"]), -c["size"]))
@@ -42,3 +46,14 @@ class ConceptsPass(Pass):
                 )
             )
         return diags
+
+    @staticmethod
+    def _nearest_units(program: Program) -> None:
+        """Each class's closest classes and each module's closest modules, by the mean of their functions' vectors."""
+        units, uvec = unit_vectors(program)
+        for kind in (NodeKind.CLASS, NodeKind.MODULE):
+            keep = [i for i, u in enumerate(units) if u.kind is kind]
+            idx, sims = nearest(uvec[keep], NEAREST)
+            for row, i in enumerate(keep):
+                units[i].attrs["nearest"] = [[units[keep[j]].id, round(float(s), 3)] for j, s in zip(idx[row], sims[row])]
+

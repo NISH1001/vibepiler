@@ -302,6 +302,8 @@ def _find_symbol(program: Program, query: str) -> str:
         elif full.endswith("." + query) or (n.file and n.file.endswith(query)):
             suffix.append(n.id)
     hits = exact or suffix
+    if len(hits) > 1 and len(modules := [h for h in hits if g.node(h).kind is NodeKind.MODULE]) == 1:
+        hits = modules  # a file path names its module, not every symbol in the file
     if not hits:
         raise typer.BadParameter(f"no symbol matches {query!r}")
     if len(hits) > 1:
@@ -360,10 +362,10 @@ def paths(
 @app.command()
 def similar(
     path: str = typer.Argument(".", help="Project root, owner/repo, or git URL."),
-    symbol: str = typer.Argument(..., help="Function or method, e.g. app.utils.sum_even"),
+    symbol: str = typer.Argument(..., help="A function or method (app.utils.sum_even), a class, or a module or its file path."),
     top: int = typer.Option(10, "-n", "--top", help="How many neighbours to show."),
 ) -> None:
-    """Find the functions most similar in meaning to SYMBOL (embedding tier; needs vibepiler[semantic])."""
+    """Find what is most similar in meaning to SYMBOL: functions for a function, classes for a class, modules for a module (embedding tier; needs vibepiler[semantic])."""
     from vibepiler.semantic.similar import similar_symbols
 
     root, _ = _resolve_source(path, None)

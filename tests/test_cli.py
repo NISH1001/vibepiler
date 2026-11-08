@@ -140,3 +140,13 @@ def test_baseline_reports_a_metric_move_and_a_metric_gates(tmp_path):
     assert first.exit_code == 0 and "typed 1.0% →" in second.output
     gated = runner.invoke(app, ["compile", str(FIX), "-q", "--fail-on", "documented<1.01"])
     assert gated.exit_code == 1 and "documented" in gated.output
+
+
+def test_a_file_path_names_its_module():
+    from vibepiler.cli import _find_symbol
+    from vibepiler.config import Config
+    from vibepiler.ir.builder import build_program
+
+    prog = build_program(FIX, config=Config.load(FIX))
+    mod = next(n for n in prog.graph.nodes() if n.kind.value == "module" and n.file and n.file.endswith("utils.py"))
+    assert _find_symbol(prog, mod.file) == mod.id

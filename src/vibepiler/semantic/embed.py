@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Protocol, Sequence
 
-from vibepiler.ir.model import CALLABLE_KINDS, Node
+from vibepiler.ir.model import CALLABLE_KINDS, Node, NodeKind
 from vibepiler.ir.program import Program
 from vibepiler.progress import log, mem_text, progress, timed
 
@@ -327,3 +327,60 @@ def symbol_vectors(program: Program, min_loc: int = 2):
     vectors = embed_texts(embedder, [symbol_text(program, n, max_chars=chars_for(tokens) if tokens else None) for n in nodes])
     program.metrics["_semantic"] = {"nodes": nodes, "vectors": vectors, "model": embedder.name}
     return nodes, vectors, embedder.name
+
+
+def unit_vectors(program: Program):
+    """(units, unit vectors) for every class and module with at least one embedded function: the line-weighted mean of
+    the functions inside it, so a unit means what its code does, all of it, with nothing more to embed. A method counts
+    for every class around it. (None, None) without the embedding backend; memoized on the program."""
+    memo = program.metrics.get("_semantic_units")
+    if memo is not None:
+        return memo
+    import numpy as np
+
+    nodes, vectors, _ = symbol_vectors(program)
+    if nodes is None:
+        return None, None
+    g = program.graph
+    members: dict[str, list[int]] = {}
+    for i, n in enumerate(nodes):
+        if n.module:
+            members.setdefault(n.module, []).append(i)
+        p = g.parent(n.id)
+        while p is not None and p.kind is not NodeKind.MODULE:
+            if p.kind is NodeKind.CLASS:
+                members.setdefault(p.id, []).append(i)
+            p = g.parent(p.id)
+    units = sorted((g.node(u) for u in members), key=lambda u: (u.file or "", u.start_line or 0, u.kind.value))
+    if not units:
+        out = (units, np.zeros((0, vectors.shape[1]), dtype=np.float32))
+    else:
+        loc = np.array([float(n.loc) for n in nodes], dtype=np.float32)
+        mat = np.stack([(vectors[members[u.id]] * loc[members[u.id], None]).sum(axis=0) for u in units])
+        norms = np.linalg.norm(mat, axis=1, keepdims=True)
+        out = (units, mat / np.where(norms > 0, norms, 1.0))
+    program.metrics["_semantic_units"] = out
+    return out
+
+
+def nearest(vectors, k: int, block: int = 2048):  # noqa: ANN001, ANN201 - numpy arrays
+    """Each row's `k` most similar other rows, best first (ties to the lower index), worked a block of rows at a time:
+    memory is block x n, never n x n, however many units there are."""
+    import numpy as np
+
+    n = vectors.shape[0]
+    k = max(0, min(k, n - 1))
+    idx, sims = np.zeros((n, k), dtype=np.int64), np.zeros((n, k), dtype=np.float32)
+    if k == 0:
+        return idx, sims
+    for start in range(0, n, block):
+        part = vectors[start : start + block] @ vectors.T
+        rows = np.arange(part.shape[0])
+        part[rows, start + rows] = -np.inf  # never your own neighbour
+        top = np.argpartition(-part, k - 1, axis=1)[:, :k]
+        val = np.take_along_axis(part, top, axis=1)
+        order = np.lexsort((top, -val), axis=1)
+        idx[start : start + block] = np.take_along_axis(top, order, axis=1)
+        sims[start : start + block] = np.take_along_axis(val, order, axis=1)
+    return idx, sims
+

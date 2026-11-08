@@ -201,3 +201,10 @@ def test_the_map_has_a_paper_set_for_the_light_theme_and_the_field_for_the_dark(
     assert "const MM_SETS = {" in viewer and "field: {" in viewer and "paper: {" in viewer
     assert "#meaning.paper" in viewer and "attributeFilter: ['data-theme']" in viewer
     assert "function metricsBlock(a)" in viewer and "${metricsBlock(n.attrs)}" in viewer
+
+
+def test_the_node_panel_lists_the_closest_classes_and_modules():
+    from importlib import resources
+
+    viewer = resources.files("vibepiler.backend").joinpath("viewer.html").read_text(encoding="utf-8")
+    assert "function nearestBlock(n)" in viewer and "${nearestBlock(n)}" in viewer and "'nearest'" in viewer
