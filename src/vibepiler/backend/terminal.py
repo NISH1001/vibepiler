@@ -6,10 +6,10 @@ remarks and the change since a baseline. The other backends write files; this on
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from vibepiler.backend.common import liveness_parts, size_parts
@@ -24,20 +24,21 @@ err_console = Console(stderr=True)
 SEV_STYLE = {Severity.ERROR: "bold red", Severity.WARNING: "yellow", Severity.INFO: "cyan"}
 
 
-class PassLog(logging.Handler):
-    """What the running pass is doing, under its line: with `verbose`, every step dimmed; otherwise one live counter
-    that rewrites itself and goes when the pass finishes."""
+class PassLog:
+    """A loguru sink for what the running pass is doing, under its line: with `verbose`, every step dimmed; otherwise
+    one live counter that rewrites itself and goes when the pass finishes."""
 
     def __init__(self, verbose: bool) -> None:
-        super().__init__(logging.DEBUG if verbose else logging.INFO)
         self.verbose = verbose
+        self.level = "DEBUG" if verbose else "INFO"
         self.status = None
 
-    def emit(self, record: logging.LogRecord) -> None:
-        p = getattr(record, "progress", None)
+    def __call__(self, message) -> None:  # noqa: ANN001 - loguru's Message
+        record = message.record
+        p = record["extra"].get("progress")
         if p is None:
             if self.verbose:
-                console.print(f"        [dim]· {record.getMessage()}[/dim]", highlight=False)
+                console.print(f"        [dim]· {escape(record['message'])}[/dim]", highlight=False)
             return
         if self.verbose:
             return  # the step lines already carry it

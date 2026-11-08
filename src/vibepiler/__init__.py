@@ -1,8 +1,14 @@
 """Vibepiler: a compiler for vibe-coded software."""
 
+import os
 from typing import TYPE_CHECKING
 
+from loguru import logger
+
 __version__ = "0.4.1"
+
+if not os.environ.get("VIBEPILER_DEBUG"):
+    logger.disable("vibepiler")  # a library is quiet until asked: loguru.logger.enable("vibepiler"), the CLI, or VIBEPILER_DEBUG=1
 
 if TYPE_CHECKING:
     from vibepiler.compiler import Compiler, compile  # noqa: F401 - `vibepiler.compile(source, ...)`, `vibepiler.Compiler(source)`

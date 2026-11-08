@@ -1562,6 +1562,7 @@ wheels = [
 name = "vibepiler"
 source = { editable = "." }
 dependencies = [
+    { name = "loguru" },
     { name = "networkx" },
     { name = "pathspec" },
     { name = "rich" },
@@ -1595,6 +1596,7 @@ dev = [
 requires-dist = [
     { name = "fastembed", marker = "extra == 'semantic'", specifier = ">=0.4" },
     { name = "huggingface-hub", marker = "extra == 'semantic'", specifier = ">=0.20" },
+    { name = "loguru", specifier = ">=0.7" },
     { name = "model2vec", marker = "extra == 'semantic'", specifier = ">=0.4" },
     { name = "networkx", specifier = ">=3.5" },
     { name = "numpy", marker = "extra == 'semantic'", specifier = ">=1.26" },

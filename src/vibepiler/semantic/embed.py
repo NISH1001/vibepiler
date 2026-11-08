@@ -297,7 +297,7 @@ def embed_texts(embedder: Embedder, texts: Sequence[str], cache_dir: Path | None
         new.update(borrowed)
         cached.update(borrowed)
         missing = [h for h in missing if h not in borrowed]
-    log.debug("cache %s: %d reused, %d to embed with %s%s", str(path).replace(str(Path.home()), "~", 1), len(set(hashes)) - len(missing), len(missing), embedder.name, f" ({len(new)} reused from another token cap)" if new else "")
+    log.debug("cache {}: {} reused, {} to embed with {}{}", str(path).replace(str(Path.home()), "~", 1), len(set(hashes)) - len(missing), len(missing), embedder.name, f" ({len(new)} reused from another token cap)" if new else "")
     own_part = cache_dir / f"{stem}.part-{os.getpid()}-{time.time_ns()}.npz"
     try:
         if missing:
@@ -312,7 +312,7 @@ def embed_texts(embedder: Embedder, texts: Sequence[str], cache_dir: Path | None
                     done += len(batch)
                     unsaved += len(batch)
                     rate = done / max(time.perf_counter() - start, 1e-9)
-                    log.debug("batch %d/%d  %d functions, longest %d chars  %.2f s  %s", b, len(plan), len(batch), max(len(todo[k]) for k in batch), time.perf_counter() - t, mem_text())
+                    log.debug("batch {}/{}  {} functions, longest {} chars  {:.2f} s  {}", b, len(plan), len(batch), max(len(todo[k]) for k in batch), time.perf_counter() - t, mem_text())
                     progress("embedding", done, len(todo), batch=b, batches=len(plan), rate=rate)
                     if time.perf_counter() - saved_at >= CHECKPOINT_SECONDS:  # a killed run keeps what it embedded
                         _save(own_part, new, "checkpoint")
@@ -352,7 +352,7 @@ def symbol_vectors(program: Program, min_loc: int = 2):
         and (g.parent(n.id) is None or g.parent(n.id).kind.value != "function")  # nested closures/wrappers
     ]
     nodes.sort(key=lambda n: (n.file or "", n.start_line or 0))
-    log.debug("embedding %d functions (%d lines in all)", len(nodes), sum(n.loc for n in nodes))
+    log.debug("embedding {} functions ({} lines in all)", len(nodes), sum(n.loc for n in nodes))
     vectors = embed_texts(embedder, [symbol_text(program, n, max_chars=chars_for(tokens) if tokens else None) for n in nodes])
     program.metrics["_semantic"] = {"nodes": nodes, "vectors": vectors, "model": embedder.name}
     return nodes, vectors, embedder.name
@@ -390,7 +390,7 @@ def _save(path: Path, vectors: dict, what: str = "cache") -> None:
         keys = list(vectors)
         np.savez(tmp, hashes=np.array(keys), vectors=np.stack([vectors[k] for k in keys]))
         os.replace(tmp, path)
-        log.debug("cache saved (%s), %d vectors", what, len(keys))
+        log.debug("cache saved ({}), {} vectors", what, len(keys))
     except OSError as exc:
         warnings.warn(f"embedding cache not written ({exc}); vectors will be recomputed next run", RuntimeWarning, stacklevel=2)
     finally:

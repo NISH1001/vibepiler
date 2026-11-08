@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import logging
+import os
 from pathlib import Path
 from typing import List, Optional
 
 import networkx as nx
 import typer
+from loguru import logger
 from rich.table import Table
 from rich.tree import Tree
 
@@ -119,6 +120,24 @@ def _run(compiler: Compiler, **run):  # noqa: ANN003, ANN202
         raise typer.Exit(2)
 
 
+
+def _listen(passlog: PassLog) -> int:
+    """Turn vibepiler's records on into the pass log; loguru's own stderr sink goes, so a line is not printed twice
+    (it stays under VIBEPILER_DEBUG=1, which asked for it)."""
+    if not os.environ.get("VIBEPILER_DEBUG"):
+        try:
+            logger.remove(0)
+        except ValueError:
+            pass  # already gone
+    logger.enable("vibepiler")
+    return logger.add(passlog, level=passlog.level, format="{message}", filter="vibepiler")
+
+
+def _unlisten(sink: int) -> None:
+    logger.remove(sink)
+    if not os.environ.get("VIBEPILER_DEBUG"):
+        logger.disable("vibepiler")  # quiet again for anything run in the same process
+
 @app.command()
 def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
     path: str = typer.Argument(".", help="Project root, or a remote repo: owner/repo[@ref], a GitHub URL (a /tree/<ref>/<folder> link compiles that folder), or any git URL."),
@@ -166,10 +185,9 @@ def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
             n = len(diags)
             console.print(f"      [dim]pass[/dim] {p.name:19} {n:4} finding{'s' if n != 1 else ''}  [dim]{secs * 1000:.0f} ms[/dim]")
 
-    log, level = logging.getLogger("vibepiler"), logging.getLogger("vibepiler").level
+    sink = None
     if verbose or not quiet:  # -v asks for the detail even under -q
-        log.addHandler(passlog)
-        log.setLevel(logging.DEBUG if verbose else logging.INFO)
+        sink = _listen(passlog)
     try:
         result = _run(
             Compiler(root, cfg, on_phase=print_phase),
@@ -182,8 +200,8 @@ def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
         )
     finally:
         passlog.finish()
-        log.removeHandler(passlog)
-        log.setLevel(level)
+        if sink is not None:
+            _unlisten(sink)
     program = result.program
     print_skipped(program)
     if not quiet:

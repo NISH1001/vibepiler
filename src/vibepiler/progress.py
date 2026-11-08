@@ -1,21 +1,20 @@
-"""What the slow work is doing while it runs: one `vibepiler` logger, memory figures, timed steps, live counters.
+"""What the slow work is doing while it runs: loguru records, memory figures, timed steps, live counters.
 
-The CLI prints these under the pass that is running (`-v` for every line; by default only the live counter, on one line
-it rewrites). From Python, attach a handler to `logging.getLogger("vibepiler")`, or set `VIBEPILER_DEBUG=1` to print
-everything to stderr. Memory comes from the standard library: the peak from `getrusage`, the current size from /proc
+vibepiler is a library, so its records are off until asked for. The CLI turns them on under the pass that is running
+(`-v` for every line; by default only the live counter, on one line it rewrites). From Python, call
+`loguru.logger.enable("vibepiler")`, or set `VIBEPILER_DEBUG=1` to print everything to stderr. Memory comes from the standard library: the peak from `getrusage`, the current size from /proc
 on Linux (None elsewhere).
 """
 
 from __future__ import annotations
 
-import logging
 import os
 import sys
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-log = logging.getLogger("vibepiler")
+from loguru import logger as log
 
 
 def memory() -> tuple[float | None, float]:
@@ -45,16 +44,9 @@ def timed(step: str) -> Iterator[None]:
     """Log `step` with how long it took and the memory after it."""
     t = time.perf_counter()
     yield
-    log.debug("%s  %.2f s  %s", step, time.perf_counter() - t, mem_text())
+    log.debug("{}  {:.2f} s  {}", step, time.perf_counter() - t, mem_text())
 
 
 def progress(what: str, done: int, total: int, **info: object) -> None:
-    """A live counter: the CLI rewrites one line with it; a plain handler sees an INFO record."""
-    log.info("%s %d / %d", what, done, total, extra={"progress": {"what": what, "done": done, "total": total, **info}})
-
-
-if os.environ.get("VIBEPILER_DEBUG"):
-    _h = logging.StreamHandler()
-    _h.setFormatter(logging.Formatter("vibepiler: %(message)s"))
-    log.addHandler(_h)
-    log.setLevel(logging.DEBUG)
+    """A live counter: the CLI rewrites one line with it; any other sink sees an INFO record with `progress` in extra."""
+    log.bind(progress={"what": what, "done": done, "total": total, **info}).info("{} {} / {}", what, done, total)
