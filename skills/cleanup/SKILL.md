@@ -16,7 +16,7 @@ vibepiler's elimination plan is a to-do list: every item names the symbol, `file
 4. **Run vibepiler once and keep the baseline.** Use an installed `vibepiler` if there is one, otherwise:
 
    ```bash
-   uvx --from git+https://github.com/NISH1001/vibepiler@v0.4.4 vibepiler compile . -R -q
+   uvx --from git+https://github.com/NISH1001/vibepiler vibepiler compile . -R -q
    cp vibepiler-out/ir.json /tmp/vibepiler-start.json
    ```
 

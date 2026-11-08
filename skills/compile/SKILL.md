@@ -28,9 +28,9 @@ Anything else that looks like a flag (`-O3`, `-Wall`, `--isolate`) goes to the c
 Use an installed `vibepiler` if `command -v vibepiler` finds one; otherwise run it with uv, no install:
 
 ```bash
-uvx --from git+https://github.com/NISH1001/vibepiler@v0.4.4 vibepiler compile . -R -q
+uvx --from git+https://github.com/NISH1001/vibepiler vibepiler compile . -R -q
 # -O3 needs the semantic extra:
-uvx --from "vibepiler[semantic] @ git+https://github.com/NISH1001/vibepiler@v0.4.4" vibepiler compile . -O3 -R -q
+uvx --from "vibepiler[semantic] @ git+https://github.com/NISH1001/vibepiler" vibepiler compile . -O3 -R -q
 ```
 
 - `-R` prints the elimination plan, `-q` keeps the per-pass lines out of your context. Add `-v` only when a run is slow or surprising and you need to see why.
