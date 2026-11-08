@@ -22,7 +22,7 @@ class CyclesPass(Pass):
         for n in g.nodes(NodeKind.MODULE):
             view.add_node(n.id)
         for e in g.edges(EdgeKind.IMPORTS):
-            if e.attrs.get("implicit") or e.src not in view or e.dst not in view:
+            if e.attrs.get("implicit") or e.attrs.get("deferred") or e.src not in view or e.dst not in view:
                 continue
             view.add_edge(e.src, e.dst, names=e.attrs.get("names", []), line=e.line, count=e.count)
         diags: list[Diagnostic] = []
@@ -45,7 +45,7 @@ class CyclesPass(Pass):
                     line=d["line"],
                     suggestion=(
                         f"Weakest link: `{g.node(u).name}` imports {', '.join(d['names']) or 'module'} from `{g.node(v).name}`. "
-                        "Move that import inside the function that needs it, or extract the shared piece into a new module both can import."
+                        "Move that import inside the function that needs it (or under `if TYPE_CHECKING:` if only annotations use it), or extract the shared piece into a new module both can import."
                     ),
                     modules=files,
                     edges=[{"from": g.node(a).file, "to": g.node(b).file, "names": dd["names"]} for a, b, dd in internal],

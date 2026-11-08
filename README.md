@@ -36,7 +36,7 @@ Languages: **Python**, **JavaScript/TypeScript** (incl. JSX/TSX). Adding a langu
 You need [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`). Nothing else: no clone, no install step.
 
 ```bash
-# a project on disk (add @v0.4.4 after the URL to pin a release)
+# a project on disk (add @v0.4.5 after the URL to pin a release)
 uvx --from git+https://github.com/NISH1001/vibepiler vibepiler compile path/to/project
 
 # a repo on GitHub: owner/repo, owner/repo@branch, or any GitHub / git URL
@@ -237,9 +237,9 @@ so rather than guessing.
 2. **Parse**: tree-sitter gives a full concrete syntax tree per file, error-tolerant, no build step required.
 3. **Extract facts** (`frontend/languages/<lang>.py`): one adapter per language walks the tree once and records, per file:
    - *definitions* (module, class, function, method, variable) with qualified names like `Impl.run`, lines, decorators, bases, parameters, export status;
-   - *imports* in every form (`import a.b`, `from .x import y as z`, `import x from './y'`, `require()`, re-exports);
+   - *imports* in every form (`import a.b`, `from .x import y as z`, `import x from './y'`, `require()`, re-exports, `import_module("a.b")` and `pytest.importorskip("a")` with a literal name), each marked when it is type-only (under `if TYPE_CHECKING:`);
    - *call sites* as attribute chains (`requests.get`, `self.run`, `utils.helper`) with the **enclosing scope** (which function they live in; module-level code is attributed to the module itself, which is how `if __name__ == "__main__":` and `app.listen()` show up);
-   - *references* (non-call uses: decorators, arguments, JSX elements, base classes, type annotations);
+   - *references* (non-call uses: decorators, arguments, JSX elements, base classes, type annotations, including names inside string annotations like `"Path | None"`);
    - *entry hints* (main guards, `@app.get`, `@click.command`, `test_*`, Next.js route files, ...).
 4. **Index modules**: each file gets a canonical module name (`app.core`, `src/utils/math`) plus aliases for the ways vibe-coded repos actually import things (`src.app.core`, `@/utils/math`).
 5. **Create nodes**: every definition becomes a node; `contains` edges nest module → class → method.
@@ -264,11 +264,11 @@ Vibepiler never edits your code. Each pass is the analysis half of a compiler op
 
 | Pass | Compiler analogue | What it finds | Severity |
 |---|---|---|---|
-| `entry-points` | program roots / reachability | Roots: main guards, CLI commands, routes, tasks, tests, framework hooks, exports of entry modules, your `entry_patterns`. Then forward reachability over calls/references/imports/inherits. Marks every node `reachable` and `is_root`. | (metrics only) |
+| `entry-points` | program roots / reachability | Roots: main guards, CLI commands, routes, tasks, tests, framework hooks, exports of entry modules, what a top-level Python package re-exports from its `__init__.py` (narrowed by `__all__`), your `entry_patterns`. Then forward reachability over calls/references/imports/inherits. Marks every node `reachable` and `is_root`. | (metrics only) |
 | `dead-code` | dead-code elimination | Symbols with no inbound call/reference and not reachable from any root (`dead-symbol`); symbols used only by dead code (`unreachable-symbol`); JS exports nothing imports (`unused-export`); modules nothing imports or runs (`unreachable-module`). Source code that only tests reach is reported apart as `test-only` (info): alive, so never counted as waste, but nothing the program runs uses it. Never flags dunders, roots, methods whose name is called anywhere, or overrides of external base classes. | warning / info |
 | `liveness` | liveness analysis / dead-store elimination | Inside every function body, a backward dataflow analysis to a fixpoint: stores no read reaches, whether never read or overwritten first (`dead-store`); trailing parameters never read (`unused-param`); statements after a return, raise, break or continue (`unreachable-code`); branches on a literal constant (`dead-branch`). Across the project: instance attributes written and never read by that name anywhere (`unused-attribute`). Exempts underscore names, destructuring siblings, placeholders before a read parameter, overrides, decorated functions, entry points, dunders, stubs, data classes and classes with an unknown base. | warning / info |
 | `unused-imports` | unused declarations | Import bindings never used in their file (respects `__all__`, `__init__`/`index` re-export files, `import x as x`). | info |
-| `cycles` | dependency analysis | Strongly connected components of the module import graph, with the weakest edge to break. | warning (error for 6+ modules) |
+| `cycles` | dependency analysis | Strongly connected components of the module import graph, with the weakest edge to break. Imports inside a function or under `if TYPE_CHECKING:` do not run at import time, so they never close a cycle. | warning (error for 6+ modules) |
 | `complexity` | control-flow analysis | Per function: cyclomatic complexity (counted as radon counts it), cognitive complexity (SonarSource), Halstead volume, difficulty and effort, the maintainability index, length, nesting and parameter count; attaches the numbers to every function node and flags the ones past their thresholds (`high-cognitive-complexity`, `high-complexity`, `long-function`, `deep-nesting`, `too-many-params`). | warning / info |
 | `measures` | static metrics | Rolls the [metrics](#metrics) up from every function to its class, module, folder and the repo. | none |
 | `wrappers` | inlining | Functions whose entire body is one call to another project function (`pass-through-wrapper` when the arguments are forwarded unchanged, `thin-wrapper` otherwise) and chains of them (`indirection-chain`). Skips decorated functions, roots, and overrides. | warning / info |

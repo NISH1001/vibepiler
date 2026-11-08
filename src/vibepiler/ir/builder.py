@@ -256,10 +256,32 @@ class _Builder:
                     self._link_import(mid, spec, imp, target)
                 if binding is not None:
                     self._bind_import(mid, table, imp, binding, target)
+            self._mark_public_api(mid, facts)
+
+    def _mark_public_api(self, mid: str, facts: FileFacts) -> None:
+        """What a top-level Python package re-exports (`pkg/__init__.py`, narrowed by `__all__`) is its public API:
+        `import pkg; pkg.name` reaches it from outside the project, so it is an entry point."""
+        if facts.file.language != "python" or "." in facts.module_name or Path(facts.rel).name != "__init__.py":
+            return
+        public = facts.attrs.get("__all__")
+        for rec in self.import_records[mid]:
+            name, target = rec["local_name"], rec["resolved"]
+            if rec["name"] is None or target not in self.symbols or name.startswith("_") or (public is not None and name not in public):
+                continue
+            if (sid := self.symbols[target].get(rec["name"])) is not None:
+                entry = self.graph.node(sid).attrs.setdefault("entry", [])
+                if "public_api" not in entry:
+                    entry.append("public_api")
 
     def _link_import(self, mid: str, spec: LanguageSpec, imp: ImportDef, target: str) -> None:
-        """The imports edge, labelled with what it imports, plus the packages Python runs on the way (`a/__init__`)."""
+        """The imports edge, labelled with what it imports, plus the packages Python runs on the way (`a/__init__`).
+        An edge is `deferred` while every import behind it runs late or never (inside a function, under TYPE_CHECKING)."""
+        fresh = not self.graph.has_edge_kind(mid, target, EdgeKind.IMPORTS)
         edge = self.graph.add_edge(Edge(src=mid, dst=target, kind=EdgeKind.IMPORTS, line=imp.line))
+        if (imp.scope is not None or imp.type_only) and (fresh or edge.attrs.get("deferred")):
+            edge.attrs["deferred"] = True
+        else:
+            edge.attrs.pop("deferred", None)
         names = edge.attrs.setdefault("names", [])
         label = imp.name or imp.module
         if label and label not in names:
