@@ -482,7 +482,7 @@ opt_level = 2
 entry_patterns = ["*.lambda_handler", "jobs/*"]   # extra roots by qualname or file glob
 treat_exports_as_roots = false      # default: only JS/TS entry modules (index, pages/, app/, ...)
 embedding_model = "nomic-ai/CodeRankEmbed"   # -O3; or "jinaai/jina-embeddings-v2-base-code", or "minishlab/potion-code-16M-v2" (fast mode)
-embedding_max_tokens = 2048          # -O3: tokens embedded per function, 0 for whole functions; memory grows with its square (one 8192-token function took 6.8 GB, 2048 takes 0.8); --max-tokens on the command line
+embedding_max_tokens = 4096          # -O3: tokens embedded per function, 0 for whole functions; memory grows with its square (one 8192-token function took 6.8 GB, 4096 takes 1.9, 2048 takes 0.8); --max-tokens on the command line
 
 [tool.vibepiler.thresholds]
 complexity = 10                     # cyclomatic, McCabe's limit

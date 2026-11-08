@@ -37,7 +37,7 @@ class Config:
     thresholds: Thresholds = field(default_factory=Thresholds)
     use_gitignore: bool = True
     embedding_model: str = "nomic-ai/CodeRankEmbed"  # -O3 model; "minishlab/potion-code-16M-v2" for the fast static mode
-    embedding_max_tokens: int = 2048  # -O3: tokens embedded per function, 0 for the model's whole context; memory grows with its square
+    embedding_max_tokens: int = 4096  # -O3: tokens embedded per function, 0 for the model's whole context; memory grows with its square
     accept: list[str] = field(default_factory=list)  # findings judged intentional: "code" or "code:qualname-glob"; counted, not reported
 
     @classmethod

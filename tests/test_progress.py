@@ -70,10 +70,10 @@ def test_the_embedder_is_capped_and_long_text_is_cut_before_it(monkeypatch, tmp_
     monkeypatch.setattr(embed, "EMBEDDER_FACTORY", lambda model: made)
     body = "".join(f"    x{i} = {i}\n" for i in range(5000))
     prog = Compiler(f"def huge():\n{body}    return 1\n\n\ndef small():\n    return 2\n", language="python").run(opt_level=3, emit=()).program
-    assert made.max_tokens == 2048
+    assert made.max_tokens == 4096  # the default
     nodes, _, _ = embed.symbol_vectors(prog)
     huge = next(n for n in nodes if n.name == "huge")
-    assert len(embed.symbol_text(prog, huge, max_chars=embed.chars_for(2048))) == embed.chars_for(2048)
+    assert len(embed.symbol_text(prog, huge, max_chars=embed.chars_for(4096))) == embed.chars_for(4096)
 
 
 def test_the_cap_is_part_of_the_cache_key(tmp_path):
@@ -89,7 +89,7 @@ def test_the_cap_is_a_setting(tmp_path):
     from vibepiler.config import Config
 
     (tmp_path / "pyproject.toml").write_text("[tool.vibepiler]\nembedding_max_tokens = 1024\n")
-    assert Config.load(tmp_path).embedding_max_tokens == 1024 and Config().embedding_max_tokens == 2048
+    assert Config.load(tmp_path).embedding_max_tokens == 1024 and Config().embedding_max_tokens == 4096
 
 
 def test_zero_lifts_the_cap_to_the_models_own_context(monkeypatch):

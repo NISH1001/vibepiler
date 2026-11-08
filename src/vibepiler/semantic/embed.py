@@ -8,9 +8,9 @@ Backends (no PyTorch in either):
 - model2vec (pure numpy static embeddings) for minishlab/potion-* models. potion-code-16M-v2
   embeds ~17,000 functions/s; weaker on "same job, different code" but fine as a fast mode.
 
-Each function is embedded up to `embedding_max_tokens` (2048 by default) of the model's context (8192 for both
-defaults): a transformer's memory grows with the square of the input, and one 8192-token function took 6.8 GB where
-2048 tokens takes well under one. A function's opening (signature, docstring, first statements) says what it does. Speed comes from sorting texts by length so a batch never pads short functions up to a long one.
+Each function is embedded up to `embedding_max_tokens` (4096 by default, about 400-500 lines, so nearly every function
+whole) of the model's context (8192 for both defaults): a transformer's memory grows with the square of the input, and
+one 8192-token function took 6.8 GB where 4096 tokens takes 1.9 and 2048 takes 0.8. 0 lifts the cap. Speed comes from sorting texts by length so a batch never pads short functions up to a long one.
 """
 
 from __future__ import annotations
