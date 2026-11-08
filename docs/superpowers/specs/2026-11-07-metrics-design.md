@@ -80,3 +80,21 @@ Above a function, a limit metric's value is the line-weighted mean of its functi
 - Halstead is raw-only (no accepted limit); it reaches [0, 1] through MI.
 - Bloat keeps its own roll-up (noisy-OR tangle and line allocation are not additive); the shared walker serves the
   additive metrics and Liveness.
+
+## What building it decided (2026-11-07)
+
+- Cyclomatic follows radon exactly: comprehension `if` filters and a loop's or `try`'s `else` count; `with`, `match`, a
+  wildcard `case _:` and case guards do not; an `assert` counts once and its condition is not looked into. Agrees with
+  radon on every Python function in vibepiler, gpython and the fixtures.
+- Cognitive follows complexipy's rules where they are rules (a comprehension's `for` +1 plus nesting, its `if` +1 flat,
+  its element nested; lambdas nest; bare-name recursion +1, `self.f()` not). complexipy also skips some expressions
+  (operands of `+`, starred arguments), so the oracle is: equal on hand-checked cases, never lower on whole repos.
+  Nested functions are their own units (complexipy folds them into the outer function).
+- Halstead is the classic token reading, not radon's (radon counts only arithmetic/boolean/comparison operators), so MI
+  has formula tests instead of a radon oracle. At Visual Studio's limit 20, MI is 0 on vibepiler and 1% on gpython.
+- Liveness moved onto the shared roll-up byte-identically (both fixture snapshots and all of gpython). Bloat keeps its
+  own roll-up.
+- Raw cognitive complexity lives at `attrs["cognitive_complexity"]`; the metric dicts at `attrs[key]` for keys
+  cyclomatic, cognitive, maintainability, typed, documented (labels cyclomatic, cognitive, mi, typed, documented).
+- akd-labs was dropped from verification at the user's request; vibepiler, gpython and the fixtures remain.
+- Tangle switch: vibepiler bloat 13.5% → 12.8% (-O2), gpython 18.2% → 17.1%.

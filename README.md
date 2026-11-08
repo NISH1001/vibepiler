@@ -36,7 +36,7 @@ Languages: **Python**, **JavaScript/TypeScript** (incl. JSX/TSX). Adding a langu
 You need [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`). Nothing else: no clone, no install step.
 
 ```bash
-# a project on disk (add @v0.3.0 after the URL to pin a release)
+# a project on disk (add @v0.4.0 after the URL to pin a release)
 uvx --from git+https://github.com/NISH1001/vibepiler vibepiler compile path/to/project
 
 # a repo on GitHub: owner/repo, owner/repo@branch, or any GitHub / git URL
@@ -163,7 +163,7 @@ vibepiler passes
 - `-W` is the minimum severity printed to the terminal. `-Wall` shows `info` findings. Everything is always in `ir.json`/`report.md`.
 - `-R` prints the **missed-optimization remarks** (after clang's `-Rpass-missed`): the elimination plan, one line per edit with the lines it frees and how sure the tool is.
 - `--baseline previous/ir.json` prints how waste, tangle and bloat moved since an earlier run. That is the loop: apply the top remark, re-run, repeat.
-- `--fail-on warning`, `--fail-on bloat>0.25` or `--fail-on live<0.9` makes it a CI gate.
+- `--fail-on warning`, `--fail-on bloat>0.25`, `--fail-on live<0.9` or any [metric](#metrics) (`cognitive>0.1`, `typed<0.8`) makes it a CI gate.
 - `paths...` after the source are the folders or files to report on; `--exclude` (old name `--ignore`) leaves gitignore-style patterns out; `--isolate` reads the named paths alone. See [Choosing what to compile](#choosing-what-to-compile).
 
 What each tier does:
@@ -171,7 +171,7 @@ What each tier does:
 | tier | passes | what it can tell you |
 |---|---|---|
 | `-O0` | none | the program graph only: modules, symbols, imports, calls, inheritance, references |
-| `-O1` | entry-points, dead-code, unused-imports, cycles, complexity, wrappers, hotspots, bloat-score | everything that follows from reachability and structure in linear time |
+| `-O1` | entry-points, dead-code, unused-imports, cycles, complexity, measures, wrappers, hotspots, bloat-score | everything that follows from reachability and structure in linear time |
 | `-O2` | + abstraction, bloat, duplicates | needless interfaces and classes, dependency and exception boilerplate, structurally identical and near-identical functions |
 | `-O3` | + semantic-duplicates, responsibilities, concepts | meaning: functions that do the same job with different code, modules mixing unrelated jobs, and the concept map of the whole codebase |
 
@@ -263,7 +263,8 @@ Vibepiler never edits your code. Each pass is the analysis half of a compiler op
 | `liveness` | liveness analysis / dead-store elimination | Inside every function body, a backward dataflow analysis to a fixpoint: stores no read reaches, whether never read or overwritten first (`dead-store`); trailing parameters never read (`unused-param`); statements after a return, raise, break or continue (`unreachable-code`); branches on a literal constant (`dead-branch`). Across the project: instance attributes written and never read by that name anywhere (`unused-attribute`). Exempts underscore names, destructuring siblings, placeholders before a read parameter, overrides, decorated functions, entry points, dunders, stubs, data classes and classes with an unknown base. | warning / info |
 | `unused-imports` | unused declarations | Import bindings never used in their file (respects `__all__`, `__init__`/`index` re-export files, `import x as x`). | info |
 | `cycles` | dependency analysis | Strongly connected components of the module import graph, with the weakest edge to break. | warning (error for 6+ modules) |
-| `complexity` | control-flow analysis | Cyclomatic complexity, length, nesting, parameter count per function; attaches the numbers to every function node. | warning / info |
+| `complexity` | control-flow analysis | Per function: cyclomatic complexity (counted as radon counts it), cognitive complexity (SonarSource), Halstead volume, difficulty and effort, the maintainability index, length, nesting and parameter count; attaches the numbers to every function node and flags the ones past their thresholds (`high-cognitive-complexity`, `high-complexity`, `long-function`, `deep-nesting`, `too-many-params`). | warning / info |
+| `measures` | static metrics | Rolls the [metrics](#metrics) up from every function to its class, module, folder and the repo. | none |
 | `wrappers` | inlining | Functions whose entire body is one call to another project function (`pass-through-wrapper` when the arguments are forwarded unchanged, `thin-wrapper` otherwise) and chains of them (`indirection-chain`). Skips decorated functions, roots, and overrides. | warning / info |
 | `hotspots` | critical-path analysis | Fan-in/fan-out per module, god modules, PageRank-central functions, hub functions. | warning / info |
 | `abstraction` | devirtualization / indirection removal | Abstract classes with exactly one implementation (`single-implementation`), base classes with one subclass and no other use, abstract classes with none, classes with a single real method (`class-as-function`), all-static classes (`namespace-class`), helpers called exactly once from the same module (`single-use-helper`), deep inheritance, tiny modules with one importer. Skips dataclasses, pydantic/ORM models, enums, exceptions. | warning / info |
@@ -322,7 +323,7 @@ What the tier produces, concretely:
 *The Semantic tab on vibepiler itself, coloured by health. Tangled functions (complexity over the limit) are amber and cluster in the pass code at the bottom; red pairs are functions that do the same job.*
 
 - **Lenses.** *Map* shows functions only. *Flow* animates calls from caller to callee: streams between concepts when zoomed out, single calls when zoomed in; hover or click a stream for the calls it carries. *Copies* ties duplicates together: solid for the same code, dashed for the same shape, dotted for the same meaning.
-- **Colour.** *health* (the default) gives each function its worst status: copied, tangled, unused or healthy, with problems drawn on top. Or colour by a measure (**bloat, complexity, live, size, nesting, callers**) and drag the threshold slider: functions past the line light from dim to bright and the rest fade. The slider starts at the compiler's own limit and steps through the values that occur, so every notch changes the picture. *folder* and *theme* show where code lives.
+- **Colour.** *health* (the default) gives each function its worst status: copied, tangled, unused or healthy, with problems drawn on top. Or colour by a measure (**bloat, cognitive or cyclomatic complexity, maintainability, typed, documented, live, size, nesting, callers**) and drag the threshold slider: functions past the line light from dim to bright and the rest fade. The slider starts at the compiler's own limit and steps through the values that occur, so every notch changes the picture. *folder* and *theme* show where code lives.
 - **Click a function** to see what leads to it and what it sets off (its call cone, up to three hops), its copies, its numbers and the first lines of its code.
 
 ![Flow on vibepiler itself: Compiler.run selected, its call cone drawn as moving dashed streams, the side panel listing its calls, complexity and code](docs/img/report-semantic-flow.png)
@@ -361,7 +362,7 @@ bloat = 1 − (1 − waste)(1 − tangle)
 
 | finding | tangle term |
 |---|---|
-| complexity, nesting, parameters, length over the threshold | (value − threshold) / value |
+| cognitive complexity, nesting, parameters, length over the threshold | (value − threshold) / value |
 | god module | (fan − threshold) / fan |
 | module in an import cycle | share of its imports that stay inside the cycle |
 | mixed responsibilities | ½ · (groups − 1) / groups |
@@ -431,6 +432,32 @@ live 66.7% (72 of 108 definitions; dead: 9 stores, 1 params, 1 attributes, 23 sy
 
 Gate on it like bloat, `--fail-on live<0.9`; `--baseline` prints how it moved; from Python, `result.liveness.value`. It sits beside bloat, not inside it, until a comparison of the two rankings shows it carries information waste does not.
 
+## Metrics
+
+The numbers reviewers know from SonarQube, radon and Visual Studio, for Python, JavaScript and TypeScript alike. Each is a `Metric` like bloat and live: a value in [0, 1] on every function, class, module, folder and the repo, with its raw numbers kept beside it. They are in `report.md` (a table, then one column per folder), on the Semantic map as measures with a threshold slider, and in `ir.json`; each one gates, `--fail-on cognitive>0.1`.
+
+| metric | raw number per function | value in [0, 1] | better |
+|---|---|---|---|
+| `cognitive` | cognitive complexity (G. Ann Campbell, SonarSource 2017): +1 per `if`, loop, `catch`, `switch`, ternary, plus its nesting depth; `else`/`elif` +1; each run of one boolean operator +1 | how far functions go past 15, weighted by lines | lower |
+| `cyclomatic` | McCabe's 1 + decision points, the number of tests full branch coverage needs | how far functions go past 10, weighted by lines | lower |
+| `mi` | maintainability index, Visual Studio's 0–100: `(171 − 5.2 ln V − 0.23 CC − 16.2 ln LOC) · 100/171`, V the Halstead volume | how far functions fall below 20, weighted by lines | lower |
+| `typed` | annotated parameters and returns (Python, TypeScript) | annotated / slots | higher |
+| `documented` | public functions, classes and modules with a docstring or a `/** */` comment | documented / public | higher |
+
+A count goes to [0, 1] as its excess over a fixed limit, `(c − limit) / c`: 0 at or under the limit, 0.5 at twice it, never 1. A score where high is good goes as `(limit − v) / limit` below its limit. The limits are the published ones (SonarQube's 15 for cognitive complexity, McCabe's and NIST's 10 for cyclomatic, Visual Studio's 20 for MI) and each is a threshold you can change. A fixed limit, not the repo's own spread, so a value means the same thing in every repo and every run.
+
+```
+cognitive 17.6% (66 of 518 functions over 15; worst 75)
+cyclomatic 18.9% (90 of 518 functions over 10; worst 40)
+mi 0.0% (0 of 518 functions below 20; worst 26.6)
+typed 94.3% (1354 of 1436 parameters and returns annotated)
+documented 37.7% (177 of 470 public functions, classes and modules documented)
+```
+
+Cognitive complexity is what bloat's tangle counts: it measures how hard the code is to follow, which is what tangle means, where cyclomatic counts the paths a test suite has to cover. Halstead volume, difficulty and effort are stored on every function (`attrs["halstead"]`) and reach [0, 1] through the MI. Operands are identifier and literal tokens, operators every other token, the classic reading; radon counts only arithmetic and boolean operators, so its MI runs higher.
+
+The test suite checks the numbers against the reference tools, which are dev-only: cyclomatic complexity agrees with radon on every Python function in vibepiler and gpython; cognitive complexity follows complexipy's rules and the Sonar paper's own JavaScript examples, and on vibepiler it is never below complexipy, which skips some expressions (a ternary inside `+`).
+
 ## Configuration
 
 Optional `[tool.vibepiler]` in `pyproject.toml` (or a `vibepiler.toml`):
@@ -448,7 +475,9 @@ treat_exports_as_roots = false      # default: only JS/TS entry modules (index, 
 embedding_model = "nomic-ai/CodeRankEmbed"   # -O3; or "jinaai/jina-embeddings-v2-base-code", or "minishlab/potion-code-16M-v2" (fast mode)
 
 [tool.vibepiler.thresholds]
-complexity = 10
+complexity = 10                     # cyclomatic, McCabe's limit
+cognitive = 15                      # SonarQube's default; feeds tangle
+maintainability = 20                # Visual Studio's poor band
 function_loc = 60
 nesting = 4
 params = 6
