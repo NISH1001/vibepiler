@@ -6,6 +6,7 @@ remarks and the change since a baseline. The other backends write files; this on
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from rich.console import Console
@@ -15,11 +16,42 @@ from vibepiler.backend.common import liveness_parts, size_parts
 from vibepiler.ir.program import Program
 from vibepiler.passes.diagnostic import Severity
 from vibepiler.passes.measures import METRICS
+from vibepiler.progress import mem_text
 
 console = Console()
 err_console = Console(stderr=True)
 
 SEV_STYLE = {Severity.ERROR: "bold red", Severity.WARNING: "yellow", Severity.INFO: "cyan"}
+
+
+class PassLog(logging.Handler):
+    """What the running pass is doing, under its line: with `verbose`, every step dimmed; otherwise one live counter
+    that rewrites itself and goes when the pass finishes."""
+
+    def __init__(self, verbose: bool) -> None:
+        super().__init__(logging.DEBUG if verbose else logging.INFO)
+        self.verbose = verbose
+        self.status = None
+
+    def emit(self, record: logging.LogRecord) -> None:
+        p = getattr(record, "progress", None)
+        if p is None:
+            if self.verbose:
+                console.print(f"        [dim]· {record.getMessage()}[/dim]", highlight=False)
+            return
+        if self.verbose:
+            return  # the step lines already carry it
+        text = f"      [dim]{p['what']} {p['done']} / {p['total']}" + (f" · batch {p['batch']}/{p['batches']}" if "batch" in p else "") + (f" · {p['rate']:.0f}/s" if "rate" in p else "") + f" · {mem_text()}[/dim]"
+        if self.status is None:
+            self.status = console.status(text, spinner="dots")
+            self.status.start()
+        else:
+            self.status.update(text)
+
+    def finish(self) -> None:
+        if self.status is not None:
+            self.status.stop()
+            self.status = None
 
 
 def print_skipped(program: Program) -> None:

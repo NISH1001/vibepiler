@@ -17,6 +17,7 @@ from collections import Counter
 
 from vibepiler.ir.model import EdgeKind
 from vibepiler.ir.program import Program
+from vibepiler.progress import timed
 from vibepiler.semantic.embed import symbol_vectors, words
 
 KNN = 8  # neighbours per function in the similarity graph
@@ -145,9 +146,11 @@ def build_concepts(program: Program) -> dict | None:
     if len(nodes) < MIN_CONCEPT:
         return result
     docs, idf = identifier_idf([nd.qualname for nd in nodes])
-    described = [_describe(ci, c, nodes, vectors, docs, idf) for ci, c in enumerate(_communities(vectors))]
+    with timed(f"concepts: {len(nodes)} functions grouped"):
+        described = [_describe(ci, c, nodes, vectors, docs, idf) for ci, c in enumerate(_communities(vectors))]
     concepts = [c for c, _ in described]
-    xy, result["projection"] = project_2d(vectors, min_dist=0.08)
+    with timed("concepts: map projected"):
+        xy, result["projection"] = project_2d(vectors, min_dist=0.08)
     owner = {m: ci for ci, c in enumerate(concepts) for m in c["members"]}
     result["points"] = [{"id": nd.id, "x": round(float(x), 4), "y": round(float(y), 4), "c": owner.get(nd.id, -1)} for nd, (x, y) in zip(nodes, xy)]
     row = {nd.id: i for i, nd in enumerate(nodes)}

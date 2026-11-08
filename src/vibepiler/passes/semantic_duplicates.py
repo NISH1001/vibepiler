@@ -5,6 +5,7 @@ from __future__ import annotations
 from vibepiler.ir.program import Program
 from vibepiler.passes.base import Pass
 from vibepiler.passes.diagnostic import Diagnostic, Severity
+from vibepiler.progress import timed
 from vibepiler.semantic.embed import default_thresholds, symbol_vectors
 
 SKIP_HINT = "semantic tier needs the embedding backend: pip install 'vibepiler[semantic]' (or: uv tool install 'vibepiler[semantic]')"
@@ -31,8 +32,9 @@ class SemanticDuplicatesPass(Pass):
         if len(nodes) >= 2:
             import numpy as np
 
-            sims = vectors @ vectors.T
-            np.fill_diagonal(sims, -1.0)
+            with timed(f"semantic-duplicates: {len(nodes)} x {len(nodes)} similarities"):
+                sims = vectors @ vectors.T
+                np.fill_diagonal(sims, -1.0)
             # a pair counts only when each is the other's nearest neighbour: this keeps the list
             # linear in the number of symbols instead of quadratic, and surfaces real twins.
             nearest = sims.argmax(axis=1)
