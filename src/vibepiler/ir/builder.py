@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Union
 
 from vibepiler.config import Config
-from vibepiler.frontend.facts import FileFacts, ImportDef
+from vibepiler.frontend.facts import CallSite, FileFacts, ImportDef, RefSite
 from vibepiler.frontend.languages import get_language
 from vibepiler.frontend.languages.base import LanguageSpec
 from vibepiler.frontend.loader import STRING_ROOT, SourceFile, check_includes, discover, in_scope
@@ -230,53 +230,42 @@ class _Builder:
         for mid, facts in self.facts.items():
             spec = self.specs[mid]
             table = self.bindings.setdefault(mid, {})
-            # local definitions bind first
-            for qual, sid in self.symbols[mid].items():
+            for qual, sid in self.symbols[mid].items():  # local definitions bind first
                 if "." not in qual:
                     table[qual] = DefBinding(sid)
             records: list[dict] = []
             self.import_records[mid] = records
             for imp in facts.imports:
-                rec = {
-                    "local_name": imp.local_name,
-                    "module": imp.module,
-                    "name": imp.name,
-                    "alias": imp.alias,
-                    "line": imp.line,
-                    "kind": imp.kind,
-                    "scope": imp.scope,
-                    "resolved": None,
-                    "used": False,
-                }
-                records.append(rec)
                 binding, target = self._resolve_one_import(imp, facts, spec)
+                records.append({"local_name": imp.local_name, "module": imp.module, "name": imp.name, "alias": imp.alias, "line": imp.line, "kind": imp.kind, "scope": imp.scope, "resolved": target, "used": False})
                 if target is not None:
-                    rec["resolved"] = target
-                    edge = self.graph.add_edge(Edge(src=mid, dst=target, kind=EdgeKind.IMPORTS, line=imp.line))
-                    names = edge.attrs.setdefault("names", [])
-                    label = imp.name or imp.module
-                    if label and label not in names:
-                        names.append(label)
-                    if target in self.facts:
-                        for parent in spec.implicit_imports(self.facts[target].module_name):
-                            pid = self.module_index.get(parent)
-                            if pid is not None and pid != mid and not self.graph.has_edge_kind(mid, pid, EdgeKind.IMPORTS):
-                                self.graph.add_edge(Edge(src=mid, dst=pid, kind=EdgeKind.IMPORTS, line=imp.line, attrs={"implicit": True}))
-                if binding is None:
-                    continue
-                if imp.kind == "wildcard":
-                    if target is not None and target in self.symbols:
-                        for qual, sid in self.symbols[target].items():
-                            if "." not in qual and self.graph.node(sid).attrs.get("exported", True):
-                                table.setdefault(qual, MemberBinding(self.facts[target].module_name, qual))
-                    continue
-                local = imp.local_name
-                if local is None:
-                    continue
-                if imp.scope:
-                    self.scoped_bindings.setdefault((mid, imp.scope), {})[local] = binding
-                else:
-                    table[local] = binding
+                    self._link_import(mid, spec, imp, target)
+                if binding is not None:
+                    self._bind_import(mid, table, imp, binding, target)
+
+    def _link_import(self, mid: str, spec: LanguageSpec, imp: ImportDef, target: str) -> None:
+        """The imports edge, labelled with what it imports, plus the packages Python runs on the way (`a/__init__`)."""
+        edge = self.graph.add_edge(Edge(src=mid, dst=target, kind=EdgeKind.IMPORTS, line=imp.line))
+        names = edge.attrs.setdefault("names", [])
+        label = imp.name or imp.module
+        if label and label not in names:
+            names.append(label)
+        if target not in self.facts:
+            return
+        for parent in spec.implicit_imports(self.facts[target].module_name):
+            pid = self.module_index.get(parent)
+            if pid is not None and pid != mid and not self.graph.has_edge_kind(mid, pid, EdgeKind.IMPORTS):
+                self.graph.add_edge(Edge(src=mid, dst=pid, kind=EdgeKind.IMPORTS, line=imp.line, attrs={"implicit": True}))
+
+    def _bind_import(self, mid: str, table: dict, imp: ImportDef, binding: Binding, target: str | None) -> None:
+        """The names an import puts in scope: every exported top-level name for `*`, else its local name."""
+        if imp.kind == "wildcard":
+            for qual, sid in self.symbols.get(target, {}).items() if target is not None else ():
+                if "." not in qual and self.graph.node(sid).attrs.get("exported", True):
+                    table.setdefault(qual, MemberBinding(self.facts[target].module_name, qual))
+        elif imp.local_name is not None:
+            scope = self.scoped_bindings.setdefault((mid, imp.scope), {}) if imp.scope else table
+            scope[imp.local_name] = binding
 
     def _resolve_one_import(self, imp: ImportDef, facts: FileFacts, spec: LanguageSpec) -> tuple[Binding | None, str | None]:
         for option in spec.import_targets(imp, facts):
@@ -325,66 +314,66 @@ class _Builder:
             spec = self.specs[mid]
             self.read_member_names.update(spec.attribute_reads(facts.file))
             for call in facts.calls:
-                self.stats["calls_total"] += 1
-                src = self._scope_node(mid, call.scope)
-                res = self._resolve_chain(mid, call.scope, call.chain)
-                if res is None:
-                    head = call.chain[0]
-                    if head in spec.builtins or (spec.name == "python" and head in PY_BUILTINS):
-                        self.stats["calls_builtin"] += 1
-                    else:
-                        self.stats["calls_unresolved"] += 1
-                        if len(call.chain) > 1:
-                            self.used_member_names[call.chain[-1]] += 1
-                        else:
-                            self.used_member_names[head] += 1
-                    continue
-                target = self.graph.node(res.node_id)
-                if target.kind is NodeKind.PACKAGE:
-                    self.stats["calls_external"] += 1
-                    e = self.graph.add_edge(Edge(src=src, dst=res.node_id, kind=EdgeKind.CALLS, line=call.line))
-                    members = e.attrs.setdefault("members", [])
-                    m = ".".join(res.rest)
-                    if m and m not in members:
-                        members.append(m)
-                elif res.exact and target.kind in CALLABLE_KINDS | {NodeKind.CLASS}:
-                    self.stats["calls_resolved"] += 1
-                    if res.node_id != src:
-                        self.graph.add_edge(Edge(src=src, dst=res.node_id, kind=EdgeKind.CALLS, line=call.line))
-                    else:
-                        self.graph.node(src).attrs["recursive"] = True
-                else:
-                    # partially resolved: module.CONST(...) or SomeClass.attr(...) or variable(...)
-                    self.stats["calls_partial"] += 1
-                    if res.rest:
-                        self.used_member_names[res.rest[-1]] += 1
-                    if res.node_id != src and not self._is_own_class(mid, call.scope, call.chain, res.node_id):
-                        self.graph.add_edge(Edge(src=src, dst=res.node_id, kind=EdgeKind.REFERENCES, line=call.line))
+                self._link_call(mid, spec, call)
             for ref in facts.refs:
-                if ref.context == "base":
-                    continue  # covered by inherits edges
-                self.stats["refs_total"] += 1
-                src = self._scope_node(mid, ref.scope)
-                res = self._resolve_chain(mid, ref.scope, ref.chain)
-                if res is None:
-                    if len(ref.chain) > 1:
-                        self.used_member_names[ref.chain[-1]] += 1
-                    continue
-                self.stats["refs_resolved"] += 1
-                is_pkg = self.graph.node(res.node_id).kind is NodeKind.PACKAGE
-                if res.rest and not is_pkg:
-                    self.used_member_names[res.rest[-1]] += 1
-                if res.node_id == src or self._is_own_class(mid, ref.scope, ref.chain, res.node_id):
-                    continue
-                e = self.graph.add_edge(Edge(src=src, dst=res.node_id, kind=EdgeKind.REFERENCES, line=ref.line))
-                ctxs = e.attrs.setdefault("contexts", [])
-                if ref.context not in ctxs:
-                    ctxs.append(ref.context)
-                if self.graph.node(res.node_id).kind is NodeKind.PACKAGE and res.rest:
-                    members = e.attrs.setdefault("members", [])
-                    m = ".".join(res.rest)
-                    if m not in members:
-                        members.append(m)
+                if ref.context != "base":  # covered by inherits edges
+                    self._link_ref(mid, ref)
+
+    def _link_call(self, mid: str, spec: LanguageSpec, call: CallSite) -> None:
+        """One call site: an edge to what it calls, or a count of why there is none."""
+        self.stats["calls_total"] += 1
+        src = self._scope_node(mid, call.scope)
+        res = self._resolve_chain(mid, call.scope, call.chain)
+        if res is None:
+            self._unresolved_call(spec, call.chain)
+            return
+        target = self.graph.node(res.node_id)
+        if target.kind is NodeKind.PACKAGE:
+            self.stats["calls_external"] += 1
+            e = self.graph.add_edge(Edge(src=src, dst=res.node_id, kind=EdgeKind.CALLS, line=call.line))
+            _add_member(e, ".".join(res.rest))
+        elif res.exact and target.kind in CALLABLE_KINDS | {NodeKind.CLASS}:
+            self.stats["calls_resolved"] += 1
+            if res.node_id == src:
+                self.graph.node(src).attrs["recursive"] = True
+            else:
+                self.graph.add_edge(Edge(src=src, dst=res.node_id, kind=EdgeKind.CALLS, line=call.line))
+        else:  # partially resolved: module.CONST(...) or SomeClass.attr(...) or variable(...)
+            self.stats["calls_partial"] += 1
+            if res.rest:
+                self.used_member_names[res.rest[-1]] += 1
+            if res.node_id != src and not self._is_own_class(mid, call.scope, call.chain, res.node_id):
+                self.graph.add_edge(Edge(src=src, dst=res.node_id, kind=EdgeKind.REFERENCES, line=call.line))
+
+    def _unresolved_call(self, spec: LanguageSpec, chain: tuple[str, ...]) -> None:
+        head = chain[0]
+        if head in spec.builtins or (spec.name == "python" and head in PY_BUILTINS):
+            self.stats["calls_builtin"] += 1
+            return
+        self.stats["calls_unresolved"] += 1
+        self.used_member_names[chain[-1]] += 1  # a method name, or the bare name itself
+
+    def _link_ref(self, mid: str, ref: RefSite) -> None:
+        """One reference to a name: an edge with the contexts it is used in."""
+        self.stats["refs_total"] += 1
+        src = self._scope_node(mid, ref.scope)
+        res = self._resolve_chain(mid, ref.scope, ref.chain)
+        if res is None:
+            if len(ref.chain) > 1:
+                self.used_member_names[ref.chain[-1]] += 1
+            return
+        self.stats["refs_resolved"] += 1
+        is_pkg = self.graph.node(res.node_id).kind is NodeKind.PACKAGE
+        if res.rest and not is_pkg:
+            self.used_member_names[res.rest[-1]] += 1
+        if res.node_id == src or self._is_own_class(mid, ref.scope, ref.chain, res.node_id):
+            return
+        e = self.graph.add_edge(Edge(src=src, dst=res.node_id, kind=EdgeKind.REFERENCES, line=ref.line))
+        ctxs = e.attrs.setdefault("contexts", [])
+        if ref.context not in ctxs:
+            ctxs.append(ref.context)
+        if is_pkg and res.rest:
+            _add_member(e, ".".join(res.rest))
 
     def _is_own_class(self, mid: str, scope: str | None, chain: tuple[str, ...], node_id: str) -> bool:
         """True for `self.attr` style partial resolutions that land on the enclosing class."""
@@ -441,16 +430,28 @@ class _Builder:
             if cls is None:
                 return None
             return self._resolve_member(cls, rest, depth + 1)
-        # nested scope: a function defined inside the current def/class
-        if scope:
-            local_qual = f"{scope}.{head}"
-            sid = self.symbols[mid].get(local_qual)
-            if sid is not None:
-                return self._resolve_member(sid, rest, depth + 1)
+        # nested scopes: a function defined inside the current def/class, then inside each enclosing def (closures see
+        # their enclosing function's names; a class body is not a scope its methods see)
+        if (sid := self._local(mid, scope, head)) is not None:
+            return self._resolve_member(sid, rest, depth + 1)
         b = self._lookup(mid, scope, head)
         if b is None:
             return None
         return self._resolve_binding(b, rest, depth + 1)
+
+    def _local(self, mid: str, scope: str | None, head: str) -> str | None:
+        table = self.symbols[mid]
+        if scope and (sid := table.get(f"{scope}.{head}")) is not None:
+            return sid
+        parts = scope.split(".") if scope else []
+        while len(parts) > 1:
+            parts.pop()
+            enclosing = table.get(".".join(parts))
+            if enclosing is None or self.graph.node(enclosing).kind not in CALLABLE_KINDS:
+                break
+            if (sid := table.get(f"{'.'.join(parts)}.{head}")) is not None:
+                return sid
+        return None
 
     def _resolve_binding(self, b: Binding, rest: tuple[str, ...], depth: int) -> Resolution | None:
         if isinstance(b, DefBinding):
@@ -533,3 +534,10 @@ class _Builder:
                 "symbols": sum(len(t) for t in self.symbols.values()),
             }
         )
+
+
+def _add_member(e: Edge, member: str) -> None:
+    """Record which member of a package an edge uses, once."""
+    members = e.attrs.setdefault("members", [])
+    if member and member not in members:
+        members.append(member)

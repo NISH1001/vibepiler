@@ -161,3 +161,22 @@ def test_a_root_folder_that_cannot_be_imported_is_not_part_of_module_names(tmp_p
         (root / "__init__.py").write_text("")
         (root / "create_admin.py").write_text("def main():\n    return 1\n")
         assert build(root).graph.node("mod:create_admin.py").qualname == expected, folder
+
+
+def test_a_nested_function_calls_its_sibling_through_the_enclosing_scope():
+    from vibepiler.compiler import Compiler
+
+    code = "def outer(x):\n    def a(n):\n        return b(n)\n\n    def b(n):\n        return n\n\n    return a(x)\n\n\nif __name__ == '__main__':\n    outer(1)\n"
+    p = Compiler(code, language="python").run(opt_level=1, emit=()).program
+    calls = {(e.src.split("::")[-1], e.dst.split("::")[-1]) for e in p.graph.edges() if e.kind.value == "calls"}
+    assert ("outer.a", "outer.b") in calls
+    assert not [d for d in p.diagnostics if d.code == "dead-symbol"]
+
+
+def test_a_method_does_not_see_class_body_names_by_bare_name():
+    from vibepiler.compiler import Compiler
+
+    code = "def helper():\n    return 1\n\n\nclass C:\n    def helper(self):\n        return 2\n\n    def run(self):\n        return helper()\n\n\nif __name__ == '__main__':\n    C().run()\n"
+    p = Compiler(code, language="python").run(opt_level=1, emit=()).program
+    calls = {(e.src.split("::")[-1], e.dst.split("::")[-1]) for e in p.graph.edges() if e.kind.value == "calls"}
+    assert ("C.run", "helper") in calls and ("C.run", "C.helper") not in calls
