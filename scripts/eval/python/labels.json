@@ -1,0 +1,442 @@
+{
+ "dead_vibepiler_only": [
+  [
+   "requests",
+   "src/requests/adapters.py",
+   "SOCKSProxyManager",
+   "FP",
+   "fallback def in `except ImportError:` shadows the import; called at adapters.py:282 (bug B)"
+  ],
+  [
+   "flask",
+   "examples/celery/src/task_app/__init__.py",
+   "FlaskTask",
+   "FP",
+   "passed as task_cls=FlaskTask; chain create_app <- make_celery.py run by the celery CLI (entry not detectable)"
+  ],
+  [
+   "httpx",
+   "httpx/_exceptions.py",
+   "CloseError",
+   "FP",
+   "public API: in __all__, re-exported through `from ._exceptions import *` in httpx/__init__.py (bug G)"
+  ],
+  [
+   "gpython",
+   "src/gpython/imageview.py",
+   "_step",
+   "FP",
+   "called from ImageViewer.on_key, a Textual hook; class base `ModalScreen[None]` is subscripted so it is not seen as an external base (bug D)"
+  ],
+  [
+   "rich",
+   "examples/exception.py",
+   "divide_all",
+   "FP",
+   "example script called at module level (line 41), run as `python examples/exception.py`; no __main__ guard so the module is 'unreachable'"
+  ],
+  [
+   "black",
+   "src/black/linegen.py",
+   "remove_await_parens",
+   "FP",
+   "called by LineGenerator.visit_power, dispatched by Visitor.visit via getattr(self, f'visit_{name}')"
+  ],
+  [
+   "django",
+   "django/contrib/flatpages/templatetags/flatpages.py",
+   "__init__",
+   "FP",
+   "template-tag library loaded by `{% load flatpages %}`; get_flatpages registered with @register.tag"
+  ],
+  [
+   "requests",
+   "src/requests/cookies.py",
+   "info",
+   "FP",
+   "MockResponse.info() is called by stdlib http.cookiejar (duck-typed response protocol)"
+  ],
+  [
+   "flask",
+   "tests/test_views.py",
+   "Index1",
+   "FP",
+   "used as `Index1.as_view(...)`; a call to an inherited classmethod links to View.as_view and leaves no reference to Index1 (bug F)"
+  ],
+  [
+   "httpx",
+   "httpx/_transports/mock.py",
+   "MockTransport",
+   "FP",
+   "public API via two levels of `from .x import *` + __all__ (bug G); used throughout tests as httpx.MockTransport"
+  ],
+  [
+   "gpython",
+   "src/gpython/imageview.py",
+   "fit",
+   "FP",
+   "called from on_mount (Textual hook) of a `ModalScreen[None]` subclass (bug D)"
+  ],
+  [
+   "rich",
+   "examples/repr.py",
+   "__init__",
+   "FP",
+   "example script; Bird(...) instantiated at module level; module run directly"
+  ],
+  [
+   "black",
+   "src/black/trans.py",
+   "fstring_contains_expr",
+   "FP",
+   "called from StringSplitter.do_transform, an override two levels below StringTransformer whose __call__ does self.do_transform (bug I: dispatch reaches only direct subclasses)"
+  ],
+  [
+   "django",
+   "django/db/backends/mysql/compiler.py",
+   "SQLUpdateCompiler",
+   "FP",
+   "loaded with import_module(self.compiler_module) + getattr(name) in BaseDatabaseOperations.compiler"
+  ],
+  [
+   "requests",
+   "tests/test_requests.py",
+   "get_redirect_target",
+   "FP",
+   "override of SessionRedirectMixin.get_redirect_target (grandparent), called via self in resolve_redirects (bug I)"
+  ]
+ ],
+ "dead_vulture_only": [
+  [
+   "requests",
+   "src/requests/cookies.py",
+   "_find",
+   "TP",
+   "RequestsCookieJar._find has no caller anywhere (only its definition and docstrings)"
+  ],
+  [
+   "flask",
+   "tests/test_async.py",
+   "before",
+   "FP",
+   "registered with @app.before_request"
+  ],
+  [
+   "httpx",
+   "tests/conftest.py",
+   "clean_environ",
+   "FP",
+   "@pytest.fixture(autouse=True)"
+  ],
+  [
+   "vibepiler",
+   "tests/fixtures/pyproj/src/app/utils.py",
+   "dup_a",
+   "TP",
+   "deliberately dead code in a test fixture project; vibepiler skips tests/fixtures/** by its own repo config"
+  ],
+  [
+   "gpython",
+   "tests/test_mdimages.py",
+   "_fresh_cache",
+   "FP",
+   "@pytest.fixture(autouse=True)"
+  ],
+  [
+   "rich",
+   "tests/conftest.py",
+   "reset_color_envvars",
+   "FP",
+   "@pytest.fixture(autouse=True)"
+  ],
+  [
+   "black",
+   "tests/data/cases/pep_604.py",
+   "some_very_long_name_function",
+   "unclear",
+   "formatter test-input data, never executed as code"
+  ],
+  [
+   "django",
+   "tests/fixtures_regress/models.py",
+   "M2MToSelf",
+   "FP",
+   "Django model, loaded from fixtures/m2mtoself.json and registered by the app registry"
+  ],
+  [
+   "requests",
+   "src/requests/exceptions.py",
+   "URLRequired",
+   "FP",
+   "public API re-exported in requests/__init__.py"
+  ],
+  [
+   "flask",
+   "tests/test_blueprints.py",
+   "frontend_forbidden",
+   "FP",
+   "registered with @frontend.errorhandler(403)"
+  ],
+  [
+   "httpx",
+   "tests/conftest.py",
+   "restart",
+   "TP",
+   "TestServer.restart has no caller (marked pragma: no cover)"
+  ],
+  [
+   "vibepiler",
+   "tests/test_progress.py",
+   "fake_embedder",
+   "FP",
+   "@pytest.fixture(autouse=True)"
+  ],
+  [
+   "gpython",
+   "src/gpython/app.py",
+   "_run_by_number",
+   "FP",
+   "Textual message handler registered with @on(VimTextArea.RunByNumber)"
+  ],
+  [
+   "rich",
+   "tests/test_traceback.py",
+   "get_exception",
+   "TP",
+   "defined in a test module, never called"
+  ],
+  [
+   "black",
+   "tests/data/cases/remove_parens.py",
+   "example6",
+   "unclear",
+   "formatter test-input data"
+  ]
+ ],
+ "deps_unused_vp_only": [
+  [
+   "httpx",
+   "mkautodoc",
+   "FP",
+   "mkdocs extension, used from mkdocs.yml (markdown_extensions) not imported"
+  ],
+  [
+   "rich",
+   "asv",
+   "unclear",
+   "dev dependency used as a CLI (airspeed velocity benchmarks), never imported by design"
+  ],
+  [
+   "httpx",
+   "trio_typing",
+   "FP",
+   "type-stub package for mypy, never imported by design"
+  ]
+ ],
+ "deps_unused_deptry_only": [
+  [
+   "flask",
+   "python_dotenv",
+   "FP",
+   "imported as `dotenv` (src/flask/cli.py); deptry cannot map without an installed env"
+  ],
+  [
+   "httpx",
+   "anyio",
+   "TP",
+   "declared as a runtime dependency but only tests/client/test_auth.py imports it"
+  ],
+  [
+   "vibepiler",
+   "umap_learn",
+   "FP",
+   "imported as `umap`"
+  ],
+  [
+   "gpython",
+   "ipykernel",
+   "FP",
+   "runtime kernel started in a subprocess, needed though never imported"
+  ],
+  [
+   "black",
+   "ipython",
+   "FP",
+   "imported as `IPython` in handle_ipynb_magics.py"
+  ],
+  [
+   "gpython",
+   "pillow",
+   "FP",
+   "imported as `PIL`"
+  ]
+ ],
+ "deps_undecl_vp_only": [
+  [
+   "flask",
+   "config_package_app",
+   "FP",
+   "package the test writes to a tmp dir at runtime, not a third-party dependency"
+  ],
+  [
+   "httpx",
+   "httpcore",
+   "FP",
+   "declared as `httpcore==1.*` in pyproject; the wildcard specifier is not parsed (bug L)"
+  ],
+  [
+   "gpython",
+   "numpy",
+   "unclear",
+   "optional test import via pytest.importorskip('numpy')"
+  ],
+  [
+   "rich",
+   "setuptools",
+   "TP",
+   "setup.py imports setuptools, which no manifest declares"
+  ],
+  [
+   "black",
+   "com",
+   "FP",
+   "`import com...` in formatter test-input data (tests/data/cases)"
+  ],
+  [
+   "flask",
+   "greenlet",
+   "unclear",
+   "optional test import guarded by try/except ImportError, test skipped without it"
+  ],
+  [
+   "httpx",
+   "brotlicffi",
+   "FP",
+   "declared in pyproject optional-dependencies (brotli extra); reported against the dev requirements.txt"
+  ],
+  [
+   "gpython",
+   "cprofile",
+   "FP",
+   "stdlib `cProfile`, lowercased and not recognised as stdlib (bug M)"
+  ],
+  [
+   "black",
+   "pytest",
+   "FP",
+   "declared in test_requirements.txt, a name the manifest glob does not match"
+  ],
+  [
+   "flask",
+   "typing_extensions",
+   "unclear",
+   "imported only under TYPE_CHECKING, never at runtime"
+  ]
+ ],
+ "deps_undecl_deptry_only": [
+  [
+   "flask",
+   "task_app",
+   "FP",
+   "local example package (examples/celery/src/task_app)"
+  ],
+  [
+   "vibepiler",
+   "umap",
+   "FP",
+   "declared as umap-learn"
+  ],
+  [
+   "gpython",
+   "bench",
+   "FP",
+   "local module scripts/bench.py"
+  ],
+  [
+   "rich",
+   "sphinx_rtd_theme",
+   "FP",
+   "declared in docs/requirements.txt, the manifest for docs/"
+  ],
+  [
+   "black",
+   "sphinx",
+   "FP",
+   "declared in docs/requirements.txt"
+  ],
+  [
+   "flask",
+   "js_example",
+   "FP",
+   "local example package"
+  ],
+  [
+   "vibepiler",
+   "matplotlib",
+   "FP",
+   "declared in the script's own PEP 723 block"
+  ],
+  [
+   "gpython",
+   "pil",
+   "FP",
+   "declared as pillow"
+  ],
+  [
+   "rich",
+   "emoji",
+   "TP",
+   "tools/make_emoji.py needs `emoji` and nothing declares it"
+  ],
+  [
+   "black",
+   "blackd",
+   "FP",
+   "local package src/blackd"
+  ]
+ ],
+ "dead_store_vibepiler_django_sample": [
+  [
+   "django",
+   "django/contrib/gis/gdal/layer.py:64",
+   "i",
+   "TP",
+   "loop variable never read"
+  ],
+  [
+   "django",
+   "django/db/utils.py:219",
+   "chosen_db",
+   "TP",
+   "initial None never read: every read follows the reassignment at 227"
+  ],
+  [
+   "django",
+   "django/db/backends/oracle/operations.py:176",
+   "trunc_param",
+   "TP",
+   "every path that reaches the read assigns it first or returns"
+  ],
+  [
+   "django",
+   "django/core/handlers/base.py:70",
+   "handler",
+   "TP",
+   "overwritten at 95 on every path that continues; the other path raises"
+  ],
+  [
+   "django",
+   "django/contrib/admin/filters.py:298",
+   "count",
+   "TP",
+   "only read inside `if add_facets` right after reassignment"
+  ],
+  [
+   "django",
+   "django/test/testcases.py:753",
+   "response",
+   "TP",
+   "assigned then the function returns without reading it"
+  ]
+ ]
+}

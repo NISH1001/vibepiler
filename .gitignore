@@ -12,3 +12,6 @@ wheels/
 # vibepiler reports
 vibepiler-out/
 .superpowers/
+
+# evaluation work dir: cloned corpora, comparison tools, raw outputs (scripts/eval/)
+.eval/

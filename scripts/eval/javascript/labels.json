@@ -1,0 +1,73 @@
+{
+ "_note": "Hand verification by reading the code at the pinned SHAs. TP = the finding is right; FP = wrong; unclear = defensible either way. Keys match out/samples.json.",
+ "dead_vibepiler_only": [
+  [["excalidraw","export","packages/utils/geometry/shape.ts","getPolygonShape"],"FP","imported via tsconfig paths alias `@excalidraw/utils/geometry/shape` in element/collision.ts and shapes.tsx; vibepiler does not resolve tsconfig `paths`"],
+  [["release-it","file","bin/release-it.js",""],"FP","the CLI itself: package.json `bin` entry; vibepiler does not read `bin`"],
+  [["scuttlepay","export","packages/shared/src/errors.ts","isScuttlePayError"],"FP","imported as `@scuttlepay/shared` by packages/mcp (pnpm workspace package); workspace package names are not resolved to their source"],
+  [["tower-of-time","export","src/prefabs/Player.ts","Player"],"FP","declaration merging: `export default interface Player` + `export default class Player`; Level.ts default-imports and `new Player(...)`s it, the default import is not linked to the class"],
+  [["zustand","file","src/react/shallow.ts",""],"FP","public subpath `zustand/react/shallow` (package.json exports `./*`), imported by tests through tsconfig paths"],
+  [["excalidraw","file","scripts/woff2/woff2-esbuild-plugins.js",""],"FP","required by scripts/buildUtils.js, which package.json scripts run; scripts are not entry points for vibepiler"],
+  [["scuttlepay","export","packages/shared/src/schemas.ts","ProductSearchParams"],"TP","exported type never imported anywhere in the monorepo (knip treats the workspace entry's exports as public API)"],
+  [["tower-of-time","export","src/prefabs/PlayerMenu.ts","MenuItemData"],"FP","cascade from the Player bug: used by Player.ts and Level.ts"],
+  [["zustand","export","src/react.ts","create"],"FP","zustand's main API: `export * from './react.ts'` in the entry src/index.ts; star re-exports of an entry module do not keep their targets alive"],
+  [["excalidraw","export","packages/excalidraw/data/library.ts","parseLibraryTokensFromUrl"],"FP","re-exported by packages/excalidraw/index.tsx (public API) and used by excalidraw-app via the `@excalidraw/excalidraw` alias"],
+  [["scuttlepay","export","packages/shared/src/errors.ts","ScuttlePayError"],"FP","used by packages/mcp and src/app/api/mcp via `@scuttlepay/shared`"],
+  [["tower-of-time","export","src/prefabs/PlayerMenu.ts","PlayerMenu"],"FP","cascade from the Player bug: constructed in Player.initializeMenu"],
+  [["zustand","file","src/vanilla/shallow.ts",""],"FP","imported by src/shallow.ts and src/react/shallow.ts, both public subpaths"],
+  [["excalidraw","export","packages/math/segment.ts","lineSegmentRotate"],"FP","public API of @excalidraw/math (index re-export), used by utils/collision.test.ts through the alias"],
+  [["scuttlepay","export","packages/shared/src/types.ts","ProductSearchResult"],"FP","used by packages/mcp/src/api-client.ts and src/server/services/shopify.service.ts via `@scuttlepay/shared`"]
+ ],
+ "dead_knip_only": [
+  [["excalidraw","export","packages/excalidraw/tests/helpers/colorize.ts","red"],"TP","only `yellow` is imported (setupTests.ts); vibepiler likely keeps `red` alive by member-name match"],
+  [["scuttlepay","export","src/components/ui/dialog.tsx","DialogFooter"],"TP","exported through a trailing `export { ... }` list, never imported; vibepiler misses exports declared by an export list"],
+  [["taxonomy","export","components/ui/dropdown-menu.tsx","DropdownMenuRadioItem"],"TP","same export-list pattern, never imported"],
+  [["tower-of-time","export","src/utils/GlobalSoundManager.ts","GlobalSoundManager"],"TP","the named export is never imported (every importer uses the default export); low value"],
+  [["zustand","file","examples/demo/src/components/Details.jsx",""],"FP","part of the examples/demo Vite app (entry index.html -> main.jsx); not a knip workspace"],
+  [["excalidraw","export","packages/excalidraw/components/Dialog.tsx","DialogSize"],"TP","used only inside its own file; the `export` is removable"],
+  [["scuttlepay","export","src/components/ui/table.tsx","TableFooter"],"TP","export-list pattern, never imported"],
+  [["taxonomy","export","components/ui/alert-dialog.tsx","AlertDialogTrigger"],"TP","export-list pattern, never imported"],
+  [["tower-of-time","export","src/components/InputManager.ts","InputMapping"],"TP","used only inside its own file"],
+  [["zustand","file","examples/starter/vite.config.ts",""],"FP","Vite config of the examples/starter app, not a knip workspace"],
+  [["excalidraw","export","packages/excalidraw/element/index.ts","newArrowElement"],"TP","unused barrel re-export: every consumer imports ./newElement directly"],
+  [["scuttlepay","export","src/server/services/spending.service.ts","SpendingDenialCode"],"TP","used only inside its own file"],
+  [["taxonomy","export","components/ui/toast.tsx","ToastAction"],"TP","export-list pattern; only referenced in-file (`typeof ToastAction`)"],
+  [["zustand","export","src/middleware.ts","StateStorage"],"FP","public type of the library entry `zustand/middleware`; knip cannot map package.json exports (dist paths) back to src"],
+  [["excalidraw","export","packages/excalidraw/actions/index.ts","actionResetZoom"],"TP","unused barrel re-export: textWysiwyg imports it from ../actions/actionCanvas"]
+ ],
+ "deps_vibepiler_only": [
+  [["excalidraw","unused","package.json","@excalidraw/prettier-config"],"FP","referenced by the package.json `prettier` field"],
+  [["release-it","unused","package.json","installed-check"],"FP","CLI run by the package.json `test` script"],
+  [["taxonomy","unused","package.json","nodemailer"],"FP","required peer of next-auth's EmailProvider (lib/auth.ts)"],
+  [["tower-of-time","unused","package.json","terser"],"FP","vite/config.prod.mjs sets `minify: 'terser'`"],
+  [["zustand","unused","package.json","json"],"FP","CLI run by the package.json `copy` script"],
+  [["excalidraw","unused","examples/with-nextjs/package.json","react"],"FP","Next.js app with JSX; peer of next and @excalidraw/excalidraw"],
+  [["taxonomy","unused","package.json","prop-types"],"FP","peer dependency of the installed lucide-react; no direct import"],
+  [["tower-of-time","unused","package.json","phaser-asset-pack-hashing"],"FP","CLI run by the package.json `build` script"],
+  [["zustand","unused","package.json","redux"],"FP","peer dependency of @redux-devtools/extension"],
+  [["excalidraw","unused","package.json","@vitest/ui"],"unclear","no reference in scripts or configs; only used by an ad-hoc `vitest --ui` (optional peer of vitest)"]
+ ],
+ "deps_tool_only": [
+  [["excalidraw","undeclared","","@excalidraw/prettier-config"],"FP","depcheck: referenced by excalidraw-app/package.json `prettier` field, declared at the yarn-workspaces root"],
+  [["release-it","unused","package.json","typescript"],"unclear","depcheck: no direct use; plausibly the peer that typescript-eslint/knip need"],
+  [["scuttlepay","unused","package.json","prettier-plugin-tailwindcss"],"FP","depcheck: listed in prettier.config.js `plugins`"],
+  [["taxonomy","unused","package.json","eslint-plugin-react"],"TP","knip+depcheck: .eslintrc.json extends next/core-web-vitals, which brings its own copy; no direct reference"],
+  [["tower-of-time","unused","package.json","typescript"],"FP","depcheck: the repo has tsconfig.json; typescript is the type checker"],
+  [["zustand","unused","package.json","eslint-import-resolver-typescript"],"FP","depcheck: referenced in eslint.config.mjs `import/resolver: { typescript }`"],
+  [["excalidraw","unused","package.json","@types/socket.io-client"],"TP","depcheck: socket.io-client 4.7 ships its own types; the @types stub is dead weight"],
+  [["scuttlepay","unused","package.json","tailwindcss"],"FP","depcheck: `@import \"tailwindcss\"` in src/styles/globals.css"],
+  [["taxonomy","unused","package.json","@radix-ui/react-switch"],"TP","knip: only imported by components/ui/switch.tsx, itself an unused file"],
+  [["zustand","undeclared","","@react-three/drei"],"FP","knip: declared in examples/demo/package.json, which knip does not treat as a workspace"]
+ ],
+ "unused_import_vibepiler_only": [
+  [["excalidraw","import","packages/excalidraw/element/heading.ts","LocalPoint"],"FP","used in generic constraints `<Point extends GlobalPoint | LocalPoint>`"],
+  [["scuttlepay","import","drizzle.config.ts","Config"],"FP","used in `satisfies Config`"],
+  [["taxonomy","import","components/ui/command.tsx","DialogProps"],"FP","used in `interface CommandDialogProps extends DialogProps`"],
+  [["zustand","import","tests/types.test.tsx","StoreMutatorIdentifier"],"FP","used in a generic constraint inside a type annotation"],
+  [["excalidraw","import","packages/excalidraw/data/restore.ts","StrokeRoundness"],"FP","used in a type literal inside a generic constraint"],
+  [["scuttlepay","import","src/components/ui/bento-grid.tsx","ComponentPropsWithoutRef"],"FP","used in `interface ... extends ComponentPropsWithoutRef<\"div\">`"],
+  [["taxonomy","import","components/ui/button.tsx","VariantProps"],"FP","used in `interface ButtonProps extends ..., VariantProps<...>`"],
+  [["zustand","import","src/middleware/ssrSafe.ts","StoreMutatorIdentifier"],"FP","used in generic constraints `Mps extends [StoreMutatorIdentifier, unknown][]`"],
+  [["excalidraw","import","examples/with-script-in-browser/components/CustomFooter.tsx","React"],"TP","`jsx: react-jsx` and no `React.` use; ESLint misses it because of its JSX-pragma assumption"],
+  [["scuttlepay","import","src/components/ui/animated-list.tsx","ComponentPropsWithoutRef"],"FP","used in `interface AnimatedListProps extends ComponentPropsWithoutRef<\"div\">`"]
+ ]
+}

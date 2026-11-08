@@ -31,7 +31,7 @@ map = [
 ]
 
 [tool.vibepiler]
-ignore = ["tests/fixtures/**"]                     # deliberately bloated sample projects for the test suite
+ignore = ["tests/fixtures/**", "scripts/eval/**"]  # bloated sample projects for the tests; the evaluation harness and its bug repros
 accept = [                                         # self-findings judged intentional; counted, not reported
     "class-as-function:*Embedder",                 # they implement the Embedder protocol and hold a loaded model
     "thin-wrapper:ProgramGraph.*_edges",           # the public API is one accessor per direction
