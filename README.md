@@ -318,17 +318,23 @@ What the tier produces, concretely:
 
 **The Semantic tab** draws all of it as one map. Every function is a dot placed by its embedding, so *nearby means similar*, wherever the files live; concept and theme labels sit on the functions they name. It is a plain `<canvas>` inside the single HTML file (no GPU, no library) and stays smooth with thousands of functions: drag to pan, scroll or pinch to zoom at the cursor, hover for names, click for detail.
 
-![The Semantic tab on vibepiler itself: 469 functions placed by meaning, coloured by health: tangled functions amber, copies red, the rest dim; themes labelled in capitals](docs/img/report-semantic.png)
+![The Semantic tab on vibepiler itself, light theme: 542 functions placed by meaning, coloured by health: tangled functions amber, copies crimson, the rest grey; themes labelled in capitals](docs/img/report-semantic.png)
 
-*The Semantic tab on vibepiler itself, coloured by health. Tangled functions (complexity over the limit) are amber and cluster in the pass code at the bottom; red pairs are functions that do the same job.*
+*The Semantic tab on vibepiler itself, coloured by health, in the light theme. Tangled functions (cognitive complexity over 15) are amber and cluster in the pass code; crimson pairs are functions that do the same job.*
+
+The map follows the page theme: a deep field on screen in the dark theme, paper in the light one, which is what the figures here use. Both colour sets are checked with a palette validator for colour-blind separation (the two problem colours stay apart under deuteranopia and protanopia) and contrast against their background, and an unused function is a ring, not only a colour, so the figures hold up in print and in greyscale.
 
 - **Lenses.** *Map* shows functions only. *Flow* animates calls from caller to callee: streams between concepts when zoomed out, single calls when zoomed in; hover or click a stream for the calls it carries. *Copies* ties duplicates together: solid for the same code, dashed for the same shape, dotted for the same meaning.
 - **Colour.** *health* (the default) gives each function its worst status: copied, tangled, unused or healthy, with problems drawn on top. Or colour by a measure (**bloat, cognitive or cyclomatic complexity, maintainability, typed, documented, live, size, nesting, callers**) and drag the threshold slider: functions past the line light from dim to bright and the rest fade. The slider starts at the compiler's own limit and steps through the values that occur, so every notch changes the picture. *folder* and *theme* show where code lives.
 - **Click a function** to see what leads to it and what it sets off (its call cone, up to three hops), its copies, its numbers and the first lines of its code.
 
-![Flow on vibepiler itself: Compiler.run selected, its call cone drawn as moving dashed streams, the side panel listing its calls, complexity and code](docs/img/report-semantic-flow.png)
+![Flow on vibepiler itself: Compiler.run selected, its call cone drawn as dashed streams, the side panel with its metrics as 0–1 bars, its calls and code](docs/img/report-semantic-flow.png)
 
-*Flow with `Compiler.run` selected: the calls it sets off stream out to the passes and emitters; the panel shows it is tangled (complexity 18) and lists what it calls.*
+*Flow with `Compiler.run` selected: the calls it sets off stream out to the passes and emitters. The panel shows every [metric](#metrics) as a value in [0, 1] with its raw number under it: cognitive 40% (25, limit 15), cyclomatic 44% (18, limit 10), maintainability 0% (MI 33.7, limit 20), typed 86% (6 of 7).*
+
+![The map coloured by cognitive complexity: the slider at 16, the 62 functions past SonarQube's limit of 15 lit from light amber to dark brown, the rest faded](docs/img/report-semantic-cognitive.png)
+
+*Coloured by cognitive complexity, the slider starting just past the limit: 62 of 542 functions light up, darker the further past it they go.*
 
 The map is projected with PCA by default. Install `vibepiler[map]` to project with UMAP instead, which keeps neighbourhoods far better (seeded, so the map is the same on every run); it is a separate extra because umap-learn pulls in scikit-learn, scipy and numba, about 150 MB, and the rest of the tool should keep installing in seconds.
 
