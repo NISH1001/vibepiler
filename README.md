@@ -374,7 +374,7 @@ Every finding also carries an `action`, delete, fold or simplify, and the **elim
 
 ### Bootstrapped on itself
 
-The first thing it was run on was vibepiler. Six rounds of the loop, each measured with `--baseline`:
+The first thing it was run on was vibepiler. Six rounds of the loop, each measured with `--baseline` (a seventh, below, came with the metrics):
 
 ![Bloat and tangle over the six bootstrap rounds, and the removable lines per round](docs/img/bootstrap.png)
 
@@ -398,7 +398,9 @@ Round five added the liveness pass, about a thousand lines, and ran it on itself
 
 Round six came after v0.2, which added choosing paths, reporting scope and test-only code. Those features took bloat from 23.1% back up to 23.7%, and most of that was one function: supporting a manifest per folder and PEP 723 script blocks had grown `BloatPass._dependencies` from complexity 37 to 51. It became five named steps (collect the imported packages, then for each manifest the ones it never uses and the ones it never declares), at 18, and the set of local module names is now built once instead of once per package. The decorator handling both language adapters had copied (`visit_decorator`, `decorator_name`, a proven duplicate and a 97% near-duplicate) moved into one shared `DecoratorWalk`, and the mirrored `ProgramGraph.out_edges` / `in_edges` pair was accepted as intentional. Waste went from 26 lines to 18 and bloat from 23.7% to 23.2%. The new `test-only` finding, run on itself, flags just `vibepiler.compile`: nothing inside the repo calls the public API except its tests, which is what a library looks like.
 
-What is left is honest: 78 functions over the complexity threshold, most of them tree-walkers that are long because the grammar is, and about 1,165 lines alive only by name because 56% of call sites link. The second number is the one a type-aware linker would move.
+Round seven came with the [metrics](#metrics), and the first thing cognitive complexity did was find a linker bug. It reported two helpers inside the new `cognitive()` function as dead. They were live: a nested function that called its sibling linked to nothing, because a bare name was looked up only among the current scope's own children, never through the enclosing function. Fixing that took vibepiler's waste from 42 lines to 30 and its live score to 100%. Then the eight functions at the top of the cognitive table were split into named steps, the worst first: call and reference linking (75), import resolution (63), the JS `export` and class visitors (66, 59), CommonJS exports (57), duplicate detection and bloat's own claim classifier (54 each), the DOT emitter (51) and reachability (50). Each refactor was checked against a fingerprint of the whole output (every node, edge, finding and metric) on the fixtures and a frozen copy of vibepiler, and the visitors also against the previous commit on every syntactic form they handle; nothing moved. Cognitive went from 17.6% to 12.0% (worst function 75 → 45), cyclomatic from 18.9% to 14.5%.
+
+What is left is honest: 62 functions over the cognitive limit, most of them tree-walkers that are long because the grammar is, about 1,200 lines alive only by name because 57% of call sites link, and 38% of the public surface documented. The second number is the one a type-aware linker would move.
 
 ## Liveness, the metric
 
@@ -447,11 +449,11 @@ The numbers reviewers know from SonarQube, radon and Visual Studio, for Python, 
 A count goes to [0, 1] as its excess over a fixed limit, `(c − limit) / c`: 0 at or under the limit, 0.5 at twice it, never 1. A score where high is good goes as `(limit − v) / limit` below its limit. The limits are the published ones (SonarQube's 15 for cognitive complexity, McCabe's and NIST's 10 for cyclomatic, Visual Studio's 20 for MI) and each is a threshold you can change. A fixed limit, not the repo's own spread, so a value means the same thing in every repo and every run.
 
 ```
-cognitive 17.6% (66 of 518 functions over 15; worst 75)
-cyclomatic 18.9% (90 of 518 functions over 10; worst 40)
-mi 0.0% (0 of 518 functions below 20; worst 26.6)
-typed 94.3% (1354 of 1436 parameters and returns annotated)
-documented 37.7% (177 of 470 public functions, classes and modules documented)
+cognitive 12.0% (62 of 548 functions over 15; worst 45)
+cyclomatic 14.5% (88 of 548 functions over 10; worst 35)
+mi 0.0% (0 of 548 functions below 20; worst 27.6)
+typed 94.6% (1465 of 1548 parameters and returns annotated)
+documented 37.8% (180 of 476 public functions, classes and modules documented)
 ```
 
 Cognitive complexity is what bloat's tangle counts: it measures how hard the code is to follow, which is what tangle means, where cyclomatic counts the paths a test suite has to cover. Halstead volume, difficulty and effort are stored on every function (`attrs["halstead"]`) and reach [0, 1] through the MI. Operands are identifier and literal tokens, operators every other token, the classic reading; radon counts only arithmetic and boolean operators, so its MI runs higher.
