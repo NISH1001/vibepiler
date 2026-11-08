@@ -144,47 +144,51 @@ class BloatScorePass(Pass):
     # ----- 1. what each finding claims -----------------------------------------------------------
     def _claims_and_terms(self, program: Program) -> tuple[list[Claim], dict[str, list[Term]]]:
         g = program.graph
-        th = program.config.thresholds
         symbols = g.nodes(UNIT_KINDS)
-        sym_index = {(n.file, n.qualname): n for n in symbols}
+        self._sym_index = {(n.file, n.qualname): n for n in symbols}
+        self._contained = {n.id: sum(c.loc for c in g.children(n.id) if c.kind in UNIT_KINDS) for n in [*symbols, *g.nodes(NodeKind.MODULE)]}
         mod_by_name = {n.name: n for n in g.nodes(NodeKind.MODULE)}
-        contained = {n.id: sum(c.loc for c in g.children(n.id) if c.kind in UNIT_KINDS) for n in [*symbols, *g.nodes(NodeKind.MODULE)]}
         claims: list[Claim] = []
         tangles: dict[str, list[Term]] = defaultdict(list)
         in_cycle: dict[str, set[str]] = {}
-
-        def members(d: Diagnostic) -> list[Node]:
-            found = [sym_index.get((str(loc).rsplit(":", 1)[0], q)) for q, loc in zip(d.data.get("members", []), d.data.get("locations", []))]
-            return sorted((n for n in found if n is not None), key=lambda n: (n.file or "", n.start_line or 0))
-
         for d in program.diagnostics:
             if d.pass_name == self.name:
                 continue
-            code = d.code
-            d.data.setdefault("action", ACTION.get(code, "simplify"))
-            d.data.setdefault("confidence", "proven" if code in PROVEN else "model" if code in MODEL else "inferred")
-            n = g.node(d.node_id) if d.node_id and g.has_node(d.node_id) else None
-            if code in DUPLICATES:
-                claims += [(float(m.loc), m, d) for m in (members(d) or ([n] if n else []))[1:]]  # the first copy is the keeper
-            elif code == "unused-import" and d.file and g.has_node(f"mod:{d.file}"):
-                claims.append((1.0, g.node(f"mod:{d.file}"), d))
-            elif code == "import-cycle":
+            d.data.setdefault("action", ACTION.get(d.code, "simplify"))
+            d.data.setdefault("confidence", "proven" if d.code in PROVEN else "model" if d.code in MODEL else "inferred")
+            if d.code == "import-cycle":
                 ids = {mod_by_name[name].id for name in d.data.get("modules", []) if name in mod_by_name}
                 for mid in ids:
                     in_cycle.setdefault(mid, set()).update(ids)
-            elif n is None:
-                continue
-            elif code in SPAN:
-                if d.data.get("loc"):
-                    claims.append((float(d.data["loc"]), n, d))
-            elif (asked := self._lines_asked(code, n, contained)) is not None:
-                claims.append((asked, n, d))
-            elif (term := self._term(code, n, d, th)) is not None:
-                tangles[n.id].append((term, code))
+            else:
+                self._classify(program, d, claims, tangles)
         for mid, cyc in in_cycle.items():  # the share of a module's imports that stay inside its cycle
             outs = [e for e in g.out_edges(mid, EdgeKind.IMPORTS) if not e.attrs.get("implicit")]
             tangles[mid].append((sum(1 for e in outs if e.dst in cyc) / len(outs) if outs else 0.0, "import-cycle"))
         return claims, tangles
+
+    def _classify(self, program: Program, d: Diagnostic, claims: list[Claim], tangles: dict[str, list[Term]]) -> None:
+        """One finding: a claim on lines (who could go, how many) or a tangle term (how far past a limit)."""
+        g, code = program.graph, d.code
+        n = g.node(d.node_id) if d.node_id and g.has_node(d.node_id) else None
+        if code in DUPLICATES:
+            claims += [(float(m.loc), m, d) for m in (self._members(d) or ([n] if n else []))[1:]]  # the first copy is the keeper
+        elif code == "unused-import" and d.file and g.has_node(f"mod:{d.file}"):
+            claims.append((1.0, g.node(f"mod:{d.file}"), d))
+        elif n is None:
+            return
+        elif code in SPAN:
+            if d.data.get("loc"):
+                claims.append((float(d.data["loc"]), n, d))
+        elif (asked := self._lines_asked(code, n, self._contained)) is not None:
+            claims.append((asked, n, d))
+        elif (term := self._term(code, n, d, program.config.thresholds)) is not None:
+            tangles[n.id].append((term, code))
+
+    def _members(self, d: Diagnostic) -> list[Node]:
+        """The nodes a duplicate finding names, in file order."""
+        found = [self._sym_index.get((str(loc).rsplit(":", 1)[0], q)) for q, loc in zip(d.data.get("members", []), d.data.get("locations", []))]
+        return sorted((n for n in found if n is not None), key=lambda n: (n.file or "", n.start_line or 0))
 
     @staticmethod
     def _lines_asked(code: str, n: Node, contained: dict[str, int]) -> float | None:

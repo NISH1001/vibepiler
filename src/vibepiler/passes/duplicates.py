@@ -22,88 +22,69 @@ class DuplicatesPass(Pass):
     cost = 2
 
     def run(self, program: Program) -> list[Diagnostic]:
-        th = program.config.thresholds
-        g = program.graph
-        entries: list[tuple[Node, list[str]]] = []
+        entries = self._entries(program)
+        exact, dup_loc = self._exact(entries)
+        exact_members = {i for d in exact for i in d.data["ids"]}
+        near = self._near(program, [(n, seq) for n, seq in entries if n.id not in exact_members])
+        program.metrics["duplicates"] = {"exact_groups": len(exact), "near_pairs": len(near), "removable_loc": dup_loc, "candidates": len(entries)}
+        return exact + near
+
+    @staticmethod
+    def _entries(program: Program) -> list[tuple[Node, list[str]]]:
+        """Every function big enough to compare, with its structural fingerprint; migrations are left alone."""
+        g, min_nodes = program.graph, program.config.thresholds.duplicate_min_nodes
+        entries = []
         for n in g.nodes(CALLABLE_KINDS):
             d = program.symbol_def(n)
-            if d is None or d.node is None:
-                continue
-            if g.node(n.module).attrs.get("is_migration"):  # type: ignore[arg-type]
+            if d is None or d.node is None or g.node(n.module).attrs.get("is_migration"):  # type: ignore[arg-type]
                 continue  # each migration is frozen once written: repeating the last one's shape is the point
-            spec = program.spec_for(n)
-            body = d.node.child_by_field_name("body") or d.node
-            seq = type_sequence(body, spec.leaf_types)
-            if len(seq) < th.duplicate_min_nodes:
-                continue
-            entries.append((n, seq))
+            seq = type_sequence(d.node.child_by_field_name("body") or d.node, program.spec_for(n).leaf_types)
+            if len(seq) >= min_nodes:
+                entries.append((n, seq))
+        return entries
 
-        diags: list[Diagnostic] = []
-        exact: dict[str, list[Node]] = defaultdict(list)
+    def _exact(self, entries: list[tuple[Node, list[str]]]) -> tuple[list[Diagnostic], int]:
+        """Groups with the same fingerprint, the first copy kept; and the lines the other copies take."""
+        groups: dict[str, list[Node]] = defaultdict(list)
         for n, seq in entries:
             h = hashlib.sha1(" ".join(seq).encode()).hexdigest()
             n.attrs["shape_hash"] = h[:12]
-            exact[h].append(n)
-        exact_members: set[str] = set()
-        dup_loc = 0
-        for h, members in exact.items():
+            groups[h].append(n)
+        diags, dup_loc = [], 0
+        for members in groups.values():
             if len(members) < 2:
                 continue
             members.sort(key=lambda m: (m.file or "", m.start_line or 0))
-            exact_members.update(m.id for m in members)
-            dup_loc += sum(m.loc for m in members[1:])
-            first = members[0]
-            diags.append(
-                self.diag(
-                    "duplicate-function",
-                    Severity.WARNING,
-                    f"{len(members)} structurally identical functions: " + ", ".join(f"`{m.qualname}`" for m in members),
-                    node=first,
-                    suggestion=f"Keep one and delete the rest ({sum(m.loc for m in members[1:])} lines), or parameterize the differences.",
-                    members=[m.qualname for m in members],
-                    ids=[m.id for m in members],
-                    locations=[m.location for m in members],
-                    loc=sum(m.loc for m in members),
-                )
-            )
+            extra = sum(m.loc for m in members[1:])
+            dup_loc += extra
+            diags.append(self.diag(
+                "duplicate-function", Severity.WARNING,
+                f"{len(members)} structurally identical functions: " + ", ".join(f"`{m.qualname}`" for m in members),
+                node=members[0], suggestion=f"Keep one and delete the rest ({extra} lines), or parameterize the differences.",
+                members=[m.qualname for m in members], ids=[m.id for m in members], locations=[m.location for m in members], loc=sum(m.loc for m in members),
+            ))
+        return diags, dup_loc
 
-        near = 0
-        shingled = [
-            (n, self._shingles(seq), len(seq))
-            for n, seq in entries
-            if n.id not in exact_members and not g.node(n.module).attrs.get("is_test")  # type: ignore[arg-type]
-        ]
+    def _near(self, program: Program, entries: list[tuple[Node, list[str]]]) -> list[Diagnostic]:
+        """Pairs past the similarity threshold, of similar length, outside tests, in file order."""
+        g = program.graph
+        shingled = [(n, self._shingles(seq), len(seq)) for n, seq in entries if not g.node(n.module).attrs.get("is_test")]  # type: ignore[arg-type]
         pairs = []
-        for i, j, sim in similar_pairs([sh for _, sh, _ in shingled], th.near_duplicate_similarity):
+        for i, j, sim in similar_pairs([sh for _, sh, _ in shingled], program.config.thresholds.near_duplicate_similarity):
             (a, _, la), (b, _, lb) = shingled[i], shingled[j]
             if max(la, lb) > min(la, lb) * MAX_LENGTH_RATIO or (a.file == b.file and a.start_line == b.start_line):
                 continue
-            if (a.file or "", a.start_line or 0) > (b.file or "", b.start_line or 0):
-                a, b = b, a
+            a, b = sorted((a, b), key=lambda m: (m.file or "", m.start_line or 0))
             pairs.append((a, b, sim))
         pairs.sort(key=lambda t: (t[0].file or "", t[0].start_line or 0, t[1].file or "", t[1].start_line or 0))
-        for a, b, sim in pairs:
-            near += 1
-            diags.append(
-                self.diag(
-                    "near-duplicate-function",
-                    Severity.INFO,
-                    f"`{a.qualname}` and `{b.qualname}` are {sim:.0%} structurally similar",
-                    node=a,
-                    suggestion="Consider merging them behind a parameter.",
-                    members=[a.qualname, b.qualname],
-                    ids=[a.id, b.id],
-                    locations=[a.location, b.location],
-                    similarity=round(sim, 3),
-                )
+        return [
+            self.diag(
+                "near-duplicate-function", Severity.INFO, f"`{a.qualname}` and `{b.qualname}` are {sim:.0%} structurally similar",
+                node=a, suggestion="Consider merging them behind a parameter.",
+                members=[a.qualname, b.qualname], ids=[a.id, b.id], locations=[a.location, b.location], similarity=round(sim, 3),
             )
-        program.metrics["duplicates"] = {
-            "exact_groups": sum(1 for d in diags if d.code == "duplicate-function"),
-            "near_pairs": near,
-            "removable_loc": dup_loc,
-            "candidates": len(entries),
-        }
-        return diags
+            for a, b, sim in pairs
+        ]
 
     @staticmethod
     def _shingles(seq: list[str], k: int = 4) -> set[str]:
