@@ -90,24 +90,42 @@ class Compiler:
         on_phase: PhaseCallback | None = None,
         *,
         language: str | None = None,
+        languages: list[str] | None = None,
         include: list[str] | None = None,
         exclude: list[str] | None = None,
         isolate: bool | None = None,
         max_tokens: int | None = None,
         use_cache: bool | None = None,
+        model: str | None = None,
+        clone_dir: str | Path | None = None,
+        refresh: bool = False,
         verbose: bool = False,
     ) -> None:
         self.verbose = verbose  # every stage's progress to loguru's sinks (stderr by default), as the CLI's -v
         with progress_verbose(verbose):
-            self._setup(source, config, on_phase, language, include, exclude, isolate, max_tokens, use_cache)
+            self._setup(source, config, on_phase, language, include, exclude, isolate, clone_dir, refresh)
+            self._override(languages=languages, max_tokens=max_tokens, use_cache=use_cache, model=model)
 
-    def _setup(self, source, config, on_phase, language, include, exclude, isolate, max_tokens, use_cache) -> None:  # noqa: ANN001, PLR0913
+    def _override(self, languages: list[str] | None, max_tokens: int | None, use_cache: bool | None, model: str | None) -> None:
+        """The CLI's per-run flags, from Python: each one replaces the project's config value when given."""
+        if languages is not None:  # --lang python,typescript: the languages a directory is read for
+            if bad := [x for x in languages if x not in available()]:
+                raise ValueError(f"unknown language {bad[0]!r}; known: {available()}")
+            self.config.languages = list(languages)
+        if max_tokens is not None:  # -O3: tokens embedded per function, 0 for the model's whole context
+            self.config.embedding_max_tokens = max_tokens
+        if use_cache is not None:  # -O3: False embeds everything afresh and leaves the embedding cache untouched
+            self.config.embedding_cache = use_cache
+        if model is not None:  # -O3: the embedding model, as --model
+            self.config.embedding_model = model
+
+    def _setup(self, source, config, on_phase, language, include, exclude, isolate, clone_dir, refresh) -> None:  # noqa: ANN001, PLR0913
         if language is not None and language not in available():
             raise ValueError(f"unknown language {language!r}; known: {available()}")
         self.remote = parse_remote(source) if isinstance(source, str) else None
         if self.remote is not None:  # cloned (or refreshed) into the cache, then compiled as the folder it is
             include = [*(include or []), *filter(None, [remote_subpath(str(source))])]
-            source = fetch_remote(*self.remote, log=lambda m: log.debug("remote: {}", m))
+            source = fetch_remote(*self.remote, cache=Path(clone_dir) if clone_dir else None, refresh=refresh, log=lambda m: log.debug("remote: {}", m))
         self.kind, target = classify_source(source)
         self.language = language
         self.target = target if self.kind == "string" else target.resolve()
@@ -120,10 +138,6 @@ class Compiler:
             self._given = [source_from_file(self.target, self.root, language)]
         cfg = config or (Config() if self.kind == "string" else Config.load(self.root))
         self.config = replace(cfg, include=list(cfg.include), exclude=list(cfg.exclude))  # chaining never edits the caller's Config
-        if max_tokens is not None:  # -O3: tokens embedded per function, 0 for the model's whole context
-            self.config.embedding_max_tokens = max_tokens
-        if use_cache is not None:  # -O3: False embeds everything afresh and leaves the embedding cache untouched
-            self.config.embedding_cache = use_cache
         self.on_phase = on_phase or (lambda *_: None)
         self.include(*(include or []))
         self.exclude(*(exclude or []))
@@ -244,14 +258,21 @@ def compile(  # noqa: A001 - the compiler metaphor, on purpose
     *,
     config: Config | None = None,
     language: str | None = None,
+    languages: list[str] | None = None,
     include: list[str] | None = None,
     exclude: list[str] | None = None,
     isolate: bool | None = None,
     max_tokens: int | None = None,
     use_cache: bool | None = None,
+    model: str | None = None,
+    clone_dir: str | Path | None = None,
+    refresh: bool = False,
     verbose: bool = False,
     on_phase: PhaseCallback | None = None,
     **run,  # noqa: ANN003
 ) -> CompileResult:
     """One call: `Compiler(source, ...).run(...)`. `run` keywords: opt_level, emit, out_dir, only, skip, on_pass."""
-    return Compiler(source, config, on_phase, language=language, include=include, exclude=exclude, isolate=isolate, max_tokens=max_tokens, use_cache=use_cache, verbose=verbose).run(**run)
+    return Compiler(
+        source, config, on_phase, language=language, languages=languages, include=include, exclude=exclude, isolate=isolate,
+        max_tokens=max_tokens, use_cache=use_cache, model=model, clone_dir=clone_dir, refresh=refresh, verbose=verbose,
+    ).run(**run)

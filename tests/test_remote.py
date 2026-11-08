@@ -58,3 +58,21 @@ def test_compile_accepts_git_url(tmp_path):
     assert res.exit_code == 0, res.output
     assert (out / "ir.json").is_file()
     assert "cloned" in res.output
+
+
+def test_python_clones_where_told_and_refreshes_like_the_cli(tmp_path):
+    from vibepiler.compiler import Compiler
+
+    src = tmp_path / "origin"
+    src.mkdir()
+    (src / "a.py").write_text("def f():\n    return 1\n")
+    git = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=src, check=True)
+    subprocess.run([*git, "add", "-A"], cwd=src, check=True)
+    subprocess.run([*git, "commit", "-q", "-m", "init"], cwd=src, check=True)
+    clones = tmp_path / "clones"
+    c = Compiler(f"file://{src}", clone_dir=clones)  # --cache DIR
+    assert c.root.parent == clones / "repos" and (c.root / "a.py").is_file()
+    (c.root / "stray.py").write_text("x = 1\n")  # left in the clone
+    assert (Compiler(f"file://{src}", clone_dir=clones).root / "stray.py").exists()  # the clone is reused (and pulled)
+    assert not (Compiler(f"file://{src}", clone_dir=clones, refresh=True).root / "stray.py").exists()  # --refresh clones afresh
