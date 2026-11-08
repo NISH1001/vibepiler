@@ -81,3 +81,4 @@ def test_the_readme_says_how_to_add_vibepiler_to_a_harness():
     assert "/plugin marketplace add NISH1001/vibepiler" in readme and "/plugin install vibepiler@vibepiler" in readme
     assert "/vibepiler:compile" in readme and "/vibepiler:cleanup" in readme
     assert ".agents/skills" in readme  # other harnesses: copy the folder
+    assert "## Add to your coding agent harness" in readme and "--scope local" in readme

@@ -36,7 +36,7 @@ Languages: **Python**, **JavaScript/TypeScript** (incl. JSX/TSX). Adding a langu
 You need [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`). Nothing else: no clone, no install step.
 
 ```bash
-# a project on disk (add @v0.4.3 after the URL to pin a release)
+# a project on disk (add @v0.4.4 after the URL to pin a release)
 uvx --from git+https://github.com/NISH1001/vibepiler vibepiler compile path/to/project
 
 # a repo on GitHub: owner/repo, owner/repo@branch, or any GitHub / git URL
@@ -45,6 +45,8 @@ uvx --from git+https://github.com/NISH1001/vibepiler vibepiler compile igaurab/g
 # the project you are standing in
 cd my-vibe-coded-app && uvx --from git+https://github.com/NISH1001/vibepiler vibepiler compile .
 ```
+
+Using a coding agent? [Add vibepiler to your harness](#add-to-your-coding-agent-harness): `/plugin marketplace add NISH1001/vibepiler` in Claude Code, then `/vibepiler:compile`.
 
 ### Choosing what to compile
 
@@ -119,7 +121,7 @@ vibepiler compile . -R -q                                   # the plan
 vibepiler compile . -R -q --baseline vibepiler-out/ir.json  # what moved
 ```
 
-**3. Let your coding agent do the loop.** Every remark carries the file, the line, the action and a suggestion, so the plan is a to-do list an agent can execute. The [plugin](#in-your-coding-agent) teaches Claude Code (and any agent that reads skills) to run it as `/vibepiler:cleanup`; without it, a prompt that works:
+**3. Let your coding agent do the loop.** Every remark carries the file, the line, the action and a suggestion, so the plan is a to-do list an agent can execute. The [plugin](#add-to-your-coding-agent-harness) teaches Claude Code (and any agent that reads skills) to run it as `/vibepiler:cleanup`; without it, a prompt that works:
 
 > Run `vibepiler compile . -R -q`. Apply the first remark that is `proven` or `inferred`, run the tests, then re-run vibepiler with `--baseline` and show me what moved. Stop when the plan is empty or a remark looks wrong, and tell me which.
 
@@ -517,7 +519,7 @@ semantic_similarity = 0.72          # -O3; omit to use the per-model default
 responsibility_similarity = 0.32    # -O3; omit to use the per-model default
 ```
 
-## In your coding agent
+## Add to your coding agent harness
 
 vibepiler ships as a [Claude Code plugin](https://code.claude.com/docs/en/plugins) with two [Agent Skills](https://agentskills.io): the agent learns to run vibepiler, read its report, and work through the elimination plan with your tests between edits.
 
@@ -528,7 +530,7 @@ vibepiler ships as a [Claude Code plugin](https://code.claude.com/docs/en/plugin
 /plugin install vibepiler@vibepiler
 ```
 
-or, from a shell, `claude plugin marketplace add NISH1001/vibepiler && claude plugin install vibepiler@vibepiler`. `claude plugin marketplace update` picks up new releases. Then ask in plain words ("what is dead in this repo?", "clean up the duplicated helpers") or call a skill:
+or, from a shell, `claude plugin marketplace add NISH1001/vibepiler && claude plugin install vibepiler@vibepiler`. `claude plugin marketplace update` picks up new releases. To pin a release, add it to the repo: `NISH1001/vibepiler@v0.4.4`. To try it in one folder only, without installing it globally, run both commands from that folder with `--scope local` (recorded in its `.claude/settings.local.json`, only for you). Then ask in plain words ("what is dead in this repo?", "clean up the duplicated helpers") or call a skill:
 
 ```
 /vibepiler:compile                      # run vibepiler (-O2) and summarise: size line, top of the plan, worst complexity
