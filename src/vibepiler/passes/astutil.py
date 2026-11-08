@@ -2,21 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-
 from tree_sitter import Node
-
-
-def descendants_excluding(node: Node, stop_types: frozenset[str]) -> Iterator[Node]:
-    """Pre-order traversal that does not descend into nested nodes of `stop_types`."""
-    stack = [node]
-    while stack:
-        cur = stack.pop()
-        yield cur
-        for child in reversed(cur.children):
-            if child.type in stop_types:
-                continue
-            stack.append(child)
 
 
 def type_sequence(node: Node, leaf_types: frozenset[str]) -> list[str]:
