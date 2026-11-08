@@ -7,6 +7,7 @@ description = "A compiler for vibe-coded software: parse a whole project into a 
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "loguru>=0.7",
     "networkx>=3.5",
     "pathspec>=0.12",
     "rich>=13",

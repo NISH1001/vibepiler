@@ -1,8 +1,11 @@
-"""Verbose mode: what the slow passes are doing while they run, with memory, through the `vibepiler` logger."""
+"""Verbose mode: what the slow passes are doing while they run, with memory, through loguru (`vibepiler` silent until enabled)."""
 
-import logging
+import os
+import subprocess
+import sys
 
 import pytest
+from loguru import logger
 from typer.testing import CliRunner
 
 from test_semantic import FakeEmbedder
@@ -19,32 +22,58 @@ def fake_embedder(monkeypatch, tmp_path):
     monkeypatch.setattr(embed, "CACHE_DIR", tmp_path / "emb")
 
 
+@pytest.fixture()
+def logs():
+    """Every vibepiler record while the test runs: (message, extra)."""
+    seen = []
+    logger.enable("vibepiler")
+    sink = logger.add(lambda m: seen.append((m.record["message"], m.record["extra"])), level="DEBUG", filter="vibepiler")
+    yield seen
+    logger.remove(sink)
+    logger.disable("vibepiler")
+
+
+def test_vibepiler_is_silent_until_enabled():
+    seen = []
+    sink = logger.add(lambda m: seen.append(m), level="DEBUG")
+    try:
+        with timed("quiet step"):
+            pass
+    finally:
+        logger.remove(sink)
+    assert seen == []  # a library: `import vibepiler` prints nothing unless asked
+
+
+def test_vibepiler_debug_prints_every_step_to_stderr():
+    code = "from vibepiler.progress import timed\nwith timed('loud step'):\n    pass\n"
+    out = subprocess.run([sys.executable, "-c", code], env={**os.environ, "VIBEPILER_DEBUG": "1"}, capture_output=True, text=True, check=True)
+    assert "loud step" in out.stderr and "GB peak" in out.stderr
+
+
 def test_memory_reports_a_peak_in_gigabytes():
     now, peak = memory()
     assert peak > 0 and (now is None or 0 < now <= peak * 1.5)
 
 
-def test_timed_logs_the_step_with_seconds_and_memory(caplog):
-    with caplog.at_level(logging.DEBUG, logger="vibepiler"), timed("similarity"):
+def test_timed_logs_the_step_with_seconds_and_memory(logs):
+    with timed("similarity"):
         sum(range(1000))
-    (rec,) = [r for r in caplog.records if r.getMessage().startswith("similarity")]
-    assert " s" in rec.getMessage() and "GB peak" in rec.getMessage()
+    (msg,) = [m for m, _ in logs if m.startswith("similarity")]
+    assert " s" in msg and "GB peak" in msg
 
 
-def test_embedding_logs_the_cache_every_batch_and_progress(caplog):
+def test_embedding_logs_the_cache_every_batch_and_progress(logs):
     texts = [f"def f{i}(x):\n    return x + {i}\n" * (1 + i % 5) for i in range(70)]
-    with caplog.at_level(logging.DEBUG, logger="vibepiler"):
-        embed.embed_texts(FakeEmbedder(), texts)
-    msgs = [r.getMessage() for r in caplog.records]
+    embed.embed_texts(FakeEmbedder(), texts)
+    msgs = [m for m, _ in logs]
     assert any(m.startswith("cache ") and "0 reused, 70 to embed" in m for m in msgs)
     batches = [m for m in msgs if m.startswith("batch ")]
     assert len(batches) >= 3 and "longest" in batches[0] and "GB peak" in batches[0]
-    progress = [r.progress for r in caplog.records if hasattr(r, "progress")]
+    progress = [x["progress"] for _, x in logs if "progress" in x]
     assert progress[-1]["done"] == progress[-1]["total"] == 70
-    caplog.clear()
-    with caplog.at_level(logging.DEBUG, logger="vibepiler"):
-        embed.embed_texts(FakeEmbedder(), texts)
-    assert any("70 reused, 0 to embed" in r.getMessage() for r in caplog.records)
+    logs.clear()
+    embed.embed_texts(FakeEmbedder(), texts)
+    assert any("70 reused, 0 to embed" in m for m, _ in logs)
 
 
 def test_verbose_cli_prints_what_the_semantic_passes_do(tmp_path):
@@ -154,12 +183,11 @@ def test_an_interrupted_run_keeps_what_it_embedded(tmp_path):
     assert not list(tmp_path.glob("*.tmp*"))  # written whole, then moved into place
 
 
-def test_long_runs_save_the_cache_as_they_go(tmp_path, monkeypatch, caplog):
+def test_long_runs_save_the_cache_as_they_go(tmp_path, monkeypatch, logs):
     monkeypatch.setattr(embed, "CHECKPOINT_SECONDS", 0.0)
     texts = [f"def f{i}(x):\n    return x * {i}\n" for i in range(100)]
-    with caplog.at_level(logging.DEBUG, logger="vibepiler"):
-        embed.embed_texts(FakeEmbedder(), texts, cache_dir=tmp_path)
-    assert sum(r.getMessage().startswith("cache saved") for r in caplog.records) >= len(embed.batches(texts))
+    embed.embed_texts(FakeEmbedder(), texts, cache_dir=tmp_path)
+    assert sum(m.startswith("cache saved") for m, _ in logs) >= len(embed.batches(texts))
 
 
 # ----- review of feature/semantic-scale --------------------------------------------------------------------------------
@@ -253,9 +281,8 @@ def test_batches_bound_the_quadratic_cost_of_long_functions():
     assert sorted(i for b in plan for i in b) == list(range(len(texts)))
 
 
-def test_the_cli_restores_the_loggers_level_and_verbose_beats_quiet(tmp_path):
-    log = logging.getLogger("vibepiler")
-    before = log.level
+def test_the_cli_leaves_vibepiler_silent_again_and_verbose_beats_quiet(tmp_path):
     res = CliRunner().invoke(app, ["compile", FIX, "-O3", "-v", "-q", "--emit", "json", "-o", str(tmp_path)])
     assert res.exit_code == 0, res.output
-    assert "batch 1/" in res.output and log.level == before
+    assert "batch 1/" in res.output
+    test_vibepiler_is_silent_until_enabled()  # the CLI's sink is gone and the library is quiet again
