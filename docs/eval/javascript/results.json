@@ -1,0 +1,4020 @@
+{
+ "machine": {
+  "cpu": "Apple M3 Max",
+  "cores": 14,
+  "mem_gb": 36,
+  "os": "macOS 15.8.1",
+  "node": "v25.1.0",
+  "python": "Python 3.12.2",
+  "vibepiler": "vibepiler 0.4.5",
+  "vibepiler_commit": "d9ca2bbfce3bae1356bb3fa18673563d67fb8d5c",
+  "tools": {
+   "knip": "6.44.2",
+   "ts-prune": "0.10.3",
+   "ts-unused-exports": "11.0.1",
+   "depcheck": "1.4.7",
+   "jscpd": "5.4.3",
+   "madge": "8.0.0",
+   "eslint": "10.14.0",
+   "eslint-plugin-sonarjs": "4.2.2",
+   "@typescript-eslint/parser": "8.72.1",
+   "typescript": "6.0.3",
+   "pnpm": "12.18.0"
+  },
+  "notes": "machine shared with two other evaluation agents running concurrently; timings are noisy; OS file cache not flushed between runs"
+ },
+ "repos": {
+  "zustand": {
+   "url": "https://github.com/pmndrs/zustand",
+   "ref": "v5.1.0",
+   "sha": "9fed2eb2f3af672da9f7bf694b996df3831fc207",
+   "kind": "small library (TS)",
+   "why": "well-known small state library; package.json `exports` subpaths are a classic entry-point test",
+   "files": 50,
+   "loc": 11310,
+   "vibepiler_files": 50,
+   "speed": {
+    "vibepiler-O1": {
+     "cold": 0.5774687090015505,
+     "warm": [
+      0.5350417910085525,
+      0.5345306670060381,
+      0.5339457499794662
+     ],
+     "median": 0.5345306670060381,
+     "peak_rss_mb": 83.71875,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "vibepiler-O2": {
+     "cold": 0.520938625006238,
+     "warm": [
+      0.6267435420013499,
+      0.6352391249965876,
+      0.5173901670204941
+     ],
+     "median": 0.6267435420013499,
+     "peak_rss_mb": 84.109375,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "knip": {
+     "cold": 0.8889471250004135,
+     "warm": [
+      0.6429975829960313,
+      0.6472173749934882,
+      0.6842340840084944
+     ],
+     "median": 0.6472173749934882,
+     "peak_rss_mb": 176.59375,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "ts-prune": {
+     "cold": 1.1797941669938155,
+     "warm": [
+      1.0495383749948815,
+      1.0109285840007942,
+      0.9336825409845915
+     ],
+     "median": 1.0109285840007942,
+     "peak_rss_mb": 451.171875,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "ts-unused-exports": {
+     "cold": 0.28470824999385513,
+     "warm": [
+      0.30691400001524016,
+      0.31395012501161546,
+      0.35559608301264234
+     ],
+     "median": 0.31395012501161546,
+     "peak_rss_mb": 187.046875,
+     "exits": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "stderr_tail": []
+    },
+    "depcheck": {
+     "cold": 1.334978917002445,
+     "warm": [
+      1.2472840000118595,
+      1.2729416670044884,
+      1.2529724999913014
+     ],
+     "median": 1.2529724999913014,
+     "peak_rss_mb": 244.421875,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "jscpd": {
+     "cold": 0.16199570801109076,
+     "warm": [
+      0.11075204200460576,
+      0.10524545900989324,
+      0.10265454201726243
+     ],
+     "median": 0.10524545900989324,
+     "peak_rss_mb": 42.90625,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "madge": {
+     "cold": 0.9657052500115242,
+     "warm": [
+      0.9771475000015926,
+      1.0473859589837957,
+      0.841281083994545
+     ],
+     "median": 0.9771475000015926,
+     "peak_rss_mb": 362.703125,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "eslint": {
+     "cold": 1.6284119579941034,
+     "warm": [
+      1.0692614169965964,
+      1.16933820801205,
+      1.0913322499836795
+     ],
+     "median": 1.0913322499836795,
+     "peak_rss_mb": 465.5625,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    }
+   },
+   "determinism": {
+    "O1": {
+     "runs": 4,
+     "diagnostics": 127,
+     "sorted_identical": true,
+     "order_identical": true,
+     "graph_identical": true,
+     "hashes": [
+      "d3678d37c1a126fc",
+      "d3678d37c1a126fc",
+      "d3678d37c1a126fc",
+      "d3678d37c1a126fc"
+     ]
+    },
+    "O2": {
+     "runs": 4,
+     "diagnostics": 132,
+     "sorted_identical": true,
+     "order_identical": true,
+     "graph_identical": true,
+     "hashes": [
+      "6b3381ef21b221aa",
+      "6b3381ef21b221aa",
+      "6b3381ef21b221aa",
+      "6b3381ef21b221aa"
+     ]
+    }
+   },
+   "agreement": {
+    "unused_files/knip": {
+     "vibepiler": 5,
+     "tool": 10,
+     "both": 0,
+     "vibepiler_only": 5,
+     "tool_only": 10,
+     "jaccard": 0.0
+    },
+    "unused_exports/knip": {
+     "vibepiler": 10,
+     "tool": 11,
+     "both": 1,
+     "vibepiler_only": 9,
+     "tool_only": 10,
+     "jaccard": 0.05
+    },
+    "unused_exports_broad/knip": {
+     "vibepiler": 14,
+     "tool": 11,
+     "both": 3,
+     "vibepiler_only": 11,
+     "tool_only": 8,
+     "jaccard": 0.136
+    },
+    "unused_exports_broad/knip (files neither flags)": {
+     "vibepiler": 8,
+     "tool": 9,
+     "both": 1,
+     "vibepiler_only": 7,
+     "tool_only": 8,
+     "jaccard": 0.062
+    },
+    "unused_exports_broad/knip values only": {
+     "vibepiler": 14,
+     "tool": 3,
+     "both": 2,
+     "vibepiler_only": 12,
+     "tool_only": 1,
+     "jaccard": 0.133
+    },
+    "unused_exports_broad/ts-prune": {
+     "vibepiler": 14,
+     "tool": 25,
+     "both": 11,
+     "vibepiler_only": 3,
+     "tool_only": 14,
+     "jaccard": 0.393
+    },
+    "knip/ts-prune (tool vs tool)": {
+     "vibepiler": 11,
+     "tool": 25,
+     "both": 5,
+     "vibepiler_only": 6,
+     "tool_only": 20,
+     "jaccard": 0.161
+    },
+    "unused_exports_broad/ts-unused-exports": {
+     "vibepiler": 14,
+     "tool": 8,
+     "both": 2,
+     "vibepiler_only": 12,
+     "tool_only": 6,
+     "jaccard": 0.1
+    },
+    "knip/ts-unused-exports (tool vs tool)": {
+     "vibepiler": 11,
+     "tool": 8,
+     "both": 8,
+     "vibepiler_only": 3,
+     "tool_only": 0,
+     "jaccard": 0.727
+    },
+    "unused_deps/knip": {
+     "vibepiler": 7,
+     "tool": 1,
+     "both": 1,
+     "vibepiler_only": 6,
+     "tool_only": 0,
+     "jaccard": 0.143
+    },
+    "undeclared_deps/knip": {
+     "vibepiler": 1,
+     "tool": 6,
+     "both": 0,
+     "vibepiler_only": 1,
+     "tool_only": 6,
+     "jaccard": 0.0
+    },
+    "unused_deps/depcheck": {
+     "vibepiler": 7,
+     "tool": 2,
+     "both": 1,
+     "vibepiler_only": 6,
+     "tool_only": 1,
+     "jaccard": 0.125
+    },
+    "unused_deps_all_manifests/depcheck": {
+     "vibepiler": 10,
+     "tool": 6,
+     "both": 2,
+     "vibepiler_only": 8,
+     "tool_only": 4,
+     "jaccard": 0.143
+    },
+    "undeclared_deps/depcheck": {
+     "vibepiler": 1,
+     "tool": 1,
+     "both": 1,
+     "vibepiler_only": 0,
+     "tool_only": 0,
+     "jaccard": 1.0
+    },
+    "duplicate_functions/jscpd": {
+     "vibepiler": 12,
+     "tool": 8,
+     "both": 2,
+     "vibepiler_only": 10,
+     "tool_only": 6,
+     "jaccard": 0.111
+    },
+    "duplicate_functions_exact/jscpd": {
+     "vibepiler": 12,
+     "tool": 8,
+     "both": 2,
+     "vibepiler_only": 10,
+     "tool_only": 6,
+     "jaccard": 0.111
+    },
+    "duplicate_functions/jscpd --ignore-identifiers --ignore-literals": {
+     "vibepiler": 12,
+     "tool": 16,
+     "both": 8,
+     "vibepiler_only": 4,
+     "tool_only": 8,
+     "jaccard": 0.4
+    },
+    "cycle_modules/madge": {
+     "vibepiler": 0,
+     "tool": 0,
+     "both": 0,
+     "vibepiler_only": 0,
+     "tool_only": 0,
+     "jaccard": null
+    },
+    "cycle_modules/madge graph SCC": {
+     "vibepiler": 0,
+     "tool": 0,
+     "both": 0,
+     "vibepiler_only": 0,
+     "tool_only": 0,
+     "jaccard": null
+    },
+    "swallowed_exceptions/eslint no-empty": {
+     "vibepiler": 0,
+     "tool": 0,
+     "both": 0,
+     "vibepiler_only": 0,
+     "tool_only": 0,
+     "jaccard": null
+    },
+    "unused_imports/eslint no-unused-vars": {
+     "vibepiler": 5,
+     "tool": 0,
+     "both": 0,
+     "vibepiler_only": 5,
+     "tool_only": 0,
+     "jaccard": 0.0,
+     "vibepiler_only_name_occurs_elsewhere": 4
+    }
+   },
+   "workspace_manifests": [
+    "package.json"
+   ],
+   "depcheck_failed": [],
+   "jscpd_stats": {
+    "clones": 163,
+    "duplicatedLines": 2277,
+    "duplicatedTokens": 13700,
+    "lines": 11245,
+    "newClones": 0,
+    "newDuplicatedLines": 0,
+    "percentage": 20.248999555357937,
+    "percentageTokens": 20.946410824860486,
+    "sources": 41,
+    "tokens": 65405
+   },
+   "jscpd_renamed_stats": {
+    "clones": 268,
+    "duplicatedLines": 3668,
+    "duplicatedTokens": 21556,
+    "lines": 11245,
+    "newClones": 0,
+    "newDuplicatedLines": 0,
+    "percentage": 32.61894175188973,
+    "percentageTokens": 32.9577249445761,
+    "sources": 41,
+    "tokens": 65405
+   },
+   "cycles": {
+    "vibepiler_sccs": 0,
+    "madge_sccs": 0,
+    "madge_graph_scc_sizes": [],
+    "madge_elementary": 0,
+    "vibepiler_sizes": [],
+    "madge_scc_sizes": []
+   },
+   "complexity": {
+    "cyclomatic": {
+     "vibepiler_functions": 162,
+     "matched": 145,
+     "exact": 120,
+     "exact_pct": 82.8,
+     "within1_pct": 92.4,
+     "mean_diff": 0.54,
+     "pearson": 0.364,
+     "tool_functions": 1537,
+     "flags": {
+      "vibepiler": 5,
+      "tool": 4,
+      "both": 2,
+      "vibepiler_only": 3,
+      "tool_only": 2,
+      "jaccard": 0.286
+     },
+     "flags_on_matched": {
+      "vibepiler": 5,
+      "tool": 2,
+      "both": 2,
+      "vibepiler_only": 3,
+      "tool_only": 0,
+      "jaccard": 0.4
+     }
+    },
+    "cognitive": {
+     "vibepiler_functions": 162,
+     "matched": 145,
+     "exact": 123,
+     "exact_pct": 84.8,
+     "within1_pct": 86.9,
+     "mean_diff": 1.88,
+     "pearson": 0.175,
+     "tool_functions": 100,
+     "flags": {
+      "vibepiler": 4,
+      "tool": 2,
+      "both": 1,
+      "vibepiler_only": 3,
+      "tool_only": 1,
+      "jaccard": 0.2
+     },
+     "flags_on_matched": {
+      "vibepiler": 4,
+      "tool": 1,
+      "both": 1,
+      "vibepiler_only": 3,
+      "tool_only": 0,
+      "jaccard": 0.25
+     }
+    }
+   },
+   "eslint_parse_failures": [],
+   "kinds": {
+    "unused-dependency": 10,
+    "bloated-module": 6,
+    "dead-symbol": 16,
+    "unimplemented-interface": 6,
+    "high-complexity": 5,
+    "high-cognitive-complexity": 4,
+    "dead-store": 6,
+    "undeclared-dependency": 1,
+    "duplicate-function": 5,
+    "long-function": 4,
+    "tiny-module": 3,
+    "unused-import": 5,
+    "unreachable-symbol": 34,
+    "unused-export": 10,
+    "single-use-helper": 4,
+    "unreachable-module": 5,
+    "stub-function": 7,
+    "too-many-params": 1
+   },
+   "kinds_O1": {
+    "unused-dependency": 10,
+    "bloated-module": 6,
+    "dead-symbol": 16,
+    "unimplemented-interface": 6,
+    "high-complexity": 5,
+    "high-cognitive-complexity": 4,
+    "dead-store": 6,
+    "undeclared-dependency": 1,
+    "long-function": 4,
+    "tiny-module": 3,
+    "unused-import": 5,
+    "unreachable-symbol": 34,
+    "unused-export": 10,
+    "single-use-helper": 4,
+    "unreachable-module": 5,
+    "stub-function": 7,
+    "too-many-params": 1
+   }
+  },
+  "release-it": {
+   "url": "https://github.com/release-it/release-it",
+   "ref": "21.1.2",
+   "sha": "10bce4165cb5ce4aca78ac969146317f3fb6e6c5",
+   "kind": "mid CLI (plain JS, ESM)",
+   "why": "CLI by knip's own author, ships a knip.json: knip on home turf",
+   "files": 57,
+   "loc": 9812,
+   "vibepiler_files": 57,
+   "speed": {
+    "vibepiler-O1": {
+     "cold": 0.6734982499910984,
+     "warm": [
+      0.6559080830193125,
+      0.6761713750020135,
+      0.7118919169879518
+     ],
+     "median": 0.6761713750020135,
+     "peak_rss_mb": 90.703125,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "vibepiler-O2": {
+     "cold": 0.8073336670058779,
+     "warm": [
+      0.7259140000096522,
+      0.6936554169806186,
+      0.7291004580038134
+     ],
+     "median": 0.7259140000096522,
+     "peak_rss_mb": 90.40625,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "knip": {
+     "cold": 0.39867445902200416,
+     "warm": [
+      0.3846460000204388,
+      0.444904707983369,
+      0.3948000420059543
+     ],
+     "median": 0.3948000420059543,
+     "peak_rss_mb": 136.953125,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "ts-prune": {
+     "skipped": "no tsconfig.json (plain-JS repo)"
+    },
+    "ts-unused-exports": {
+     "skipped": "no tsconfig.json (plain-JS repo)"
+    },
+    "depcheck": {
+     "cold": 0.7436900419997983,
+     "warm": [
+      0.779896167019615,
+      0.7140283750195522,
+      0.6983800409943797
+     ],
+     "median": 0.7140283750195522,
+     "peak_rss_mb": 192.109375,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "jscpd": {
+     "cold": 0.09892124999896623,
+     "warm": [
+      0.10040212501189671,
+      0.07015487499302253,
+      0.07555637499899603
+     ],
+     "median": 0.07555637499899603,
+     "peak_rss_mb": 41.03125,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "madge": {
+     "cold": 0.42765774999861605,
+     "warm": [
+      0.42495787498774007,
+      0.4234753340133466,
+      0.4131239579874091
+     ],
+     "median": 0.4234753340133466,
+     "peak_rss_mb": 196.921875,
+     "exits": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "stderr_tail": []
+    },
+    "eslint": {
+     "cold": 0.7621725409990177,
+     "warm": [
+      0.8504350000002887,
+      0.7253072499879636,
+      0.8163485830009449
+     ],
+     "median": 0.8163485830009449,
+     "peak_rss_mb": 359.171875,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    }
+   },
+   "determinism": {
+    "O1": {
+     "runs": 4,
+     "diagnostics": 88,
+     "sorted_identical": true,
+     "order_identical": true,
+     "graph_identical": true,
+     "hashes": [
+      "401ccae8bee7ac4e",
+      "401ccae8bee7ac4e",
+      "401ccae8bee7ac4e",
+      "401ccae8bee7ac4e"
+     ]
+    },
+    "O2": {
+     "runs": 4,
+     "diagnostics": 92,
+     "sorted_identical": true,
+     "order_identical": true,
+     "graph_identical": true,
+     "hashes": [
+      "ff2d239e20d27a59",
+      "ff2d239e20d27a59",
+      "ff2d239e20d27a59",
+      "ff2d239e20d27a59"
+     ]
+    }
+   },
+   "agreement": {
+    "unused_files/knip": {
+     "vibepiler": 1,
+     "tool": 0,
+     "both": 0,
+     "vibepiler_only": 1,
+     "tool_only": 0,
+     "jaccard": 0.0
+    },
+    "unused_exports/knip": {
+     "vibepiler": 0,
+     "tool": 0,
+     "both": 0,
+     "vibepiler_only": 0,
+     "tool_only": 0,
+     "jaccard": null
+    },
+    "unused_exports_broad/knip": {
+     "vibepiler": 0,
+     "tool": 0,
+     "both": 0,
+     "vibepiler_only": 0,
+     "tool_only": 0,
+     "jaccard": null
+    },
+    "unused_exports_broad/knip (files neither flags)": {
+     "vibepiler": 0,
+     "tool": 0,
+     "both": 0,
+     "vibepiler_only": 0,
+     "tool_only": 0,
+     "jaccard": null
+    },
+    "unused_exports_broad/knip values only": {
+     "vibepiler": 0,
+     "tool": 0,
+     "both": 0,
+     "vibepiler_only": 0,
+     "tool_only": 0,
+     "jaccard": null
+    },
+    "unused_deps/knip": {
+     "vibepiler": 3,
+     "tool": 0,
+     "both": 0,
+     "vibepiler_only": 3,
+     "tool_only": 0,
+     "jaccard": 0.0
+    },
+    "undeclared_deps/knip": {
+     "vibepiler": 0,
+     "tool": 0,
+     "both": 0,
+     "vibepiler_only": 0,
+     "tool_only": 0,
+     "jaccard": null
+    },
+    "unused_deps/depcheck": {
+     "vibepiler": 3,
+     "tool": 3,
+     "both": 2,
+     "vibepiler_only": 1,
+     "tool_only": 1,
+     "jaccard": 0.5
+    },
+    "unused_deps_all_manifests/depcheck": {
+     "vibepiler": 3,
+     "tool": 3,
+     "both": 2,
+     "vibepiler_only": 1,
+     "tool_only": 1,
+     "jaccard": 0.5
+    },
+    "undeclared_deps/depcheck": {
+     "vibepiler": 0,
+     "tool": 0,
+     "both": 0,
+     "vibepiler_only": 0,
+     "tool_only": 0,
+     "jaccard": null
+    },
+    "duplicate_functions/jscpd": {
+     "vibepiler": 8,
+     "tool": 2,
+     "both": 2,
+     "vibepiler_only": 6,
+     "tool_only": 0,
+     "jaccard": 0.25
+    },
+    "duplicate_functions_exact/jscpd": {
+     "vibepiler": 8,
+     "tool": 2,
+     "both": 2,
+     "vibepiler_only": 6,
+     "tool_only": 0,
+     "jaccard": 0.25
+    },
+    "duplicate_functions/jscpd --ignore-identifiers --ignore-literals": {
+     "vibepiler": 8,
+     "tool": 8,
+     "both": 4,
+     "vibepiler_only": 4,
+     "tool_only": 4,
+     "jaccard": 0.333
+    },
+    "cycle_modules/madge": {
+     "vibepiler": 2,
+     "tool": 2,
+     "both": 2,
+     "vibepiler_only": 0,
+     "tool_only": 0,
+     "jaccard": 1.0
+    },
+    "cycle_modules/madge graph SCC": {
+     "vibepiler": 2,
+     "tool": 2,
+     "both": 2,
+     "vibepiler_only": 0,
+     "tool_only": 0,
+     "jaccard": 1.0
+    },
+    "swallowed_exceptions/eslint no-empty": {
+     "vibepiler": 0,
+     "tool": 0,
+     "both": 0,
+     "vibepiler_only": 0,
+     "tool_only": 0,
+     "jaccard": null
+    },
+    "unused_imports/eslint no-unused-vars": {
+     "vibepiler": 0,
+     "tool": 0,
+     "both": 0,
+     "vibepiler_only": 0,
+     "tool_only": 0,
+     "jaccard": null,
+     "vibepiler_only_name_occurs_elsewhere": 0
+    }
+   },
+   "workspace_manifests": [
+    "package.json"
+   ],
+   "depcheck_failed": [],
+   "jscpd_stats": {
+    "clones": 65,
+    "duplicatedLines": 601,
+    "duplicatedTokens": 4638,
+    "lines": 9785,
+    "newClones": 0,
+    "newDuplicatedLines": 0,
+    "percentage": 6.142054164537558,
+    "percentageTokens": 6.857801895580429,
+    "sources": 54,
+    "tokens": 67631
+   },
+   "jscpd_renamed_stats": {
+    "clones": 204,
+    "duplicatedLines": 2461,
+    "duplicatedTokens": 14955,
+    "lines": 9785,
+    "newClones": 0,
+    "newDuplicatedLines": 0,
+    "percentage": 25.150740929994893,
+    "percentageTokens": 22.112640652955008,
+    "sources": 54,
+    "tokens": 67631
+   },
+   "cycles": {
+    "vibepiler_sccs": 1,
+    "madge_sccs": 1,
+    "madge_graph_scc_sizes": [
+     2
+    ],
+    "madge_elementary": 1,
+    "vibepiler_sizes": [
+     2
+    ],
+    "madge_scc_sizes": [
+     2
+    ]
+   },
+   "complexity": {
+    "cyclomatic": {
+     "vibepiler_functions": 308,
+     "matched": 301,
+     "exact": 232,
+     "exact_pct": 77.1,
+     "within1_pct": 87.0,
+     "mean_diff": -0.01,
+     "pearson": 0.918,
+     "tool_functions": 1004,
+     "flags": {
+      "vibepiler": 14,
+      "tool": 17,
+      "both": 12,
+      "vibepiler_only": 2,
+      "tool_only": 5,
+      "jaccard": 0.632
+     },
+     "flags_on_matched": {
+      "vibepiler": 14,
+      "tool": 14,
+      "both": 12,
+      "vibepiler_only": 2,
+      "tool_only": 2,
+      "jaccard": 0.75
+     }
+    },
+    "cognitive": {
+     "vibepiler_functions": 308,
+     "matched": 301,
+     "exact": 205,
+     "exact_pct": 68.1,
+     "within1_pct": 82.7,
+     "mean_diff": 1.0,
+     "pearson": 0.882,
+     "tool_functions": 241,
+     "flags": {
+      "vibepiler": 10,
+      "tool": 6,
+      "both": 6,
+      "vibepiler_only": 4,
+      "tool_only": 0,
+      "jaccard": 0.6
+     },
+     "flags_on_matched": {
+      "vibepiler": 10,
+      "tool": 6,
+      "both": 6,
+      "vibepiler_only": 4,
+      "tool_only": 0,
+      "jaccard": 0.6
+     }
+    }
+   },
+   "eslint_parse_failures": [],
+   "kinds": {
+    "high-complexity": 14,
+    "high-cognitive-complexity": 10,
+    "duplicate-function": 4,
+    "import-cycle": 1,
+    "dead-store": 3,
+    "pass-through-wrapper": 3,
+    "dead-symbol": 1,
+    "unreachable-module": 1,
+    "unreachable-symbol": 1,
+    "test-only": 3,
+    "single-use-helper": 8,
+    "thin-wrapper": 13,
+    "bloated-module": 1,
+    "long-function": 2,
+    "stub-function": 13,
+    "deep-inheritance": 2,
+    "log-and-reraise": 5,
+    "deep-nesting": 1,
+    "class-as-function": 3,
+    "unused-dependency": 3
+   },
+   "kinds_O1": {
+    "high-complexity": 14,
+    "high-cognitive-complexity": 10,
+    "import-cycle": 1,
+    "dead-store": 3,
+    "pass-through-wrapper": 3,
+    "dead-symbol": 1,
+    "unreachable-module": 1,
+    "unreachable-symbol": 1,
+    "test-only": 3,
+    "single-use-helper": 8,
+    "thin-wrapper": 13,
+    "bloated-module": 1,
+    "long-function": 2,
+    "stub-function": 13,
+    "deep-inheritance": 2,
+    "log-and-reraise": 5,
+    "deep-nesting": 1,
+    "class-as-function": 3,
+    "unused-dependency": 3
+   }
+  },
+  "taxonomy": {
+   "url": "https://github.com/shadcn-ui/taxonomy",
+   "ref": "main",
+   "sha": "298a8857c7128a0d121e7f699dfd729f23b3966d",
+   "kind": "mid Next.js 13 app (TS)",
+   "why": "app-router + pages conventions, contentlayer, middleware: framework entry points",
+   "files": 129,
+   "loc": 7788,
+   "vibepiler_files": 129,
+   "speed": {
+    "vibepiler-O1": {
+     "cold": 0.5766230830049608,
+     "warm": [
+      0.5686181250202935,
+      0.5607802500016987,
+      0.5510875839972869
+     ],
+     "median": 0.5607802500016987,
+     "peak_rss_mb": 82.796875,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "vibepiler-O2": {
+     "cold": 0.561812290980015,
+     "warm": [
+      0.5794561670045368,
+      0.5456175830040593,
+      0.5455593749938998
+     ],
+     "median": 0.5456175830040593,
+     "peak_rss_mb": 84.796875,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "knip": {
+     "cold": 1.7043514580000192,
+     "warm": [
+      0.9359563330071978,
+      1.0101880419824738,
+      1.0168603750062175
+     ],
+     "median": 1.0101880419824738,
+     "peak_rss_mb": 259.015625,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "ts-prune": {
+     "cold": 2.2500885839981493,
+     "warm": [
+      1.7105785419989843,
+      1.5916218750062399,
+      1.4371249999967404
+     ],
+     "median": 1.5916218750062399,
+     "peak_rss_mb": 646.453125,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "ts-unused-exports": {
+     "cold": 0.29389224998885766,
+     "warm": [
+      0.2789385409851093,
+      0.27284391698776744,
+      0.2687359160045162
+     ],
+     "median": 0.27284391698776744,
+     "peak_rss_mb": 144.1875,
+     "exits": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "stderr_tail": []
+    },
+    "depcheck": {
+     "cold": 0.7989107500179671,
+     "warm": [
+      0.87496449999162,
+      1.1737725000130013,
+      1.2098800409876276
+     ],
+     "median": 1.1737725000130013,
+     "peak_rss_mb": 380.5,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "jscpd": {
+     "cold": 0.07226916699437425,
+     "warm": [
+      0.07089304202236235,
+      0.07403916699695401,
+      0.07936204099678434
+     ],
+     "median": 0.07403916699695401,
+     "peak_rss_mb": 42.28125,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "madge": {
+     "cold": 0.7930883330118377,
+     "warm": [
+      0.8370964170026127,
+      0.8438646249996964,
+      0.799942458019359
+     ],
+     "median": 0.8370964170026127,
+     "peak_rss_mb": 291.28125,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "eslint": {
+     "cold": 1.0229280409985222,
+     "warm": [
+      0.887691417010501,
+      0.9442723329993896,
+      0.92306900001131
+     ],
+     "median": 0.92306900001131,
+     "peak_rss_mb": 403.15625,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    }
+   },
+   "determinism": {
+    "O1": {
+     "runs": 4,
+     "diagnostics": 212,
+     "sorted_identical": true,
+     "order_identical": true,
+     "graph_identical": true,
+     "hashes": [
+      "5a1eac9a2de8b31a",
+      "5a1eac9a2de8b31a",
+      "5a1eac9a2de8b31a",
+      "5a1eac9a2de8b31a"
+     ]
+    },
+    "O2": {
+     "runs": 4,
+     "diagnostics": 221,
+     "sorted_identical": true,
+     "order_identical": true,
+     "graph_identical": true,
+     "hashes": [
+      "c0defed075f02ae4",
+      "c0defed075f02ae4",
+      "c0defed075f02ae4",
+      "c0defed075f02ae4"
+     ]
+    }
+   },
+   "agreement": {
+    "unused_files/knip": {
+     "vibepiler": 25,
+     "tool": 27,
+     "both": 25,
+     "vibepiler_only": 0,
+     "tool_only": 2,
+     "jaccard": 0.926
+    },
+    "unused_exports/knip": {
+     "vibepiler": 1,
+     "tool": 18,
+     "both": 1,
+     "vibepiler_only": 0,
+     "tool_only": 17,
+     "jaccard": 0.056
+    },
+    "unused_exports_broad/knip": {
+     "vibepiler": 113,
+     "tool": 18,
+     "both": 1,
+     "vibepiler_only": 112,
+     "tool_only": 17,
+     "jaccard": 0.008
+    },
+    "unused_exports_broad/knip (files neither flags)": {
+     "vibepiler": 1,
+     "tool": 18,
+     "both": 1,
+     "vibepiler_only": 0,
+     "tool_only": 17,
+     "jaccard": 0.056
+    },
+    "unused_exports_broad/knip values only": {
+     "vibepiler": 113,
+     "tool": 16,
+     "both": 0,
+     "vibepiler_only": 113,
+     "tool_only": 16,
+     "jaccard": 0.0
+    },
+    "unused_exports_broad/ts-prune": {
+     "vibepiler": 113,
+     "tool": 190,
+     "both": 111,
+     "vibepiler_only": 2,
+     "tool_only": 79,
+     "jaccard": 0.578
+    },
+    "knip/ts-prune (tool vs tool)": {
+     "vibepiler": 18,
+     "tool": 190,
+     "both": 18,
+     "vibepiler_only": 0,
+     "tool_only": 172,
+     "jaccard": 0.095
+    },
+    "unused_exports_broad/ts-unused-exports": {
+     "vibepiler": 113,
+     "tool": 197,
+     "both": 111,
+     "vibepiler_only": 2,
+     "tool_only": 86,
+     "jaccard": 0.558
+    },
+    "knip/ts-unused-exports (tool vs tool)": {
+     "vibepiler": 18,
+     "tool": 197,
+     "both": 18,
+     "vibepiler_only": 0,
+     "tool_only": 179,
+     "jaccard": 0.091
+    },
+    "unused_deps/knip": {
+     "vibepiler": 11,
+     "tool": 38,
+     "both": 7,
+     "vibepiler_only": 4,
+     "tool_only": 31,
+     "jaccard": 0.167
+    },
+    "undeclared_deps/knip": {
+     "vibepiler": 1,
+     "tool": 0,
+     "both": 0,
+     "vibepiler_only": 1,
+     "tool_only": 0,
+     "jaccard": 0.0
+    },
+    "unused_deps/depcheck": {
+     "vibepiler": 11,
+     "tool": 19,
+     "both": 8,
+     "vibepiler_only": 3,
+     "tool_only": 11,
+     "jaccard": 0.364
+    },
+    "unused_deps_all_manifests/depcheck": {
+     "vibepiler": 11,
+     "tool": 19,
+     "both": 8,
+     "vibepiler_only": 3,
+     "tool_only": 11,
+     "jaccard": 0.364
+    },
+    "undeclared_deps/depcheck": {
+     "vibepiler": 1,
+     "tool": 1,
+     "both": 1,
+     "vibepiler_only": 0,
+     "tool_only": 0,
+     "jaccard": 1.0
+    },
+    "duplicate_functions/jscpd": {
+     "vibepiler": 17,
+     "tool": 2,
+     "both": 0,
+     "vibepiler_only": 17,
+     "tool_only": 2,
+     "jaccard": 0.0
+    },
+    "duplicate_functions_exact/jscpd": {
+     "vibepiler": 11,
+     "tool": 2,
+     "both": 0,
+     "vibepiler_only": 11,
+     "tool_only": 2,
+     "jaccard": 0.0
+    },
+    "duplicate_functions/jscpd --ignore-identifiers --ignore-literals": {
+     "vibepiler": 17,
+     "tool": 31,
+     "both": 15,
+     "vibepiler_only": 2,
+     "tool_only": 16,
+     "jaccard": 0.455
+    },
+    "cycle_modules/madge": {
+     "vibepiler": 0,
+     "tool": 0,
+     "both": 0,
+     "vibepiler_only": 0,
+     "tool_only": 0,
+     "jaccard": null
+    },
+    "cycle_modules/madge graph SCC": {
+     "vibepiler": 0,
+     "tool": 0,
+     "both": 0,
+     "vibepiler_only": 0,
+     "tool_only": 0,
+     "jaccard": null
+    },
+    "swallowed_exceptions/eslint no-empty": {
+     "vibepiler": 0,
+     "tool": 0,
+     "both": 0,
+     "vibepiler_only": 0,
+     "tool_only": 0,
+     "jaccard": null
+    },
+    "unused_imports/eslint no-unused-vars": {
+     "vibepiler": 18,
+     "tool": 7,
+     "both": 7,
+     "vibepiler_only": 11,
+     "tool_only": 0,
+     "jaccard": 0.389,
+     "vibepiler_only_name_occurs_elsewhere": 9
+    }
+   },
+   "workspace_manifests": [
+    "package.json"
+   ],
+   "depcheck_failed": [],
+   "jscpd_stats": {
+    "clones": 5,
+    "duplicatedLines": 61,
+    "duplicatedTokens": 279,
+    "lines": 7636,
+    "newClones": 0,
+    "newDuplicatedLines": 0,
+    "percentage": 0.7988475641697224,
+    "percentageTokens": 0.809188201513965,
+    "sources": 111,
+    "tokens": 34479
+   },
+   "jscpd_renamed_stats": {
+    "clones": 152,
+    "duplicatedLines": 2848,
+    "duplicatedTokens": 13754,
+    "lines": 7636,
+    "newClones": 0,
+    "newDuplicatedLines": 0,
+    "percentage": 37.297014143530646,
+    "percentageTokens": 39.89094811334436,
+    "sources": 111,
+    "tokens": 34479
+   },
+   "cycles": {
+    "vibepiler_sccs": 0,
+    "madge_sccs": 0,
+    "madge_graph_scc_sizes": [],
+    "madge_elementary": 0,
+    "vibepiler_sizes": [],
+    "madge_scc_sizes": []
+   },
+   "complexity": {
+    "cyclomatic": {
+     "vibepiler_functions": 130,
+     "matched": 117,
+     "exact": 70,
+     "exact_pct": 59.8,
+     "within1_pct": 78.6,
+     "mean_diff": -0.09,
+     "pearson": 0.815,
+     "tool_functions": 339,
+     "flags": {
+      "vibepiler": 0,
+      "tool": 0,
+      "both": 0,
+      "vibepiler_only": 0,
+      "tool_only": 0,
+      "jaccard": null
+     },
+     "flags_on_matched": {
+      "vibepiler": 0,
+      "tool": 0,
+      "both": 0,
+      "vibepiler_only": 0,
+      "tool_only": 0,
+      "jaccard": null
+     }
+    },
+    "cognitive": {
+     "vibepiler_functions": 130,
+     "matched": 117,
+     "exact": 77,
+     "exact_pct": 65.8,
+     "within1_pct": 78.6,
+     "mean_diff": 1.17,
+     "pearson": 0.618,
+     "tool_functions": 94,
+     "flags": {
+      "vibepiler": 1,
+      "tool": 0,
+      "both": 0,
+      "vibepiler_only": 1,
+      "tool_only": 0,
+      "jaccard": 0.0
+     },
+     "flags_on_matched": {
+      "vibepiler": 1,
+      "tool": 0,
+      "both": 0,
+      "vibepiler_only": 1,
+      "tool_only": 0,
+      "jaccard": 0.0
+     }
+    }
+   },
+   "eslint_parse_failures": [],
+   "kinds": {
+    "duplicate-function": 4,
+    "dead-store": 3,
+    "undeclared-dependency": 1,
+    "high-cognitive-complexity": 1,
+    "bloated-module": 10,
+    "dead-symbol": 1,
+    "unused-dependency": 11,
+    "unused-import": 18,
+    "near-duplicate-function": 5,
+    "single-use-helper": 2,
+    "long-function": 10,
+    "tiny-module": 7,
+    "unused-export": 1,
+    "unreachable-module": 25,
+    "unreachable-symbol": 120,
+    "thin-wrapper": 2
+   },
+   "kinds_O1": {
+    "dead-store": 3,
+    "undeclared-dependency": 1,
+    "high-cognitive-complexity": 1,
+    "bloated-module": 10,
+    "dead-symbol": 1,
+    "unused-dependency": 11,
+    "unused-import": 18,
+    "single-use-helper": 2,
+    "long-function": 10,
+    "tiny-module": 7,
+    "unused-export": 1,
+    "unreachable-module": 25,
+    "unreachable-symbol": 120,
+    "thin-wrapper": 2
+   }
+  },
+  "excalidraw": {
+   "url": "https://github.com/excalidraw/excalidraw",
+   "ref": "v0.18.1",
+   "sha": "a2ec2889babf7d2295469c6d90ebe77fae57df84",
+   "kind": "large monorepo (TS, yarn workspaces)",
+   "why": "~136k lines across 5 workspaces",
+   "files": 535,
+   "loc": 136155,
+   "vibepiler_files": 535,
+   "speed": {
+    "vibepiler-O1": {
+     "cold": 5.3133469999884255,
+     "warm": [
+      5.28249991699704,
+      5.231068082997808,
+      5.225657250004588
+     ],
+     "median": 5.231068082997808,
+     "peak_rss_mb": 443.140625,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "vibepiler-O2": {
+     "cold": 5.6000120409880765,
+     "warm": [
+      5.470518749993062,
+      5.417340250016423,
+      5.481904125015717
+     ],
+     "median": 5.470518749993062,
+     "peak_rss_mb": 454.96875,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "knip": {
+     "cold": 1.9295174169819802,
+     "warm": [
+      1.1142548750212882,
+      1.1670988340047188,
+      1.187435750005534
+     ],
+     "median": 1.1670988340047188,
+     "peak_rss_mb": 439.546875,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "ts-prune": {
+     "cold": 4.583357458002865,
+     "warm": [
+      4.962961332988925,
+      4.450201250001555,
+      4.444405791989993
+     ],
+     "median": 4.450201250001555,
+     "peak_rss_mb": 1034.515625,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "ts-unused-exports": {
+     "cold": 0.7102153339947108,
+     "warm": [
+      0.6856400830147322,
+      0.6985823329887353,
+      0.7094623330049217
+     ],
+     "median": 0.6985823329887353,
+     "peak_rss_mb": 272.953125,
+     "exits": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "stderr_tail": []
+    },
+    "depcheck": {
+     "cold": 5.852796749997651,
+     "warm": [
+      5.125490667007398,
+      4.928392375004478,
+      5.099707874993328
+     ],
+     "median": 5.099707874993328,
+     "peak_rss_mb": 523.828125,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "jscpd": {
+     "cold": 0.213393707992509,
+     "warm": [
+      0.134328167012427,
+      0.15114762500161305,
+      0.22419391700532287
+     ],
+     "median": 0.15114762500161305,
+     "peak_rss_mb": 179.390625,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "madge": {
+     "cold": 3.5008707090164535,
+     "warm": [
+      3.4686189579952043,
+      3.7539526660111733,
+      3.48061100000632
+     ],
+     "median": 3.48061100000632,
+     "peak_rss_mb": 730.5625,
+     "exits": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "stderr_tail": []
+    },
+    "eslint": {
+     "cold": 4.794818957976531,
+     "warm": [
+      4.93621987500228,
+      4.842557666997891,
+      4.878517709003063
+     ],
+     "median": 4.878517709003063,
+     "peak_rss_mb": 1193.4375,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    }
+   },
+   "determinism": {
+    "O1": {
+     "runs": 4,
+     "diagnostics": 1734,
+     "sorted_identical": true,
+     "order_identical": true,
+     "graph_identical": true,
+     "hashes": [
+      "4c9fa67dc7fac229",
+      "4c9fa67dc7fac229",
+      "4c9fa67dc7fac229",
+      "4c9fa67dc7fac229"
+     ]
+    },
+    "O2": {
+     "runs": 4,
+     "diagnostics": 1776,
+     "sorted_identical": true,
+     "order_identical": true,
+     "graph_identical": true,
+     "hashes": [
+      "29af7eda24a4e112",
+      "29af7eda24a4e112",
+      "29af7eda24a4e112",
+      "29af7eda24a4e112"
+     ]
+    }
+   },
+   "agreement": {
+    "unused_files/knip": {
+     "vibepiler": 31,
+     "tool": 20,
+     "both": 14,
+     "vibepiler_only": 17,
+     "tool_only": 6,
+     "jaccard": 0.378
+    },
+    "unused_exports/knip": {
+     "vibepiler": 155,
+     "tool": 197,
+     "both": 78,
+     "vibepiler_only": 77,
+     "tool_only": 119,
+     "jaccard": 0.285
+    },
+    "unused_exports_broad/knip": {
+     "vibepiler": 209,
+     "tool": 197,
+     "both": 85,
+     "vibepiler_only": 124,
+     "tool_only": 112,
+     "jaccard": 0.265
+    },
+    "unused_exports_broad/knip (files neither flags)": {
+     "vibepiler": 181,
+     "tool": 190,
+     "both": 78,
+     "vibepiler_only": 103,
+     "tool_only": 112,
+     "jaccard": 0.266
+    },
+    "unused_exports_broad/knip values only": {
+     "vibepiler": 209,
+     "tool": 161,
+     "both": 74,
+     "vibepiler_only": 135,
+     "tool_only": 87,
+     "jaccard": 0.25
+    },
+    "unused_exports_broad/ts-prune": {
+     "vibepiler": 209,
+     "tool": 412,
+     "both": 77,
+     "vibepiler_only": 132,
+     "tool_only": 335,
+     "jaccard": 0.142
+    },
+    "knip/ts-prune (tool vs tool)": {
+     "vibepiler": 197,
+     "tool": 412,
+     "both": 174,
+     "vibepiler_only": 23,
+     "tool_only": 238,
+     "jaccard": 0.4
+    },
+    "unused_exports_broad/ts-unused-exports": {
+     "vibepiler": 209,
+     "tool": 334,
+     "both": 79,
+     "vibepiler_only": 130,
+     "tool_only": 255,
+     "jaccard": 0.17
+    },
+    "knip/ts-unused-exports (tool vs tool)": {
+     "vibepiler": 197,
+     "tool": 334,
+     "both": 173,
+     "vibepiler_only": 24,
+     "tool_only": 161,
+     "jaccard": 0.483
+    },
+    "unused_deps/knip": {
+     "vibepiler": 27,
+     "tool": 37,
+     "both": 22,
+     "vibepiler_only": 5,
+     "tool_only": 15,
+     "jaccard": 0.524
+    },
+    "undeclared_deps/knip": {
+     "vibepiler": 36,
+     "tool": 19,
+     "both": 16,
+     "vibepiler_only": 20,
+     "tool_only": 3,
+     "jaccard": 0.41
+    },
+    "unused_deps/depcheck": {
+     "vibepiler": 27,
+     "tool": 53,
+     "both": 23,
+     "vibepiler_only": 4,
+     "tool_only": 30,
+     "jaccard": 0.404
+    },
+    "unused_deps_all_manifests/depcheck": {
+     "vibepiler": 35,
+     "tool": 61,
+     "both": 29,
+     "vibepiler_only": 6,
+     "tool_only": 32,
+     "jaccard": 0.433
+    },
+    "undeclared_deps/depcheck": {
+     "vibepiler": 36,
+     "tool": 40,
+     "both": 36,
+     "vibepiler_only": 0,
+     "tool_only": 4,
+     "jaccard": 0.9
+    },
+    "duplicate_functions/jscpd": {
+     "vibepiler": 87,
+     "tool": 63,
+     "both": 31,
+     "vibepiler_only": 56,
+     "tool_only": 32,
+     "jaccard": 0.261
+    },
+    "duplicate_functions_exact/jscpd": {
+     "vibepiler": 67,
+     "tool": 63,
+     "both": 23,
+     "vibepiler_only": 44,
+     "tool_only": 40,
+     "jaccard": 0.215
+    },
+    "duplicate_functions/jscpd --ignore-identifiers --ignore-literals": {
+     "vibepiler": 87,
+     "tool": 200,
+     "both": 66,
+     "vibepiler_only": 21,
+     "tool_only": 134,
+     "jaccard": 0.299
+    },
+    "cycle_modules/madge": {
+     "vibepiler": 282,
+     "tool": 248,
+     "both": 239,
+     "vibepiler_only": 43,
+     "tool_only": 9,
+     "jaccard": 0.821
+    },
+    "cycle_modules/madge graph SCC": {
+     "vibepiler": 282,
+     "tool": 293,
+     "both": 282,
+     "vibepiler_only": 0,
+     "tool_only": 11,
+     "jaccard": 0.962
+    },
+    "swallowed_exceptions/eslint no-empty": {
+     "vibepiler": 7,
+     "tool": 6,
+     "both": 5,
+     "vibepiler_only": 2,
+     "tool_only": 1,
+     "jaccard": 0.625
+    },
+    "unused_imports/eslint no-unused-vars": {
+     "vibepiler": 133,
+     "tool": 2,
+     "both": 1,
+     "vibepiler_only": 132,
+     "tool_only": 1,
+     "jaccard": 0.007,
+     "vibepiler_only_name_occurs_elsewhere": 85
+    }
+   },
+   "workspace_manifests": [
+    "examples/with-nextjs/package.json",
+    "examples/with-script-in-browser/package.json",
+    "excalidraw-app/package.json",
+    "package.json",
+    "packages/excalidraw/package.json",
+    "packages/math/package.json",
+    "packages/utils/package.json"
+   ],
+   "depcheck_failed": [],
+   "jscpd_stats": {
+    "clones": 756,
+    "duplicatedLines": 9715,
+    "duplicatedTokens": 58436,
+    "lines": 136004,
+    "newClones": 0,
+    "newDuplicatedLines": 0,
+    "percentage": 7.143172259639423,
+    "percentageTokens": 8.619921583436344,
+    "sources": 516,
+    "tokens": 677918
+   },
+   "jscpd_renamed_stats": {
+    "clones": 2420,
+    "duplicatedLines": 36706,
+    "duplicatedTokens": 195759,
+    "lines": 136004,
+    "newClones": 0,
+    "newDuplicatedLines": 0,
+    "percentage": 26.98891209082086,
+    "percentageTokens": 28.876501287766366,
+    "sources": 516,
+    "tokens": 677918
+   },
+   "cycles": {
+    "vibepiler_sccs": 3,
+    "madge_sccs": 3,
+    "madge_graph_scc_sizes": [
+     3,
+     4,
+     286
+    ],
+    "madge_elementary": 581,
+    "vibepiler_sizes": [
+     3,
+     4,
+     275
+    ],
+    "madge_scc_sizes": [
+     3,
+     4,
+     241
+    ]
+   },
+   "complexity": {
+    "cyclomatic": {
+     "vibepiler_functions": 2410,
+     "matched": 1501,
+     "exact": 1143,
+     "exact_pct": 76.1,
+     "within1_pct": 88.3,
+     "mean_diff": 0.29,
+     "pearson": 0.667,
+     "tool_functions": 6848,
+     "flags": {
+      "vibepiler": 190,
+      "tool": 226,
+      "both": 58,
+      "vibepiler_only": 132,
+      "tool_only": 168,
+      "jaccard": 0.162
+     },
+     "flags_on_matched": {
+      "vibepiler": 190,
+      "tool": 74,
+      "both": 58,
+      "vibepiler_only": 132,
+      "tool_only": 16,
+      "jaccard": 0.282
+     }
+    },
+    "cognitive": {
+     "vibepiler_functions": 2410,
+     "matched": 1501,
+     "exact": 1097,
+     "exact_pct": 73.1,
+     "within1_pct": 84.0,
+     "mean_diff": 2.02,
+     "pearson": 0.302,
+     "tool_functions": 2114,
+     "flags": {
+      "vibepiler": 180,
+      "tool": 127,
+      "both": 27,
+      "vibepiler_only": 153,
+      "tool_only": 100,
+      "jaccard": 0.096
+     },
+     "flags_on_matched": {
+      "vibepiler": 180,
+      "tool": 27,
+      "both": 27,
+      "vibepiler_only": 153,
+      "tool_only": 0,
+      "jaccard": 0.15
+     }
+    }
+   },
+   "eslint_parse_failures": [],
+   "kinds": {
+    "import-cycle": 3,
+    "undeclared-dependency": 43,
+    "unused-dependency": 35,
+    "bloated-module": 10,
+    "duplicate-function": 32,
+    "high-complexity": 190,
+    "high-cognitive-complexity": 180,
+    "dead-symbol": 46,
+    "unimplemented-interface": 10,
+    "dead-store": 97,
+    "pass-through-wrapper": 11,
+    "swallowed-exception": 7,
+    "god-module": 18,
+    "indirection-chain": 15,
+    "unreachable-module": 31,
+    "unreachable-symbol": 190,
+    "unused-import": 133,
+    "unused-export": 155,
+    "long-function": 266,
+    "thin-wrapper": 91,
+    "near-duplicate-function": 10,
+    "redundant-try": 5,
+    "log-and-reraise": 6,
+    "namespace-class": 4,
+    "single-use-helper": 39,
+    "unused-param": 11,
+    "stub-function": 6,
+    "deep-nesting": 30,
+    "tiny-module": 4,
+    "too-many-params": 38,
+    "test-only": 55,
+    "hub-function": 2,
+    "class-as-function": 3
+   },
+   "kinds_O1": {
+    "import-cycle": 3,
+    "undeclared-dependency": 43,
+    "unused-dependency": 35,
+    "bloated-module": 10,
+    "high-complexity": 190,
+    "high-cognitive-complexity": 180,
+    "dead-symbol": 46,
+    "unimplemented-interface": 10,
+    "dead-store": 97,
+    "pass-through-wrapper": 11,
+    "swallowed-exception": 7,
+    "god-module": 18,
+    "indirection-chain": 15,
+    "unreachable-module": 31,
+    "unreachable-symbol": 190,
+    "unused-import": 133,
+    "unused-export": 155,
+    "long-function": 266,
+    "thin-wrapper": 91,
+    "redundant-try": 5,
+    "log-and-reraise": 6,
+    "namespace-class": 4,
+    "single-use-helper": 39,
+    "unused-param": 11,
+    "stub-function": 6,
+    "deep-nesting": 30,
+    "tiny-module": 4,
+    "too-many-params": 38,
+    "test-only": 55,
+    "hub-function": 2,
+    "class-as-function": 3
+   }
+  },
+  "scuttlepay": {
+   "url": "https://github.com/jarrodwatts/scuttlepay",
+   "ref": "main",
+   "sha": "4af6d027489b455751c9fd40876693732b2b8535",
+   "kind": "vibe-coded Next.js + pnpm workspace (TS)",
+   "why": "71 of its last 100 commits carry a Claude co-author trailer, ships CLAUDE.md, built for a Claude Code hackathon",
+   "files": 121,
+   "loc": 9014,
+   "vibepiler_files": 121,
+   "speed": {
+    "vibepiler-O1": {
+     "cold": 0.6244310830079485,
+     "warm": [
+      0.596080624993192,
+      0.5851353339967318,
+      0.6028770830016583
+     ],
+     "median": 0.596080624993192,
+     "peak_rss_mb": 89.484375,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "vibepiler-O2": {
+     "cold": 0.6181455829937477,
+     "warm": [
+      0.6070078749908134,
+      0.6044320840155706,
+      0.633276874985313
+     ],
+     "median": 0.6070078749908134,
+     "peak_rss_mb": 90.265625,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "knip": {
+     "cold": 0.47752549999859184,
+     "warm": [
+      0.49264700000640005,
+      0.4550498749886174,
+      0.46888600001693703
+     ],
+     "median": 0.46888600001693703,
+     "peak_rss_mb": 138.859375,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "ts-prune": {
+     "cold": 0.7925722079817206,
+     "warm": [
+      0.6924568329995964,
+      0.6461488750064746,
+      0.6614598750020377
+     ],
+     "median": 0.6614598750020377,
+     "peak_rss_mb": 381.046875,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "ts-unused-exports": {
+     "cold": 0.29251025000121444,
+     "warm": [
+      0.319464208005229,
+      0.3036128749954514,
+      0.29072654200717807
+     ],
+     "median": 0.3036128749954514,
+     "peak_rss_mb": 152.875,
+     "exits": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "stderr_tail": []
+    },
+    "depcheck": {
+     "cold": 1.3543124159914441,
+     "warm": [
+      1.352421333984239,
+      1.330677417019615,
+      1.403181957983179
+     ],
+     "median": 1.352421333984239,
+     "peak_rss_mb": 252.40625,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "jscpd": {
+     "cold": 0.12864962499588728,
+     "warm": [
+      0.0676111250068061,
+      0.0743920000095386,
+      0.09503329198923893
+     ],
+     "median": 0.0743920000095386,
+     "peak_rss_mb": 41.203125,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "madge": {
+     "cold": 0.9033730830124114,
+     "warm": [
+      0.7913977499993052,
+      0.804485750006279,
+      0.7978576250025071
+     ],
+     "median": 0.7978576250025071,
+     "peak_rss_mb": 332.953125,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "eslint": {
+     "cold": 1.6684495000226889,
+     "warm": [
+      0.9530345420062076,
+      0.900194374989951,
+      0.936320834007347
+     ],
+     "median": 0.936320834007347,
+     "peak_rss_mb": 418.546875,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    }
+   },
+   "determinism": {
+    "O1": {
+     "runs": 4,
+     "diagnostics": 120,
+     "sorted_identical": true,
+     "order_identical": true,
+     "graph_identical": true,
+     "hashes": [
+      "f50c7b653a312881",
+      "f50c7b653a312881",
+      "f50c7b653a312881",
+      "f50c7b653a312881"
+     ]
+    },
+    "O2": {
+     "runs": 4,
+     "diagnostics": 128,
+     "sorted_identical": true,
+     "order_identical": true,
+     "graph_identical": true,
+     "hashes": [
+      "0cf676c0f27ec0cf",
+      "0cf676c0f27ec0cf",
+      "0cf676c0f27ec0cf",
+      "0cf676c0f27ec0cf"
+     ]
+    }
+   },
+   "agreement": {
+    "unused_files/knip": {
+     "vibepiler": 3,
+     "tool": 1,
+     "both": 1,
+     "vibepiler_only": 2,
+     "tool_only": 0,
+     "jaccard": 0.333
+    },
+    "unused_exports/knip": {
+     "vibepiler": 25,
+     "tool": 22,
+     "both": 3,
+     "vibepiler_only": 22,
+     "tool_only": 19,
+     "jaccard": 0.068
+    },
+    "unused_exports_broad/knip": {
+     "vibepiler": 29,
+     "tool": 22,
+     "both": 4,
+     "vibepiler_only": 25,
+     "tool_only": 18,
+     "jaccard": 0.085
+    },
+    "unused_exports_broad/knip (files neither flags)": {
+     "vibepiler": 28,
+     "tool": 22,
+     "both": 4,
+     "vibepiler_only": 24,
+     "tool_only": 18,
+     "jaccard": 0.087
+    },
+    "unused_exports_broad/knip values only": {
+     "vibepiler": 29,
+     "tool": 16,
+     "both": 2,
+     "vibepiler_only": 27,
+     "tool_only": 14,
+     "jaccard": 0.047
+    },
+    "unused_exports_broad/ts-prune": {
+     "vibepiler": 29,
+     "tool": 65,
+     "both": 5,
+     "vibepiler_only": 24,
+     "tool_only": 60,
+     "jaccard": 0.056
+    },
+    "knip/ts-prune (tool vs tool)": {
+     "vibepiler": 22,
+     "tool": 65,
+     "both": 22,
+     "vibepiler_only": 0,
+     "tool_only": 43,
+     "jaccard": 0.338
+    },
+    "unused_exports_broad/ts-unused-exports": {
+     "vibepiler": 29,
+     "tool": 55,
+     "both": 5,
+     "vibepiler_only": 24,
+     "tool_only": 50,
+     "jaccard": 0.063
+    },
+    "knip/ts-unused-exports (tool vs tool)": {
+     "vibepiler": 22,
+     "tool": 55,
+     "both": 18,
+     "vibepiler_only": 4,
+     "tool_only": 37,
+     "jaccard": 0.305
+    },
+    "unused_deps/knip": {
+     "vibepiler": 3,
+     "tool": 2,
+     "both": 1,
+     "vibepiler_only": 2,
+     "tool_only": 1,
+     "jaccard": 0.25
+    },
+    "undeclared_deps/knip": {
+     "vibepiler": 0,
+     "tool": 0,
+     "both": 0,
+     "vibepiler_only": 0,
+     "tool_only": 0,
+     "jaccard": null
+    },
+    "unused_deps/depcheck": {
+     "vibepiler": 3,
+     "tool": 9,
+     "both": 3,
+     "vibepiler_only": 0,
+     "tool_only": 6,
+     "jaccard": 0.333
+    },
+    "unused_deps_all_manifests/depcheck": {
+     "vibepiler": 3,
+     "tool": 9,
+     "both": 3,
+     "vibepiler_only": 0,
+     "tool_only": 6,
+     "jaccard": 0.333
+    },
+    "undeclared_deps/depcheck": {
+     "vibepiler": 0,
+     "tool": 1,
+     "both": 0,
+     "vibepiler_only": 0,
+     "tool_only": 1,
+     "jaccard": 0.0
+    },
+    "duplicate_functions/jscpd": {
+     "vibepiler": 14,
+     "tool": 2,
+     "both": 0,
+     "vibepiler_only": 14,
+     "tool_only": 2,
+     "jaccard": 0.0
+    },
+    "duplicate_functions_exact/jscpd": {
+     "vibepiler": 10,
+     "tool": 2,
+     "both": 0,
+     "vibepiler_only": 10,
+     "tool_only": 2,
+     "jaccard": 0.0
+    },
+    "duplicate_functions/jscpd --ignore-identifiers --ignore-literals": {
+     "vibepiler": 14,
+     "tool": 40,
+     "both": 9,
+     "vibepiler_only": 5,
+     "tool_only": 31,
+     "jaccard": 0.2
+    },
+    "cycle_modules/madge": {
+     "vibepiler": 0,
+     "tool": 0,
+     "both": 0,
+     "vibepiler_only": 0,
+     "tool_only": 0,
+     "jaccard": null
+    },
+    "cycle_modules/madge graph SCC": {
+     "vibepiler": 0,
+     "tool": 0,
+     "both": 0,
+     "vibepiler_only": 0,
+     "tool_only": 0,
+     "jaccard": null
+    },
+    "swallowed_exceptions/eslint no-empty": {
+     "vibepiler": 1,
+     "tool": 0,
+     "both": 0,
+     "vibepiler_only": 1,
+     "tool_only": 0,
+     "jaccard": 0.0
+    },
+    "unused_imports/eslint no-unused-vars": {
+     "vibepiler": 3,
+     "tool": 0,
+     "both": 0,
+     "vibepiler_only": 3,
+     "tool_only": 0,
+     "jaccard": 0.0,
+     "vibepiler_only_name_occurs_elsewhere": 3
+    }
+   },
+   "workspace_manifests": [
+    "package.json",
+    "packages/mcp/package.json",
+    "packages/shared/package.json"
+   ],
+   "depcheck_failed": [],
+   "jscpd_stats": {
+    "clones": 23,
+    "duplicatedLines": 305,
+    "duplicatedTokens": 1694,
+    "lines": 8912,
+    "newClones": 0,
+    "newDuplicatedLines": 0,
+    "percentage": 3.4223518850987436,
+    "percentageTokens": 3.690229822459427,
+    "sources": 108,
+    "tokens": 45905
+   },
+   "jscpd_renamed_stats": {
+    "clones": 109,
+    "duplicatedLines": 1495,
+    "duplicatedTokens": 7876,
+    "lines": 8912,
+    "newClones": 0,
+    "newDuplicatedLines": 0,
+    "percentage": 16.775134649910235,
+    "percentageTokens": 17.15717242130487,
+    "sources": 108,
+    "tokens": 45905
+   },
+   "cycles": {
+    "vibepiler_sccs": 0,
+    "madge_sccs": 0,
+    "madge_graph_scc_sizes": [],
+    "madge_elementary": 0,
+    "vibepiler_sizes": [],
+    "madge_scc_sizes": []
+   },
+   "complexity": {
+    "cyclomatic": {
+     "vibepiler_functions": 222,
+     "matched": 221,
+     "exact": 163,
+     "exact_pct": 73.8,
+     "within1_pct": 89.6,
+     "mean_diff": 0.05,
+     "pearson": 0.928,
+     "tool_functions": 459,
+     "flags": {
+      "vibepiler": 6,
+      "tool": 7,
+      "both": 5,
+      "vibepiler_only": 1,
+      "tool_only": 2,
+      "jaccard": 0.625
+     },
+     "flags_on_matched": {
+      "vibepiler": 6,
+      "tool": 7,
+      "both": 5,
+      "vibepiler_only": 1,
+      "tool_only": 2,
+      "jaccard": 0.625
+     }
+    },
+    "cognitive": {
+     "vibepiler_functions": 222,
+     "matched": 221,
+     "exact": 163,
+     "exact_pct": 73.8,
+     "within1_pct": 83.7,
+     "mean_diff": 0.85,
+     "pearson": 0.844,
+     "tool_functions": 136,
+     "flags": {
+      "vibepiler": 3,
+      "tool": 3,
+      "both": 3,
+      "vibepiler_only": 0,
+      "tool_only": 0,
+      "jaccard": 1.0
+     },
+     "flags_on_matched": {
+      "vibepiler": 3,
+      "tool": 3,
+      "both": 3,
+      "vibepiler_only": 0,
+      "tool_only": 0,
+      "jaccard": 1.0
+     }
+    }
+   },
+   "eslint_parse_failures": [],
+   "kinds": {
+    "unused-dependency": 3,
+    "swallowed-exception": 1,
+    "bloated-module": 10,
+    "high-complexity": 6,
+    "duplicate-function": 4,
+    "dead-symbol": 1,
+    "unimplemented-interface": 1,
+    "pass-through-wrapper": 1,
+    "high-cognitive-complexity": 3,
+    "unused-import": 3,
+    "thin-wrapper": 3,
+    "redundant-try": 1,
+    "single-use-helper": 9,
+    "unreachable-symbol": 31,
+    "unused-export": 25,
+    "unreachable-module": 3,
+    "long-function": 18,
+    "near-duplicate-function": 2,
+    "log-and-reraise": 3
+   },
+   "kinds_O1": {
+    "unused-dependency": 3,
+    "swallowed-exception": 1,
+    "bloated-module": 8,
+    "high-complexity": 6,
+    "dead-symbol": 1,
+    "unimplemented-interface": 1,
+    "pass-through-wrapper": 1,
+    "high-cognitive-complexity": 3,
+    "unused-import": 3,
+    "thin-wrapper": 3,
+    "redundant-try": 1,
+    "single-use-helper": 9,
+    "unreachable-symbol": 31,
+    "unused-export": 25,
+    "unreachable-module": 3,
+    "long-function": 18,
+    "log-and-reraise": 3
+   }
+  },
+  "tower-of-time": {
+   "url": "https://github.com/maciej-trebacz/tower-of-time-game",
+   "ref": "main",
+   "sha": "a2497fb8aaf497c25a9caa306ed7ac7129d2400b",
+   "kind": "vibe-coded Phaser game (TS)",
+   "why": "described as 'Vibe coded Tower Defense', ships PROMPTS.md with the prompts used, .cursorrules",
+   "files": 42,
+   "loc": 14756,
+   "vibepiler_files": 42,
+   "speed": {
+    "vibepiler-O1": {
+     "cold": 0.8926453330204822,
+     "warm": [
+      0.8733904999971855,
+      0.861552207992645,
+      0.8750792090140749
+     ],
+     "median": 0.8733904999971855,
+     "peak_rss_mb": 104.5,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "vibepiler-O2": {
+     "cold": 0.937658583978191,
+     "warm": [
+      1.0361408749886323,
+      0.9059661659994163,
+      0.8844767499831505
+     ],
+     "median": 0.9059661659994163,
+     "peak_rss_mb": 106.046875,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "knip": {
+     "cold": 0.3594862079771701,
+     "warm": [
+      0.35557570797391236,
+      0.39082979201339185,
+      0.3554758749960456
+     ],
+     "median": 0.35557570797391236,
+     "peak_rss_mb": 129.53125,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "ts-prune": {
+     "cold": 0.6081235419842415,
+     "warm": [
+      0.5803867499926127,
+      0.5715646249882411,
+      0.6484225419990253
+     ],
+     "median": 0.5803867499926127,
+     "peak_rss_mb": 378.96875,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "ts-unused-exports": {
+     "cold": 0.28703137501724996,
+     "warm": [
+      0.24711579200811684,
+      0.24139145901426673,
+      0.2579608329979237
+     ],
+     "median": 0.24711579200811684,
+     "peak_rss_mb": 180.78125,
+     "exits": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "stderr_tail": []
+    },
+    "depcheck": {
+     "cold": 0.5680989159736782,
+     "warm": [
+      0.6376473749987781,
+      0.5863429999735672,
+      0.5751638330111746
+     ],
+     "median": 0.5863429999735672,
+     "peak_rss_mb": 260.703125,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "jscpd": {
+     "cold": 0.10828470799606293,
+     "warm": [
+      0.08537062502000481,
+      0.09217829199042171,
+      0.12766958301654086
+     ],
+     "median": 0.09217829199042171,
+     "peak_rss_mb": 41.296875,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    },
+    "madge": {
+     "cold": 0.6660237499745563,
+     "warm": [
+      0.6750204999989364,
+      0.6757069999875966,
+      0.6232894999848213
+     ],
+     "median": 0.6750204999989364,
+     "peak_rss_mb": 334.03125,
+     "exits": [
+      1,
+      1,
+      1,
+      1
+     ],
+     "stderr_tail": []
+    },
+    "eslint": {
+     "cold": 1.4789260840043426,
+     "warm": [
+      0.9417123749735765,
+      1.0109122089925222,
+      0.9328059160034172
+     ],
+     "median": 0.9417123749735765,
+     "peak_rss_mb": 472.0,
+     "exits": [
+      0,
+      0,
+      0,
+      0
+     ],
+     "stderr_tail": []
+    }
+   },
+   "determinism": {
+    "O1": {
+     "runs": 4,
+     "diagnostics": 145,
+     "sorted_identical": true,
+     "order_identical": true,
+     "graph_identical": true,
+     "hashes": [
+      "3e8734bb7c74b038",
+      "3e8734bb7c74b038",
+      "3e8734bb7c74b038",
+      "3e8734bb7c74b038"
+     ]
+    },
+    "O2": {
+     "runs": 4,
+     "diagnostics": 179,
+     "sorted_identical": true,
+     "order_identical": true,
+     "graph_identical": true,
+     "hashes": [
+      "4f9cfa686237b0a5",
+      "4f9cfa686237b0a5",
+      "4f9cfa686237b0a5",
+      "4f9cfa686237b0a5"
+     ]
+    }
+   },
+   "agreement": {
+    "unused_files/knip": {
+     "vibepiler": 3,
+     "tool": 3,
+     "both": 3,
+     "vibepiler_only": 0,
+     "tool_only": 0,
+     "jaccard": 1.0
+    },
+    "unused_exports/knip": {
+     "vibepiler": 3,
+     "tool": 4,
+     "both": 2,
+     "vibepiler_only": 1,
+     "tool_only": 2,
+     "jaccard": 0.4
+    },
+    "unused_exports_broad/knip": {
+     "vibepiler": 5,
+     "tool": 4,
+     "both": 2,
+     "vibepiler_only": 3,
+     "tool_only": 2,
+     "jaccard": 0.286
+    },
+    "unused_exports_broad/knip (files neither flags)": {
+     "vibepiler": 5,
+     "tool": 4,
+     "both": 2,
+     "vibepiler_only": 3,
+     "tool_only": 2,
+     "jaccard": 0.286
+    },
+    "unused_exports_broad/knip values only": {
+     "vibepiler": 5,
+     "tool": 1,
+     "both": 0,
+     "vibepiler_only": 5,
+     "tool_only": 1,
+     "jaccard": 0.0
+    },
+    "unused_exports_broad/ts-prune": {
+     "vibepiler": 5,
+     "tool": 21,
+     "both": 2,
+     "vibepiler_only": 3,
+     "tool_only": 19,
+     "jaccard": 0.083
+    },
+    "knip/ts-prune (tool vs tool)": {
+     "vibepiler": 4,
+     "tool": 21,
+     "both": 4,
+     "vibepiler_only": 0,
+     "tool_only": 17,
+     "jaccard": 0.19
+    },
+    "unused_exports_broad/ts-unused-exports": {
+     "vibepiler": 5,
+     "tool": 21,
+     "both": 2,
+     "vibepiler_only": 3,
+     "tool_only": 19,
+     "jaccard": 0.083
+    },
+    "knip/ts-unused-exports (tool vs tool)": {
+     "vibepiler": 4,
+     "tool": 21,
+     "both": 4,
+     "vibepiler_only": 0,
+     "tool_only": 17,
+     "jaccard": 0.19
+    },
+    "unused_deps/knip": {
+     "vibepiler": 3,
+     "tool": 1,
+     "both": 1,
+     "vibepiler_only": 2,
+     "tool_only": 0,
+     "jaccard": 0.333
+    },
+    "undeclared_deps/knip": {
+     "vibepiler": 0,
+     "tool": 0,
+     "both": 0,
+     "vibepiler_only": 0,
+     "tool_only": 0,
+     "jaccard": null
+    },
+    "unused_deps/depcheck": {
+     "vibepiler": 3,
+     "tool": 2,
+     "both": 1,
+     "vibepiler_only": 2,
+     "tool_only": 1,
+     "jaccard": 0.25
+    },
+    "unused_deps_all_manifests/depcheck": {
+     "vibepiler": 3,
+     "tool": 2,
+     "both": 1,
+     "vibepiler_only": 2,
+     "tool_only": 1,
+     "jaccard": 0.25
+    },
+    "undeclared_deps/depcheck": {
+     "vibepiler": 0,
+     "tool": 0,
+     "both": 0,
+     "vibepiler_only": 0,
+     "tool_only": 0,
+     "jaccard": null
+    },
+    "duplicate_functions/jscpd": {
+     "vibepiler": 83,
+     "tool": 49,
+     "both": 23,
+     "vibepiler_only": 60,
+     "tool_only": 26,
+     "jaccard": 0.211
+    },
+    "duplicate_functions_exact/jscpd": {
+     "vibepiler": 71,
+     "tool": 49,
+     "both": 21,
+     "vibepiler_only": 50,
+     "tool_only": 28,
+     "jaccard": 0.212
+    },
+    "duplicate_functions/jscpd --ignore-identifiers --ignore-literals": {
+     "vibepiler": 83,
+     "tool": 176,
+     "both": 65,
+     "vibepiler_only": 18,
+     "tool_only": 111,
+     "jaccard": 0.335
+    },
+    "cycle_modules/madge": {
+     "vibepiler": 12,
+     "tool": 4,
+     "both": 4,
+     "vibepiler_only": 8,
+     "tool_only": 0,
+     "jaccard": 0.333
+    },
+    "cycle_modules/madge graph SCC": {
+     "vibepiler": 12,
+     "tool": 12,
+     "both": 12,
+     "vibepiler_only": 0,
+     "tool_only": 0,
+     "jaccard": 1.0
+    },
+    "swallowed_exceptions/eslint no-empty": {
+     "vibepiler": 0,
+     "tool": 0,
+     "both": 0,
+     "vibepiler_only": 0,
+     "tool_only": 0,
+     "jaccard": null
+    },
+    "unused_imports/eslint no-unused-vars": {
+     "vibepiler": 5,
+     "tool": 5,
+     "both": 5,
+     "vibepiler_only": 0,
+     "tool_only": 0,
+     "jaccard": 1.0,
+     "vibepiler_only_name_occurs_elsewhere": 0
+    }
+   },
+   "workspace_manifests": [
+    "package.json"
+   ],
+   "depcheck_failed": [],
+   "jscpd_stats": {
+    "clones": 21,
+    "duplicatedLines": 422,
+    "duplicatedTokens": 1852,
+    "lines": 14703,
+    "newClones": 0,
+    "newDuplicatedLines": 0,
+    "percentage": 2.870162551860165,
+    "percentageTokens": 3.0607017137946424,
+    "sources": 40,
+    "tokens": 60509
+   },
+   "jscpd_renamed_stats": {
+    "clones": 127,
+    "duplicatedLines": 2718,
+    "duplicatedTokens": 12014,
+    "lines": 14703,
+    "newClones": 0,
+    "newDuplicatedLines": 0,
+    "percentage": 18.48602326055907,
+    "percentageTokens": 19.854897618536086,
+    "sources": 40,
+    "tokens": 60509
+   },
+   "cycles": {
+    "vibepiler_sccs": 1,
+    "madge_sccs": 1,
+    "madge_graph_scc_sizes": [
+     12
+    ],
+    "madge_elementary": 2,
+    "vibepiler_sizes": [
+     12
+    ],
+    "madge_scc_sizes": [
+     4
+    ]
+   },
+   "complexity": {
+    "cyclomatic": {
+     "vibepiler_functions": 692,
+     "matched": 690,
+     "exact": 598,
+     "exact_pct": 86.7,
+     "within1_pct": 95.5,
+     "mean_diff": 0.13,
+     "pearson": 0.938,
+     "tool_functions": 1088,
+     "flags": {
+      "vibepiler": 15,
+      "tool": 14,
+      "both": 13,
+      "vibepiler_only": 2,
+      "tool_only": 1,
+      "jaccard": 0.812
+     },
+     "flags_on_matched": {
+      "vibepiler": 15,
+      "tool": 13,
+      "both": 13,
+      "vibepiler_only": 2,
+      "tool_only": 0,
+      "jaccard": 0.867
+     }
+    },
+    "cognitive": {
+     "vibepiler_functions": 692,
+     "matched": 690,
+     "exact": 551,
+     "exact_pct": 79.9,
+     "within1_pct": 88.6,
+     "mean_diff": 0.54,
+     "pearson": 0.907,
+     "tool_functions": 401,
+     "flags": {
+      "vibepiler": 13,
+      "tool": 9,
+      "both": 9,
+      "vibepiler_only": 4,
+      "tool_only": 0,
+      "jaccard": 0.692
+     },
+     "flags_on_matched": {
+      "vibepiler": 13,
+      "tool": 9,
+      "both": 9,
+      "vibepiler_only": 4,
+      "tool_only": 0,
+      "jaccard": 0.692
+     }
+    }
+   },
+   "eslint_parse_failures": [],
+   "kinds": {
+    "import-cycle": 1,
+    "unused-dependency": 3,
+    "high-complexity": 15,
+    "high-cognitive-complexity": 13,
+    "dead-symbol": 45,
+    "duplicate-function": 28,
+    "dead-store": 6,
+    "bloated-module": 10,
+    "unimplemented-interface": 3,
+    "pass-through-wrapper": 1,
+    "unused-attribute": 1,
+    "stub-function": 4,
+    "too-many-params": 2,
+    "long-function": 24,
+    "unused-import": 5,
+    "near-duplicate-function": 6,
+    "unused-export": 3,
+    "unreachable-symbol": 6,
+    "unreachable-module": 3
+   },
+   "kinds_O1": {
+    "import-cycle": 1,
+    "unused-dependency": 3,
+    "bloated-module": 10,
+    "high-complexity": 15,
+    "high-cognitive-complexity": 13,
+    "dead-symbol": 45,
+    "dead-store": 6,
+    "unimplemented-interface": 3,
+    "pass-through-wrapper": 1,
+    "unused-attribute": 1,
+    "stub-function": 4,
+    "too-many-params": 2,
+    "long-function": 24,
+    "unused-import": 5,
+    "unused-export": 3,
+    "unreachable-symbol": 6,
+    "unreachable-module": 3
+   }
+  }
+ },
+ "coverage": {
+  "unused-export": "knip/ts-prune/ts-unused-exports",
+  "unreachable-module": "knip (files)",
+  "unused-dependency": "knip/depcheck",
+  "undeclared-dependency": "knip (unlisted)/depcheck (missing)",
+  "duplicate-function": "jscpd",
+  "near-duplicate-function": "jscpd (partly)",
+  "import-cycle": "madge",
+  "cycle": "madge",
+  "large-cycle": "madge",
+  "high-complexity": "eslint complexity",
+  "high-cognitive-complexity": "sonarjs cognitive-complexity",
+  "swallowed-exception": "eslint no-empty",
+  "unused-import": "eslint no-unused-vars",
+  "dead-symbol": "eslint no-unused-vars (non-exported only) / knip (exported)",
+  "long-function": "eslint max-lines-per-function (not run)",
+  "deep-nesting": "eslint max-depth (not run)",
+  "too-many-params": "eslint max-params (not run)",
+  "unreachable-code": "eslint no-unreachable (not run)",
+  "dead-branch": "eslint no-constant-condition (not run)",
+  "dead-store": "eslint no-useless-assignment (not run, partial)",
+  "unused-param": "eslint no-unused-vars args (partial)",
+  "stub-function": "sonarjs no-empty-function-ish (not run, partial)",
+  "redundant-try": "sonarjs no-useless-catch (not run)",
+  "log-and-reraise": "none"
+ },
+ "samples": {
+  "dead_vibepiler_only": {
+   "pool": 173,
+   "picked": [
+    [
+     "excalidraw",
+     "export",
+     "packages/utils/geometry/shape.ts",
+     "getPolygonShape"
+    ],
+    [
+     "release-it",
+     "file",
+     "bin/release-it.js",
+     ""
+    ],
+    [
+     "scuttlepay",
+     "export",
+     "packages/shared/src/errors.ts",
+     "isScuttlePayError"
+    ],
+    [
+     "tower-of-time",
+     "export",
+     "src/prefabs/Player.ts",
+     "Player"
+    ],
+    [
+     "zustand",
+     "file",
+     "src/react/shallow.ts",
+     ""
+    ],
+    [
+     "excalidraw",
+     "file",
+     "scripts/woff2/woff2-esbuild-plugins.js",
+     ""
+    ],
+    [
+     "scuttlepay",
+     "export",
+     "packages/shared/src/schemas.ts",
+     "ProductSearchParams"
+    ],
+    [
+     "tower-of-time",
+     "export",
+     "src/prefabs/PlayerMenu.ts",
+     "MenuItemData"
+    ],
+    [
+     "zustand",
+     "export",
+     "src/react.ts",
+     "create"
+    ],
+    [
+     "excalidraw",
+     "export",
+     "packages/excalidraw/data/library.ts",
+     "parseLibraryTokensFromUrl"
+    ],
+    [
+     "scuttlepay",
+     "export",
+     "packages/shared/src/errors.ts",
+     "ScuttlePayError"
+    ],
+    [
+     "tower-of-time",
+     "export",
+     "src/prefabs/PlayerMenu.ts",
+     "PlayerMenu"
+    ],
+    [
+     "zustand",
+     "file",
+     "src/vanilla/shallow.ts",
+     ""
+    ],
+    [
+     "excalidraw",
+     "export",
+     "packages/math/segment.ts",
+     "lineSegmentRotate"
+    ],
+    [
+     "scuttlepay",
+     "export",
+     "packages/shared/src/types.ts",
+     "ProductSearchResult"
+    ]
+   ]
+  },
+  "dead_knip_only": {
+   "pool": 175,
+   "picked": [
+    [
+     "excalidraw",
+     "export",
+     "packages/excalidraw/tests/helpers/colorize.ts",
+     "red"
+    ],
+    [
+     "scuttlepay",
+     "export",
+     "src/components/ui/dialog.tsx",
+     "DialogFooter"
+    ],
+    [
+     "taxonomy",
+     "export",
+     "components/ui/dropdown-menu.tsx",
+     "DropdownMenuRadioItem"
+    ],
+    [
+     "tower-of-time",
+     "export",
+     "src/utils/GlobalSoundManager.ts",
+     "GlobalSoundManager"
+    ],
+    [
+     "zustand",
+     "file",
+     "examples/demo/src/components/Details.jsx",
+     ""
+    ],
+    [
+     "excalidraw",
+     "export",
+     "packages/excalidraw/components/Dialog.tsx",
+     "DialogSize"
+    ],
+    [
+     "scuttlepay",
+     "export",
+     "src/components/ui/table.tsx",
+     "TableFooter"
+    ],
+    [
+     "taxonomy",
+     "export",
+     "components/ui/alert-dialog.tsx",
+     "AlertDialogTrigger"
+    ],
+    [
+     "tower-of-time",
+     "export",
+     "src/components/InputManager.ts",
+     "InputMapping"
+    ],
+    [
+     "zustand",
+     "file",
+     "examples/starter/vite.config.ts",
+     ""
+    ],
+    [
+     "excalidraw",
+     "export",
+     "packages/excalidraw/element/index.ts",
+     "newArrowElement"
+    ],
+    [
+     "scuttlepay",
+     "export",
+     "src/server/services/spending.service.ts",
+     "SpendingDenialCode"
+    ],
+    [
+     "taxonomy",
+     "export",
+     "components/ui/toast.tsx",
+     "ToastAction"
+    ],
+    [
+     "zustand",
+     "export",
+     "src/middleware.ts",
+     "StateStorage"
+    ],
+    [
+     "excalidraw",
+     "export",
+     "packages/excalidraw/actions/index.ts",
+     "actionResetZoom"
+    ]
+   ]
+  },
+  "deps_vibepiler_only": {
+   "pool": 14,
+   "picked": [
+    [
+     "excalidraw",
+     "unused",
+     "package.json",
+     "@excalidraw/prettier-config"
+    ],
+    [
+     "release-it",
+     "unused",
+     "package.json",
+     "installed-check"
+    ],
+    [
+     "taxonomy",
+     "unused",
+     "package.json",
+     "nodemailer"
+    ],
+    [
+     "tower-of-time",
+     "unused",
+     "package.json",
+     "terser"
+    ],
+    [
+     "zustand",
+     "unused",
+     "package.json",
+     "json"
+    ],
+    [
+     "excalidraw",
+     "unused",
+     "examples/with-nextjs/package.json",
+     "react"
+    ],
+    [
+     "taxonomy",
+     "unused",
+     "package.json",
+     "prop-types"
+    ],
+    [
+     "tower-of-time",
+     "unused",
+     "package.json",
+     "phaser-asset-pack-hashing"
+    ],
+    [
+     "zustand",
+     "unused",
+     "package.json",
+     "redux"
+    ],
+    [
+     "excalidraw",
+     "unused",
+     "package.json",
+     "@vitest/ui"
+    ]
+   ]
+  },
+  "deps_tool_only": {
+   "pool": 92,
+   "picked": [
+    [
+     "excalidraw",
+     "undeclared",
+     "",
+     "@excalidraw/prettier-config"
+    ],
+    [
+     "release-it",
+     "unused",
+     "package.json",
+     "typescript"
+    ],
+    [
+     "scuttlepay",
+     "unused",
+     "package.json",
+     "prettier-plugin-tailwindcss"
+    ],
+    [
+     "taxonomy",
+     "unused",
+     "package.json",
+     "eslint-plugin-react"
+    ],
+    [
+     "tower-of-time",
+     "unused",
+     "package.json",
+     "typescript"
+    ],
+    [
+     "zustand",
+     "unused",
+     "package.json",
+     "eslint-import-resolver-typescript"
+    ],
+    [
+     "excalidraw",
+     "unused",
+     "package.json",
+     "@types/socket.io-client"
+    ],
+    [
+     "scuttlepay",
+     "unused",
+     "package.json",
+     "tailwindcss"
+    ],
+    [
+     "taxonomy",
+     "unused",
+     "package.json",
+     "@radix-ui/react-switch"
+    ],
+    [
+     "zustand",
+     "undeclared",
+     "",
+     "@react-three/drei"
+    ]
+   ]
+  },
+  "unused_import_vibepiler_only": {
+   "pool": 151,
+   "picked": [
+    [
+     "excalidraw",
+     "import",
+     "packages/excalidraw/element/heading.ts",
+     "LocalPoint"
+    ],
+    [
+     "scuttlepay",
+     "import",
+     "drizzle.config.ts",
+     "Config"
+    ],
+    [
+     "taxonomy",
+     "import",
+     "components/ui/command.tsx",
+     "DialogProps"
+    ],
+    [
+     "zustand",
+     "import",
+     "tests/types.test.tsx",
+     "StoreMutatorIdentifier"
+    ],
+    [
+     "excalidraw",
+     "import",
+     "packages/excalidraw/data/restore.ts",
+     "StrokeRoundness"
+    ],
+    [
+     "scuttlepay",
+     "import",
+     "src/components/ui/bento-grid.tsx",
+     "ComponentPropsWithoutRef"
+    ],
+    [
+     "taxonomy",
+     "import",
+     "components/ui/button.tsx",
+     "VariantProps"
+    ],
+    [
+     "zustand",
+     "import",
+     "src/middleware/ssrSafe.ts",
+     "StoreMutatorIdentifier"
+    ],
+    [
+     "excalidraw",
+     "import",
+     "examples/with-script-in-browser/components/CustomFooter.tsx",
+     "React"
+    ],
+    [
+     "scuttlepay",
+     "import",
+     "src/components/ui/animated-list.tsx",
+     "ComponentPropsWithoutRef"
+    ]
+   ]
+  }
+ },
+ "labels": {
+  "_note": "Hand verification by reading the code at the pinned SHAs. TP = the finding is right; FP = wrong; unclear = defensible either way. Keys match out/samples.json.",
+  "dead_vibepiler_only": [
+   [
+    [
+     "excalidraw",
+     "export",
+     "packages/utils/geometry/shape.ts",
+     "getPolygonShape"
+    ],
+    "FP",
+    "imported via tsconfig paths alias `@excalidraw/utils/geometry/shape` in element/collision.ts and shapes.tsx; vibepiler does not resolve tsconfig `paths`"
+   ],
+   [
+    [
+     "release-it",
+     "file",
+     "bin/release-it.js",
+     ""
+    ],
+    "FP",
+    "the CLI itself: package.json `bin` entry; vibepiler does not read `bin`"
+   ],
+   [
+    [
+     "scuttlepay",
+     "export",
+     "packages/shared/src/errors.ts",
+     "isScuttlePayError"
+    ],
+    "FP",
+    "imported as `@scuttlepay/shared` by packages/mcp (pnpm workspace package); workspace package names are not resolved to their source"
+   ],
+   [
+    [
+     "tower-of-time",
+     "export",
+     "src/prefabs/Player.ts",
+     "Player"
+    ],
+    "FP",
+    "declaration merging: `export default interface Player` + `export default class Player`; Level.ts default-imports and `new Player(...)`s it, the default import is not linked to the class"
+   ],
+   [
+    [
+     "zustand",
+     "file",
+     "src/react/shallow.ts",
+     ""
+    ],
+    "FP",
+    "public subpath `zustand/react/shallow` (package.json exports `./*`), imported by tests through tsconfig paths"
+   ],
+   [
+    [
+     "excalidraw",
+     "file",
+     "scripts/woff2/woff2-esbuild-plugins.js",
+     ""
+    ],
+    "FP",
+    "required by scripts/buildUtils.js, which package.json scripts run; scripts are not entry points for vibepiler"
+   ],
+   [
+    [
+     "scuttlepay",
+     "export",
+     "packages/shared/src/schemas.ts",
+     "ProductSearchParams"
+    ],
+    "TP",
+    "exported type never imported anywhere in the monorepo (knip treats the workspace entry's exports as public API)"
+   ],
+   [
+    [
+     "tower-of-time",
+     "export",
+     "src/prefabs/PlayerMenu.ts",
+     "MenuItemData"
+    ],
+    "FP",
+    "cascade from the Player bug: used by Player.ts and Level.ts"
+   ],
+   [
+    [
+     "zustand",
+     "export",
+     "src/react.ts",
+     "create"
+    ],
+    "FP",
+    "zustand's main API: `export * from './react.ts'` in the entry src/index.ts; star re-exports of an entry module do not keep their targets alive"
+   ],
+   [
+    [
+     "excalidraw",
+     "export",
+     "packages/excalidraw/data/library.ts",
+     "parseLibraryTokensFromUrl"
+    ],
+    "FP",
+    "re-exported by packages/excalidraw/index.tsx (public API) and used by excalidraw-app via the `@excalidraw/excalidraw` alias"
+   ],
+   [
+    [
+     "scuttlepay",
+     "export",
+     "packages/shared/src/errors.ts",
+     "ScuttlePayError"
+    ],
+    "FP",
+    "used by packages/mcp and src/app/api/mcp via `@scuttlepay/shared`"
+   ],
+   [
+    [
+     "tower-of-time",
+     "export",
+     "src/prefabs/PlayerMenu.ts",
+     "PlayerMenu"
+    ],
+    "FP",
+    "cascade from the Player bug: constructed in Player.initializeMenu"
+   ],
+   [
+    [
+     "zustand",
+     "file",
+     "src/vanilla/shallow.ts",
+     ""
+    ],
+    "FP",
+    "imported by src/shallow.ts and src/react/shallow.ts, both public subpaths"
+   ],
+   [
+    [
+     "excalidraw",
+     "export",
+     "packages/math/segment.ts",
+     "lineSegmentRotate"
+    ],
+    "FP",
+    "public API of @excalidraw/math (index re-export), used by utils/collision.test.ts through the alias"
+   ],
+   [
+    [
+     "scuttlepay",
+     "export",
+     "packages/shared/src/types.ts",
+     "ProductSearchResult"
+    ],
+    "FP",
+    "used by packages/mcp/src/api-client.ts and src/server/services/shopify.service.ts via `@scuttlepay/shared`"
+   ]
+  ],
+  "dead_knip_only": [
+   [
+    [
+     "excalidraw",
+     "export",
+     "packages/excalidraw/tests/helpers/colorize.ts",
+     "red"
+    ],
+    "TP",
+    "only `yellow` is imported (setupTests.ts); vibepiler likely keeps `red` alive by member-name match"
+   ],
+   [
+    [
+     "scuttlepay",
+     "export",
+     "src/components/ui/dialog.tsx",
+     "DialogFooter"
+    ],
+    "TP",
+    "exported through a trailing `export { ... }` list, never imported; vibepiler misses exports declared by an export list"
+   ],
+   [
+    [
+     "taxonomy",
+     "export",
+     "components/ui/dropdown-menu.tsx",
+     "DropdownMenuRadioItem"
+    ],
+    "TP",
+    "same export-list pattern, never imported"
+   ],
+   [
+    [
+     "tower-of-time",
+     "export",
+     "src/utils/GlobalSoundManager.ts",
+     "GlobalSoundManager"
+    ],
+    "TP",
+    "the named export is never imported (every importer uses the default export); low value"
+   ],
+   [
+    [
+     "zustand",
+     "file",
+     "examples/demo/src/components/Details.jsx",
+     ""
+    ],
+    "FP",
+    "part of the examples/demo Vite app (entry index.html -> main.jsx); not a knip workspace"
+   ],
+   [
+    [
+     "excalidraw",
+     "export",
+     "packages/excalidraw/components/Dialog.tsx",
+     "DialogSize"
+    ],
+    "TP",
+    "used only inside its own file; the `export` is removable"
+   ],
+   [
+    [
+     "scuttlepay",
+     "export",
+     "src/components/ui/table.tsx",
+     "TableFooter"
+    ],
+    "TP",
+    "export-list pattern, never imported"
+   ],
+   [
+    [
+     "taxonomy",
+     "export",
+     "components/ui/alert-dialog.tsx",
+     "AlertDialogTrigger"
+    ],
+    "TP",
+    "export-list pattern, never imported"
+   ],
+   [
+    [
+     "tower-of-time",
+     "export",
+     "src/components/InputManager.ts",
+     "InputMapping"
+    ],
+    "TP",
+    "used only inside its own file"
+   ],
+   [
+    [
+     "zustand",
+     "file",
+     "examples/starter/vite.config.ts",
+     ""
+    ],
+    "FP",
+    "Vite config of the examples/starter app, not a knip workspace"
+   ],
+   [
+    [
+     "excalidraw",
+     "export",
+     "packages/excalidraw/element/index.ts",
+     "newArrowElement"
+    ],
+    "TP",
+    "unused barrel re-export: every consumer imports ./newElement directly"
+   ],
+   [
+    [
+     "scuttlepay",
+     "export",
+     "src/server/services/spending.service.ts",
+     "SpendingDenialCode"
+    ],
+    "TP",
+    "used only inside its own file"
+   ],
+   [
+    [
+     "taxonomy",
+     "export",
+     "components/ui/toast.tsx",
+     "ToastAction"
+    ],
+    "TP",
+    "export-list pattern; only referenced in-file (`typeof ToastAction`)"
+   ],
+   [
+    [
+     "zustand",
+     "export",
+     "src/middleware.ts",
+     "StateStorage"
+    ],
+    "FP",
+    "public type of the library entry `zustand/middleware`; knip cannot map package.json exports (dist paths) back to src"
+   ],
+   [
+    [
+     "excalidraw",
+     "export",
+     "packages/excalidraw/actions/index.ts",
+     "actionResetZoom"
+    ],
+    "TP",
+    "unused barrel re-export: textWysiwyg imports it from ../actions/actionCanvas"
+   ]
+  ],
+  "deps_vibepiler_only": [
+   [
+    [
+     "excalidraw",
+     "unused",
+     "package.json",
+     "@excalidraw/prettier-config"
+    ],
+    "FP",
+    "referenced by the package.json `prettier` field"
+   ],
+   [
+    [
+     "release-it",
+     "unused",
+     "package.json",
+     "installed-check"
+    ],
+    "FP",
+    "CLI run by the package.json `test` script"
+   ],
+   [
+    [
+     "taxonomy",
+     "unused",
+     "package.json",
+     "nodemailer"
+    ],
+    "FP",
+    "required peer of next-auth's EmailProvider (lib/auth.ts)"
+   ],
+   [
+    [
+     "tower-of-time",
+     "unused",
+     "package.json",
+     "terser"
+    ],
+    "FP",
+    "vite/config.prod.mjs sets `minify: 'terser'`"
+   ],
+   [
+    [
+     "zustand",
+     "unused",
+     "package.json",
+     "json"
+    ],
+    "FP",
+    "CLI run by the package.json `copy` script"
+   ],
+   [
+    [
+     "excalidraw",
+     "unused",
+     "examples/with-nextjs/package.json",
+     "react"
+    ],
+    "FP",
+    "Next.js app with JSX; peer of next and @excalidraw/excalidraw"
+   ],
+   [
+    [
+     "taxonomy",
+     "unused",
+     "package.json",
+     "prop-types"
+    ],
+    "FP",
+    "peer dependency of the installed lucide-react; no direct import"
+   ],
+   [
+    [
+     "tower-of-time",
+     "unused",
+     "package.json",
+     "phaser-asset-pack-hashing"
+    ],
+    "FP",
+    "CLI run by the package.json `build` script"
+   ],
+   [
+    [
+     "zustand",
+     "unused",
+     "package.json",
+     "redux"
+    ],
+    "FP",
+    "peer dependency of @redux-devtools/extension"
+   ],
+   [
+    [
+     "excalidraw",
+     "unused",
+     "package.json",
+     "@vitest/ui"
+    ],
+    "unclear",
+    "no reference in scripts or configs; only used by an ad-hoc `vitest --ui` (optional peer of vitest)"
+   ]
+  ],
+  "deps_tool_only": [
+   [
+    [
+     "excalidraw",
+     "undeclared",
+     "",
+     "@excalidraw/prettier-config"
+    ],
+    "FP",
+    "depcheck: referenced by excalidraw-app/package.json `prettier` field, declared at the yarn-workspaces root"
+   ],
+   [
+    [
+     "release-it",
+     "unused",
+     "package.json",
+     "typescript"
+    ],
+    "unclear",
+    "depcheck: no direct use; plausibly the peer that typescript-eslint/knip need"
+   ],
+   [
+    [
+     "scuttlepay",
+     "unused",
+     "package.json",
+     "prettier-plugin-tailwindcss"
+    ],
+    "FP",
+    "depcheck: listed in prettier.config.js `plugins`"
+   ],
+   [
+    [
+     "taxonomy",
+     "unused",
+     "package.json",
+     "eslint-plugin-react"
+    ],
+    "TP",
+    "knip+depcheck: .eslintrc.json extends next/core-web-vitals, which brings its own copy; no direct reference"
+   ],
+   [
+    [
+     "tower-of-time",
+     "unused",
+     "package.json",
+     "typescript"
+    ],
+    "FP",
+    "depcheck: the repo has tsconfig.json; typescript is the type checker"
+   ],
+   [
+    [
+     "zustand",
+     "unused",
+     "package.json",
+     "eslint-import-resolver-typescript"
+    ],
+    "FP",
+    "depcheck: referenced in eslint.config.mjs `import/resolver: { typescript }`"
+   ],
+   [
+    [
+     "excalidraw",
+     "unused",
+     "package.json",
+     "@types/socket.io-client"
+    ],
+    "TP",
+    "depcheck: socket.io-client 4.7 ships its own types; the @types stub is dead weight"
+   ],
+   [
+    [
+     "scuttlepay",
+     "unused",
+     "package.json",
+     "tailwindcss"
+    ],
+    "FP",
+    "depcheck: `@import \"tailwindcss\"` in src/styles/globals.css"
+   ],
+   [
+    [
+     "taxonomy",
+     "unused",
+     "package.json",
+     "@radix-ui/react-switch"
+    ],
+    "TP",
+    "knip: only imported by components/ui/switch.tsx, itself an unused file"
+   ],
+   [
+    [
+     "zustand",
+     "undeclared",
+     "",
+     "@react-three/drei"
+    ],
+    "FP",
+    "knip: declared in examples/demo/package.json, which knip does not treat as a workspace"
+   ]
+  ],
+  "unused_import_vibepiler_only": [
+   [
+    [
+     "excalidraw",
+     "import",
+     "packages/excalidraw/element/heading.ts",
+     "LocalPoint"
+    ],
+    "FP",
+    "used in generic constraints `<Point extends GlobalPoint | LocalPoint>`"
+   ],
+   [
+    [
+     "scuttlepay",
+     "import",
+     "drizzle.config.ts",
+     "Config"
+    ],
+    "FP",
+    "used in `satisfies Config`"
+   ],
+   [
+    [
+     "taxonomy",
+     "import",
+     "components/ui/command.tsx",
+     "DialogProps"
+    ],
+    "FP",
+    "used in `interface CommandDialogProps extends DialogProps`"
+   ],
+   [
+    [
+     "zustand",
+     "import",
+     "tests/types.test.tsx",
+     "StoreMutatorIdentifier"
+    ],
+    "FP",
+    "used in a generic constraint inside a type annotation"
+   ],
+   [
+    [
+     "excalidraw",
+     "import",
+     "packages/excalidraw/data/restore.ts",
+     "StrokeRoundness"
+    ],
+    "FP",
+    "used in a type literal inside a generic constraint"
+   ],
+   [
+    [
+     "scuttlepay",
+     "import",
+     "src/components/ui/bento-grid.tsx",
+     "ComponentPropsWithoutRef"
+    ],
+    "FP",
+    "used in `interface ... extends ComponentPropsWithoutRef<\"div\">`"
+   ],
+   [
+    [
+     "taxonomy",
+     "import",
+     "components/ui/button.tsx",
+     "VariantProps"
+    ],
+    "FP",
+    "used in `interface ButtonProps extends ..., VariantProps<...>`"
+   ],
+   [
+    [
+     "zustand",
+     "import",
+     "src/middleware/ssrSafe.ts",
+     "StoreMutatorIdentifier"
+    ],
+    "FP",
+    "used in generic constraints `Mps extends [StoreMutatorIdentifier, unknown][]`"
+   ],
+   [
+    [
+     "excalidraw",
+     "import",
+     "examples/with-script-in-browser/components/CustomFooter.tsx",
+     "React"
+    ],
+    "TP",
+    "`jsx: react-jsx` and no `React.` use; ESLint misses it because of its JSX-pragma assumption"
+   ],
+   [
+    [
+     "scuttlepay",
+     "import",
+     "src/components/ui/animated-list.tsx",
+     "ComponentPropsWithoutRef"
+    ],
+    "FP",
+    "used in `interface AnimatedListProps extends ComponentPropsWithoutRef<\"div\">`"
+   ]
+  ]
+ }
+}

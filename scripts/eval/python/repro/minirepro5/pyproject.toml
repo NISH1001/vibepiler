@@ -1,0 +1,4 @@
+[project]
+name="app"
+version="0"
+dependencies=["httpcore==1.*", "markdown-it-py>=2", "idna"]
