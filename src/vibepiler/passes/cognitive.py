@@ -17,69 +17,79 @@ from vibepiler.frontend.loader import SourceFile
 
 ALTERNATIVES = ("else_clause", "elif_clause")
 TRANSPARENT = ("parenthesized_expression",)
+LOOP_PARTS = ("for_in_clause", "if_clause")  # a comprehension's own clauses sit at its level; its element nests
 
 
 def cognitive(name: str, body: TSNode, spec: LanguageSpec, sf: SourceFile, units: frozenset[tuple[int, int]]) -> int:
     """`units` are the spans of the functions that are units of their own; any other function (an inline callback)
     counts here, one level deeper, like a lambda."""
-    total = 0
+    walk = _Walk(name, spec, sf, units)
+    walk.children(body, 0)
+    return walk.total
 
-    def bool_run_starts(n: TSNode, op: str) -> bool:
+
+class _Walk:
+    def __init__(self, name: str, spec: LanguageSpec, sf: SourceFile, units: frozenset[tuple[int, int]]) -> None:
+        self.name, self.spec, self.sf, self.units = name, spec, sf, units
+        self.total = 0
+
+    def children(self, n: TSNode, nest: int) -> None:
+        for c in n.children:
+            self.visit(c, nest)
+
+    def visit(self, n: TSNode, nest: int) -> None:
+        t, spec = n.type, self.spec
+        if t in spec.function_types and (n.start_byte, n.end_byte) in self.units:
+            return
+        if t in spec.lambda_types or t in spec.function_types:
+            self.children(n, nest + 1)
+        elif t in spec.comprehension_types:
+            for c in n.children:
+                self.visit(c, nest if c.type in LOOP_PARTS else nest + 1)
+        elif t in spec.cog_structures:
+            self.structure(n, nest)
+        elif t == "else_clause":
+            self.else_clause(n, nest)
+        elif t in spec.cog_flat:
+            self.total += not self.case_guard(n)
+            self.children(n, nest + 1)
+        else:
+            self.total += self.flat_cost(n)
+            self.children(n, nest)
+
+    def structure(self, n: TSNode, nest: int, flat: bool = False) -> None:
+        """An `if`, loop, handler, switch or ternary: 1, plus its depth unless it is an `else if`; what it holds nests."""
+        self.total += 1 if flat else 1 + nest
+        for c in n.children:
+            self.visit(c, nest if c.type in ALTERNATIVES else nest + 1)
+
+    def else_clause(self, n: TSNode, nest: int) -> None:
+        if n.parent is None or n.parent.type != "if_statement":
+            self.children(n, nest)  # a loop's or a try's else: no cost, no nesting
+            return
+        inner = [c for c in n.named_children if c.type != "comment"]
+        if len(inner) == 1 and inner[0].type == "if_statement":
+            self.structure(inner[0], nest, flat=True)  # `else if`: one flat step, not a nested if
+            return
+        self.total += 1
+        self.children(n, nest + 1)
+
+    @staticmethod
+    def case_guard(n: TSNode) -> bool:
+        return n.type == "if_clause" and n.parent is not None and n.parent.type == "case_clause"
+
+    def flat_cost(self, n: TSNode) -> int:
+        """1 for the start of a run of one boolean operator, a jump to a label, or a bare-name call to itself."""
+        spec, sf = self.spec, self.sf
+        if (op := spec.bool_op(n, sf)) is not None:
+            return int(self.run_starts(n, op))
+        if spec.labeled_jump(n):
+            return 1
+        fn = n.child_by_field_name("function") if n.type in spec.call_types else None
+        return int(fn is not None and fn.type == "identifier" and sf.text(fn) == self.name)
+
+    def run_starts(self, n: TSNode, op: str) -> bool:
         p = n.parent
         while p is not None and p.type in TRANSPARENT:
             p = p.parent
-        return p is None or spec.bool_op(p, sf) != op
-
-    def structure(n: TSNode, nest: int, flat: bool = False) -> None:
-        nonlocal total
-        total += 1 if flat else 1 + nest
-        for c in n.children:
-            visit(c, nest) if c.type in ALTERNATIVES else visit(c, nest + 1)
-
-    def visit(n: TSNode, nest: int) -> None:
-        nonlocal total
-        t = n.type
-        if t in spec.function_types and (n.start_byte, n.end_byte) in units:
-            return
-        if t in spec.lambda_types or t in spec.function_types:
-            for c in n.children:
-                visit(c, nest + 1)
-            return
-        if t in spec.comprehension_types:
-            for c in n.children:
-                visit(c, nest if c.type in ("for_in_clause", "if_clause") else nest + 1)
-            return
-        if t in spec.cog_structures:
-            structure(n, nest)
-            return
-        if t == "else_clause":
-            if n.parent is None or n.parent.type != "if_statement":
-                for c in n.children:  # a loop's or a try's else: no cost, no nesting
-                    visit(c, nest)
-                return
-            inner = [c for c in n.named_children if c.type != "comment"]
-            if len(inner) == 1 and inner[0].type == "if_statement":
-                structure(inner[0], nest, flat=True)  # `else if`: one flat step, not a nested if
-                return
-            total += 1
-            for c in n.children:
-                visit(c, nest + 1)
-            return
-        if t in spec.cog_flat:
-            if not (t == "if_clause" and n.parent is not None and n.parent.type == "case_clause"):  # a case guard is free
-                total += 1
-            for c in n.children:
-                visit(c, nest + 1)
-            return
-        if (op := spec.bool_op(n, sf)) is not None and bool_run_starts(n, op):
-            total += 1
-        elif spec.labeled_jump(n):
-            total += 1
-        elif t in spec.call_types and (fn := n.child_by_field_name("function")) is not None and fn.type == "identifier" and sf.text(fn) == name:
-            total += 1
-        for c in n.children:
-            visit(c, nest)
-
-    for c in body.children:
-        visit(c, 0)
-    return total
+        return p is None or self.spec.bool_op(p, self.sf) != op

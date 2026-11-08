@@ -808,40 +808,44 @@ class _Extractor(DecoratorWalk):
         right = node.child_by_field_name("right")
         if left is not None:
             lchain = self.chain_of(left)
-            if lchain and lchain[0] in ("module", "exports") and (lchain[0] == "exports" or (len(lchain) > 1 and lchain[1] == "exports")):
-                exported_name = lchain[-1] if (lchain[0] == "exports" and len(lchain) > 1) or (lchain[0] == "module" and len(lchain) > 2) else None
+            if _is_commonjs_export(lchain):
                 if right is not None:
-                    r = self._unwrap(right)
-                    if r.type == "identifier":
-                        self.export_names.add(self.text(r))
-                        self.facts.refs.append(RefSite(chain=(self.text(r),), line=self.line(node), scope=scope, context="export"))
-                        return
-                    if r.type == "object" and exported_name is None:
-                        for c in r.named_children:
-                            if c.type == "shorthand_property_identifier":
-                                self.export_names.add(self.text(c))
-                                self.facts.refs.append(RefSite(chain=(self.text(c),), line=self.line(c), scope=scope, context="export"))
-                            elif c.type == "pair":
-                                v = c.child_by_field_name("value")
-                                if v is not None and self._unwrap(v).type == "identifier":
-                                    self.export_names.add(self.text(self._unwrap(v)))
-                                    self.facts.refs.append(RefSite(chain=(self.text(self._unwrap(v)),), line=self.line(c), scope=scope, context="export"))
-                                elif v is not None:
-                                    self.visit(v, scope, class_scope)
-                        return
-                    if exported_name and r.type in ("arrow_function", "function_expression"):
-                        self.visit_function(r, scope, class_scope, True, False, [], name_override=exported_name)
-                        return
-                    self.visit(right, scope, class_scope)
+                    self._commonjs_export(node, lchain, right, scope, class_scope)
                 return
             if left.type == "member_expression":
                 obj = left.child_by_field_name("object")
                 if obj is not None:
                     self.visit(obj, scope, class_scope)
-            elif left.type not in ("identifier",):
+            elif left.type != "identifier":
                 self.visit(left, scope, class_scope)
         if right is not None:
             self.visit(right, scope, class_scope)
+
+    def _commonjs_export(self, node: Node, lchain: tuple[str, ...], right: Node, scope: str | None, class_scope: str | None) -> None:
+        """`module.exports = x`, `= {a, b: c}`, `exports.name = function () {}`."""
+        named = len(lchain) > (1 if lchain[0] == "exports" else 2)  # exports.name / module.exports.name
+        r = self._unwrap(right)
+        if r.type == "identifier":
+            self._mark_export(self.text(r), self.line(node), scope)
+        elif r.type == "object" and not named:
+            for c in r.named_children:
+                self._export_property(c, scope, class_scope)
+        elif named and r.type in ("arrow_function", "function_expression"):
+            self.visit_function(r, scope, class_scope, True, False, [], name_override=lchain[-1])
+        else:
+            self.visit(right, scope, class_scope)
+
+    def _export_property(self, c: Node, scope: str | None, class_scope: str | None) -> None:
+        if c.type == "shorthand_property_identifier":
+            self._mark_export(self.text(c), self.line(c), scope)
+            return
+        v = c.child_by_field_name("value") if c.type == "pair" else None
+        if v is None:
+            return
+        if self._unwrap(v).type == "identifier":
+            self._mark_export(self.text(self._unwrap(v)), self.line(c), scope)
+        else:
+            self.visit(v, scope, class_scope)
 
     # --- calls ----------------------------------------------------------------
     def visit_call(self, node: Node, scope: str | None, class_scope: str | None) -> None:
@@ -946,3 +950,8 @@ class _Extractor(DecoratorWalk):
             if self.default_name is not None and d.name == self.default_name:
                 d.exported = True
                 d.attrs["default_export"] = True
+
+
+def _is_commonjs_export(chain: tuple[str, ...]) -> bool:
+    """`exports...` or `module.exports...` on the left of an assignment."""
+    return bool(chain) and (chain[0] == "exports" or (chain[0] == "module" and len(chain) > 1 and chain[1] == "exports"))
