@@ -89,6 +89,7 @@ class Compiler:
         include: list[str] | None = None,
         exclude: list[str] | None = None,
         isolate: bool | None = None,
+        max_tokens: int | None = None,
     ) -> None:
         if language is not None and language not in available():
             raise ValueError(f"unknown language {language!r}; known: {available()}")
@@ -108,6 +109,8 @@ class Compiler:
             self._given = [source_from_file(self.target, self.root, language)]
         cfg = config or (Config() if self.kind == "string" else Config.load(self.root))
         self.config = replace(cfg, include=list(cfg.include), exclude=list(cfg.exclude))  # chaining never edits the caller's Config
+        if max_tokens is not None:  # -O3: tokens embedded per function, 0 for the model's whole context
+            self.config.embedding_max_tokens = max_tokens
         self.on_phase = on_phase or (lambda *_: None)
         self.include(*(include or []))
         self.exclude(*(exclude or []))
@@ -225,8 +228,9 @@ def compile(  # noqa: A001 - the compiler metaphor, on purpose
     include: list[str] | None = None,
     exclude: list[str] | None = None,
     isolate: bool | None = None,
+    max_tokens: int | None = None,
     on_phase: PhaseCallback | None = None,
     **run,  # noqa: ANN003
 ) -> CompileResult:
     """One call: `Compiler(source, ...).run(...)`. `run` keywords: opt_level, emit, out_dir, only, skip, on_pass."""
-    return Compiler(source, config, on_phase, language=language, include=include, exclude=exclude, isolate=isolate).run(**run)
+    return Compiler(source, config, on_phase, language=language, include=include, exclude=exclude, isolate=isolate, max_tokens=max_tokens).run(**run)

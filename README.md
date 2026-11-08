@@ -482,7 +482,7 @@ opt_level = 2
 entry_patterns = ["*.lambda_handler", "jobs/*"]   # extra roots by qualname or file glob
 treat_exports_as_roots = false      # default: only JS/TS entry modules (index, pages/, app/, ...)
 embedding_model = "nomic-ai/CodeRankEmbed"   # -O3; or "jinaai/jina-embeddings-v2-base-code", or "minishlab/potion-code-16M-v2" (fast mode)
-embedding_max_tokens = 2048          # -O3: tokens embedded per function; memory grows with its square (one 8192-token function took 6.8 GB, 2048 takes 0.8)
+embedding_max_tokens = 2048          # -O3: tokens embedded per function, 0 for whole functions; memory grows with its square (one 8192-token function took 6.8 GB, 2048 takes 0.8); --max-tokens on the command line
 
 [tool.vibepiler.thresholds]
 complexity = 10                     # cyclomatic, McCabe's limit
@@ -513,6 +513,7 @@ result = Compiler(".").include("backend/").exclude("**/gen/").isolate().run(emit
 result = Compiler("path/to/one_file.py").run(emit=())                # just that file; config from its folder
 result = Compiler("def f():\n    return 1\n", language="python").run()   # a snippet; language is optional
 result = vibepiler.compile("path/to/project", include=["api/"], emit=["json"], out_dir="out")   # the one-call form
+result = Compiler(".", max_tokens=4096).run(opt_level=3)   # -O3 embeds up to 4096 tokens a function (0: whole functions); the rest of the config is the project's
 result.bloat.waste, result.bloat.score     # typed scores; result.scores has every one by label
 result.liveness.value                      # share of definitions that reach a use: result.scores["live"]
 program = result.program                   # result.diagnostics, result.graph and result.metrics are shortcuts into it

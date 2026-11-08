@@ -208,6 +208,11 @@ def get_embedder(model: str = DEFAULT_MODEL, max_tokens: int | None = None) -> E
 CHARS_PER_TOKEN = 4  # code runs ~3 characters a token: cutting at 4 leaves the tokenizer the final say
 
 
+def text_cap(config) -> int | None:  # noqa: ANN001 - a Config
+    """Tokens embedded per function; None when `embedding_max_tokens` is 0, the model's own context is the limit."""
+    return config.embedding_max_tokens or None
+
+
 def chars_for(tokens: int) -> int:
     """How much of a function's text to hand the tokenizer for a cap of `tokens`."""
     return tokens * CHARS_PER_TOKEN
@@ -302,8 +307,8 @@ def symbol_vectors(program: Program, min_loc: int = 2):
     if memo is not None:
         return memo["nodes"], memo["vectors"], memo["model"]
     model = program.config.embedding_model
-    tokens = program.config.embedding_max_tokens
-    with timed(f"model {model} loaded, up to {tokens} tokens a function"):
+    tokens = text_cap(program.config)
+    with timed(f"model {model} loaded, up to {tokens or 'its whole context of'} tokens a function"):
         embedder = get_embedder(model, tokens)
     if embedder is None:
         return None, None, model
@@ -319,6 +324,6 @@ def symbol_vectors(program: Program, min_loc: int = 2):
     ]
     nodes.sort(key=lambda n: (n.file or "", n.start_line or 0))
     log.debug("embedding %d functions (%d lines in all)", len(nodes), sum(n.loc for n in nodes))
-    vectors = embed_texts(embedder, [symbol_text(program, n, max_chars=chars_for(tokens)) for n in nodes])
+    vectors = embed_texts(embedder, [symbol_text(program, n, max_chars=chars_for(tokens) if tokens else None) for n in nodes])
     program.metrics["_semantic"] = {"nodes": nodes, "vectors": vectors, "model": embedder.name}
     return nodes, vectors, embedder.name

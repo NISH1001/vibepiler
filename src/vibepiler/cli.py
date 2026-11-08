@@ -136,6 +136,7 @@ def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
     remarks: bool = typer.Option(False, "-R", "--remarks", help="Print missed-optimization remarks: the elimination plan, one line per edit with the lines it frees."),
     baseline: Optional[Path] = typer.Option(None, "--baseline", help="A previous run's ir.json: print how waste, tangle and bloat moved since it."),
     quiet: bool = typer.Option(False, "-q", "--quiet", help="Only print the phase lines and the summary."),
+    max_tokens: Optional[int] = typer.Option(None, "--max-tokens", min=0, help="-O3: tokens embedded per function (default 2048 or the config's embedding_max_tokens); 0 embeds whole functions up to the model's context, which needs far more memory."),
     verbose: bool = typer.Option(False, "-v", "--verbose", help="Print what the slow passes are doing as they run: model load, cache reuse, every embedding batch, each step's time and memory."),
     max_print: int = typer.Option(60, "--max-print", help="Max findings printed to the terminal."),
     cache: Optional[Path] = typer.Option(None, "--cache", help="Where remote repos are cloned (default ~/.cache/vibepiler)."),
@@ -148,7 +149,7 @@ def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
     langs = [x.strip() for x in lang.split(",")] if lang else None
     if langs and (bad_langs := [x for x in langs if x not in available()]):
         raise typer.BadParameter(f"unknown language(s) {bad_langs}; choose from {', '.join(available())}")
-    cfg = _scoped_config(root, path, paths, exclude, isolate, languages=langs)
+    cfg = _scoped_config(root, path, paths, exclude, isolate, languages=langs, embedding_max_tokens=max_tokens)
     min_sev = _parse_warn(warn)
     emits = tuple(e.strip() for e in emit.split(",") if e.strip())
     bad = [e for e in emits if e not in EMITTERS]
@@ -214,13 +215,14 @@ def size(
     paths: Optional[List[str]] = typer.Argument(None, help="Folders or files inside the source to size (default: all of it)."),
     opt: int = typer.Option(None, "-O", "--opt", min=1, max=3, help="Which passes feed the score (default from config, usually -O2)."),
     top: int = typer.Option(15, "--top", help="How many remarks to print."),
+    max_tokens: Optional[int] = typer.Option(None, "--max-tokens", min=0, help="-O3: tokens embedded per function; 0 for whole functions."),
     exclude: Optional[List[str]] = typer.Option(None, "--exclude", "--ignore", help="Gitignore-style patterns to leave out, comma-separated or repeated."),
     isolate: bool = typer.Option(False, "--isolate", help="Read only the named paths (faster). By default the whole source is read, so callers outside them count, and only the named paths are reported."),
     cache: Optional[Path] = typer.Option(None, "--cache", help="Where remote repos are cloned (default ~/.cache/vibepiler)."),
 ) -> None:
     """The size report: waste, tangle and bloat per folder, like `size` on a binary, plus the top remarks."""
     root, _ = _resolve_source(path, cache)
-    cfg = _scoped_config(root, path, paths, exclude, isolate)
+    cfg = _scoped_config(root, path, paths, exclude, isolate, embedding_max_tokens=max_tokens)
     program = _run(Compiler(root, cfg), opt_level=opt, emit=()).program
     b = program.metrics.get("bloat_score")
     if not b:
