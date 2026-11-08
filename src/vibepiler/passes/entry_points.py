@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 
-from vibepiler.ir.model import EdgeKind, NodeKind
+from vibepiler.ir.model import EdgeKind, Node, NodeKind
 from vibepiler.ir.program import Program
 from vibepiler.passes.base import Pass
 from vibepiler.passes.diagnostic import Diagnostic
@@ -91,32 +91,9 @@ class EntryPointsPass(Pass):
         frontier = list(roots)
         while frontier:
             nid = frontier.pop()
-            if nid in reachable:
-                continue
-            reachable.add(nid)
-            for e in g.out_edges(nid, FLOW_EDGES):
-                if e.dst not in reachable:
-                    frontier.append(e.dst)
-            node = g.node(nid)
-            if node.kind is NodeKind.METHOD:
-                # a call resolved to a base-class method reaches every override: virtual dispatch
-                owner = g.parent(nid)
-                if owner is not None and owner.kind is NodeKind.CLASS:
-                    for e in g.in_edges(owner.id, EdgeKind.INHERITS):
-                        for child in g.children(e.src):
-                            if child.kind is NodeKind.METHOD and child.name == node.name and child.id not in reachable:
-                                frontier.append(child.id)
-            if node.kind is NodeKind.CLASS:
-                # a live class keeps alive the methods that are called by name anywhere
-                for child in g.children(nid):
-                    if child.id in reachable:
-                        continue
-                    if is_dunder(child.name) or child.name in used_names or child.attrs.get("is_root"):
-                        frontier.append(child.id)
-                # ... and its base classes' members are looked up through it
-            if node.kind is NodeKind.MODULE and node.attrs.get("is_test"):
-                for child in g.children(nid):
-                    frontier.append(child.id)
+            if nid not in reachable:
+                reachable.add(nid)
+                frontier += [s for s in _successors(g, g.node(nid), used_names) if s not in reachable]
         return reachable
 
     @staticmethod
@@ -133,3 +110,17 @@ class EntryPointsPass(Pass):
         for n in kept:
             n.attrs["alive_by_name"] = True
         return kept
+
+
+def _successors(g, node: Node, used_names) -> list[str]:  # noqa: ANN001
+    """What a live node keeps alive: its flow edges' targets, plus three rules the edges do not carry."""
+    out = [e.dst for e in g.out_edges(node.id, FLOW_EDGES)]
+    if node.kind is NodeKind.METHOD and (owner := g.parent(node.id)) is not None and owner.kind is NodeKind.CLASS:
+        # a call resolved to a base-class method reaches every override: virtual dispatch
+        out += [c.id for e in g.in_edges(owner.id, EdgeKind.INHERITS) for c in g.children(e.src) if c.kind is NodeKind.METHOD and c.name == node.name]
+    elif node.kind is NodeKind.CLASS:
+        # a live class keeps alive the methods that are called by name anywhere
+        out += [c.id for c in g.children(node.id) if is_dunder(c.name) or c.name in used_names or c.attrs.get("is_root")]
+    elif node.kind is NodeKind.MODULE and node.attrs.get("is_test"):
+        out += [c.id for c in g.children(node.id)]  # a test module runs everything in it
+    return out

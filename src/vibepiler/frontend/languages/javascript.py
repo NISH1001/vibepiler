@@ -722,21 +722,6 @@ class _Extractor(DecoratorWalk):
                 self.visit(body, scope, scope)
             return
         qualname = f"{scope}.{name}" if scope else name
-        bases: list[str] = []
-        heritage = next((c for c in node.named_children if c.type == "class_heritage"), None)
-        if heritage is not None:
-            for c in heritage.named_children:
-                if c.type == "implements_clause":
-                    continue
-                target = c.child_by_field_name("value") if c.type == "extends_clause" else c
-                if target is None:
-                    continue
-                chain = self.loose_chain_of(target)
-                if chain is not None:
-                    bases.append(".".join(chain))
-                    self.facts.refs.append(RefSite(chain=chain, line=self.line(c), scope=scope, context="base"))
-                else:
-                    self.visit(target, scope, None)
         attrs: dict = {}
         if node.type == "abstract_class_declaration":
             attrs["is_abstract"] = True
@@ -751,40 +736,58 @@ class _Extractor(DecoratorWalk):
             node=node,
             parent_qualname=scope,
             decorators=[self.decorator_name(x) for x in decorators],
-            bases=bases,
+            bases=self._bases(node, scope),
             exported=(exported or default) if scope is None else False,
             attrs=attrs,
         )
         self.facts.defs.append(d)
         self.add_entry_hints(d)
-        if body is None:
-            return
+        if body is not None:
+            self._class_body(body, qualname)
+
+    def _bases(self, node: Node, scope: str | None) -> list[str]:
+        """What a class extends, each one a `base` reference; `implements` names no runtime base."""
+        bases: list[str] = []
+        heritage = next((c for c in node.named_children if c.type == "class_heritage"), None)
+        for c in heritage.named_children if heritage is not None else []:
+            target = None if c.type == "implements_clause" else c.child_by_field_name("value") if c.type == "extends_clause" else c
+            if target is None:
+                continue
+            chain = self.loose_chain_of(target)
+            if chain is None:
+                self.visit(target, scope, None)
+                continue
+            bases.append(".".join(chain))
+            self.facts.refs.append(RefSite(chain=chain, line=self.line(c), scope=scope, context="base"))
+        return bases
+
+    def _class_body(self, body: Node, qualname: str) -> None:
+        """Members in order; a decorator on its own line belongs to the member after it."""
         pending: list[Node] = []
         for member in body.named_children:
             if member.type == "decorator":
                 pending.append(member)
                 self.visit_decorator(member, qualname)
                 continue
-            member_decs = pending + [c for c in member.children if c.type == "decorator"]
+            self._member(member, qualname, pending + [c for c in member.children if c.type == "decorator"])
             pending = []
-            if member.type in ("method_definition", "abstract_method_signature"):
-                mname = member.child_by_field_name("name")
-                self.visit_function(member, qualname, qualname, False, False, member_decs, name_override=self.text(mname) if mname is not None else None, kind=NodeKind.METHOD)
-            elif member.type in ("public_field_definition", "field_definition", "property_definition"):
-                fname = member.child_by_field_name("name")
-                value = member.child_by_field_name("value")
-                if value is not None and self._unwrap(value).type in ("arrow_function", "function_expression") and fname is not None:
-                    self.visit_function(self._unwrap(value), qualname, qualname, False, False, member_decs, name_override=self.text(fname), kind=NodeKind.METHOD)
-                else:
-                    typ = member.child_by_field_name("type")
-                    if typ is not None:
-                        self.visit(typ, qualname, qualname)
-                    if value is not None:
-                        self.visit(value, qualname, qualname)
-            elif member.type in ("method_signature", "property_signature", "index_signature", "comment"):
-                continue
-            else:
-                self.visit(member, qualname, qualname)
+
+    def _member(self, member: Node, qualname: str, decorators: list[Node]) -> None:
+        """A method, a field (a method when it holds a function), or anything else in a class body."""
+        if member.type in ("method_definition", "abstract_method_signature"):
+            mname = member.child_by_field_name("name")
+            self.visit_function(member, qualname, qualname, False, False, decorators, name_override=self.text(mname) if mname is not None else None, kind=NodeKind.METHOD)
+        elif member.type in ("public_field_definition", "field_definition", "property_definition"):
+            fname = member.child_by_field_name("name")
+            value = member.child_by_field_name("value")
+            if value is not None and fname is not None and self._unwrap(value).type in ("arrow_function", "function_expression"):
+                self.visit_function(self._unwrap(value), qualname, qualname, False, False, decorators, name_override=self.text(fname), kind=NodeKind.METHOD)
+                return
+            for part in (member.child_by_field_name("type"), value):
+                if part is not None:
+                    self.visit(part, qualname, qualname)
+        elif member.type not in ("method_signature", "property_signature", "index_signature", "comment"):
+            self.visit(member, qualname, qualname)
 
     def visit_type_decl(self, node: Node, scope: str | None, exported: bool, kind: NodeKind, attrs: dict) -> None:
         name_node = node.child_by_field_name("name")
