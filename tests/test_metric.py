@@ -3,6 +3,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from vibepiler.config import Config
 from vibepiler.ir.builder import build_program
 from vibepiler.passes.bloat_score import Bloat
@@ -44,3 +46,15 @@ def test_moved_needs_half_a_point():
 def test_registry_lists_metrics_and_parses_a_gate():
     assert all_metrics()[0] is Bloat
     assert parse_gate("bloat>0.25") == (Bloat, ">", 0.25) and parse_gate("warning") is None
+
+
+def liveness_snapshot(root: Path) -> str:
+    prog = build_program(root, config=Config.load(root))
+    run_passes(prog, opt_level=1)
+    nodes = {n.id: n.attrs["liveness"] for n in prog.graph.nodes() if "liveness" in n.attrs}
+    return json.dumps({"repo": prog.metrics["liveness_score"], "nodes": nodes}, sort_keys=True)
+
+
+@pytest.mark.parametrize("name", ["pyproj", "jsproj"])
+def test_liveness_roll_up_is_byte_identical_to_the_snapshot(name):
+    assert liveness_snapshot(FIX.parent / name) == (SNAP.parent / f"{name}_liveness.json").read_text()
