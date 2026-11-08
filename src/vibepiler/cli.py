@@ -136,7 +136,7 @@ def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
     remarks: bool = typer.Option(False, "-R", "--remarks", help="Print missed-optimization remarks: the elimination plan, one line per edit with the lines it frees."),
     baseline: Optional[Path] = typer.Option(None, "--baseline", help="A previous run's ir.json: print how waste, tangle and bloat moved since it."),
     quiet: bool = typer.Option(False, "-q", "--quiet", help="Only print the phase lines and the summary."),
-    max_tokens: Optional[int] = typer.Option(None, "--max-tokens", min=0, help="-O3: tokens embedded per function (default 2048 or the config's embedding_max_tokens); 0 embeds whole functions up to the model's context, which needs far more memory."),
+    max_tokens: Optional[int] = typer.Option(None, "--max-tokens", min=0, help="-O3: tokens embedded per function (default 4096 or the config's embedding_max_tokens); 0 embeds whole functions up to the model's context, which needs far more memory."),
     verbose: bool = typer.Option(False, "-v", "--verbose", help="Print what the slow passes are doing as they run: model load, cache reuse, every embedding batch, each step's time and memory."),
     max_print: int = typer.Option(60, "--max-print", help="Max findings printed to the terminal."),
     cache: Optional[Path] = typer.Option(None, "--cache", help="Where remote repos are cloned (default ~/.cache/vibepiler)."),
