@@ -11,6 +11,7 @@ from vibepiler.frontend.loader import SourceFile
 from vibepiler.passes.astutil import max_nesting
 from vibepiler.passes.base import Pass
 from vibepiler.passes.cognitive import cognitive
+from vibepiler.passes.halstead import halstead, maintainability
 from vibepiler.passes.diagnostic import Diagnostic, Severity
 
 
@@ -50,6 +51,8 @@ class ComplexityPass(Pass):
             cog = cognitive(n.name, body, spec, sf)
             n.attrs["complexity"] = cc
             n.attrs["cognitive"] = cog
+            n.attrs["halstead"] = h = halstead(body, spec, sf)
+            n.attrs["mi"] = maintainability(h["volume"], cc, n.loc)
             n.attrs["nesting"] = nesting
             n.attrs["loc"] = n.loc
             n.attrs["param_count"] = len(n.attrs.get("params", []))
