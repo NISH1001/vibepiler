@@ -70,6 +70,7 @@ class LanguageSpec(ABC):
     leaf_types: frozenset[str] = frozenset({"identifier", "string", "number", "integer", "float"})
     #: node types that define a function body (for clone detection / complexity scope)
     function_types: frozenset[str] = frozenset()
+    opaque_branch_types: frozenset[str] = frozenset()  # a branch whose inside adds nothing more (radon's `assert`)
 
     @abstractmethod
     def module_name(self, sf: SourceFile) -> tuple[str, list[str]]:
