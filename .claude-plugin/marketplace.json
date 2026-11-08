@@ -1,0 +1,12 @@
+{
+  "name": "vibepiler",
+  "owner": { "name": "NISH1001" },
+  "description": "vibepiler: a compiler for vibe-coded software.",
+  "plugins": [
+    {
+      "name": "vibepiler",
+      "source": "./",
+      "description": "Run vibepiler on a codebase, read its report, and work through its elimination plan."
+    }
+  ]
+}
