@@ -97,3 +97,37 @@ def test_documented_reads_jsdoc_above_an_export():
 def test_every_metric_is_a_gate(gate, label):
     cls, _, _ = parse_gate(gate)
     assert cls.label == label
+
+
+# ----- review fixes ------------------------------------------------------------------------------------------------
+def test_an_inline_callback_counts_in_the_function_that_holds_it():
+    src = "function App(a, xs) {\n  xs.forEach((x) => {\n    if (x) {\n      g(x);\n    }\n  });\n  return a;\n}\n"
+    n = fn(src, "javascript")
+    assert n.attrs["cognitive_complexity"] == 2  # the if, one level deep inside the callback
+    assert n.attrs["complexity"] == 2
+
+
+def test_a_named_nested_function_still_counts_on_its_own():
+    p = prog("function outer(a) {\n  function inner(b) {\n    if (b) { return 1; }\n    return 2;\n  }\n  return inner(a);\n}\n", "javascript")
+    by = {n.name: n for n in p.graph.nodes() if n.kind.value == "function"}
+    assert by["outer"].attrs["cognitive_complexity"] == 0 and by["inner"].attrs["cognitive_complexity"] == 1
+
+
+def test_maintainability_uses_a_functions_own_lines():
+    body = "".join(f"        y{i} = {i}\n" for i in range(30))
+    p = prog(f"def outer(a):\n    def inner():\n{body}        return 1\n    return inner()\n")
+    by = {n.name: n for n in p.graph.nodes() if n.kind.value == "function"}
+    alone = prog("def outer(a):\n    def inner():\n        return 1\n    return inner()\n")
+    alone_outer = next(n for n in alone.graph.nodes() if n.name == "outer")
+    assert by["outer"].attrs["mi"] == alone_outer.attrs["mi"]
+
+
+def test_nothing_to_measure_says_so():
+    assert str(Cognitive()) == "cognitive n/a (no functions)"
+    assert str(Typed()) == "typed n/a (nothing to count)"
+    assert Typed().value == 1.0  # still passes a gate: nothing is missing
+
+
+def test_a_typescript_arrow_with_one_bare_parameter_counts_its_slot():
+    p = prog("export const f = x => x;\nexport const g = (y: number): number => y;\n", "typescript")
+    assert (Typed.of(p).have, Typed.of(p).total) == (2, 4)

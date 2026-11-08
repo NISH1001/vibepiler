@@ -283,7 +283,8 @@ class TypeScriptSpec(JavaScriptSpec):
 
     def annotation_slots(self, def_node: Node, sf: SourceFile) -> tuple[int, int]:
         params = def_node.child_by_field_name("parameters")
-        typed = slots = 0
+        typed = 0
+        slots = int(def_node.child_by_field_name("parameter") is not None)  # `x => x`: one bare, untyped parameter
         for p in params.named_children if params is not None else []:
             if p.type not in ("required_parameter", "optional_parameter") or any(c.type == "this" for c in p.children):
                 continue
