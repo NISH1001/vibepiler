@@ -31,7 +31,8 @@ Take items from the top of the plan (largest first), one at a time:
    - Dead or unreachable: search the whole repo for the name as text, not just as a call: string references, `getattr`, registries, decorators, config files, templates, exports in `__init__` or `index` files, and tests. A hit you cannot rule out means skip it.
    - Duplicate: read every copy; fold into the clearest one and point the callers at it.
    - Wrapper or abstraction: inline only when every caller can use the target directly.
-   - A finding that is wrong or intentional: do not edit. Record it for the user, and suggest an `accept` entry (`accept = ["dead-symbol:pkg.module.name"]` under `[tool.vibepiler]`) so it stops being reported.
+   - A finding that is intentional (true, but the owner wants it): do not edit. Record it for the user, and suggest an `accept` entry (`accept = ["dead-symbol:pkg.module.name"]` under `[tool.vibepiler]`) so it stops being reported.
+   - A finding that is wrong (vibepiler misread the code: a use it did not see, a cycle that never runs, an import it did not recognise): do not edit, and do not hide it with `accept`. It is a bug in vibepiler. Record the smallest snippet that reproduces it, so the user can report it at https://github.com/NISH1001/vibepiler/issues.
 3. **Make the smallest edit that does what the action says.** Delete, fold or inline; remove imports the edit leaves unused. Nothing else in the same step.
 4. **Run the tests.** If they fail because of your edit, revert that edit, record why, and move to the next item. Never change a test to make a deletion pass.
 5. **Recompile against the previous run** and say what moved:
@@ -52,6 +53,7 @@ Report:
 - what was removed, as a short list with lines freed;
 - the start and end numbers: re-run once more with `--baseline /tmp/vibepiler-start.json`;
 - what you skipped and why (failing tests, uses vibepiler cannot see, judgment calls), with the `accept` lines to add if the user agrees;
+- the findings that were wrong, each with its reproducing snippet: vibepiler bugs to report, not lines to accept;
 - the `model` suggestions you left alone.
 
 ## Rules
