@@ -128,3 +128,35 @@ def test_max_tokens_is_a_compiler_keyword_over_the_projects_config(monkeypatch, 
     assert made.max_tokens == 512
     assert Compiler(tmp_path).config.embedding_max_tokens == 1024
     assert vibepiler.compile(tmp_path, max_tokens=0, opt_level=1, emit=()).program.config.embedding_max_tokens == 0
+
+
+# ----- the cache survives an interrupted run --------------------------------------------------------------------------
+class Dies(FakeEmbedder):
+    """Embeds `allowed` batches, then fails like a killed run."""
+
+    def __init__(self, allowed):
+        self.allowed, self.calls = allowed, 0
+
+    def embed(self, texts):
+        self.calls += 1
+        if self.calls > self.allowed:
+            raise KeyboardInterrupt
+        return super().embed(texts)
+
+
+def test_an_interrupted_run_keeps_what_it_embedded(tmp_path):
+    texts = [f"def f{i}(x):\n    return x * {i}\n" for i in range(100)]
+    with pytest.raises(KeyboardInterrupt):
+        embed.embed_texts(Dies(allowed=2), texts, cache_dir=tmp_path)
+    counting = Dies(allowed=10**6)
+    embed.embed_texts(counting, texts, cache_dir=tmp_path)
+    assert counting.calls == len(embed.batches(texts)) - 2  # the two batches done before the stop are not redone
+    assert not list(tmp_path.glob("*.tmp*"))  # written whole, then moved into place
+
+
+def test_long_runs_save_the_cache_as_they_go(tmp_path, monkeypatch, caplog):
+    monkeypatch.setattr(embed, "CHECKPOINT_SECONDS", 0.0)
+    texts = [f"def f{i}(x):\n    return x * {i}\n" for i in range(100)]
+    with caplog.at_level(logging.DEBUG, logger="vibepiler"):
+        embed.embed_texts(FakeEmbedder(), texts, cache_dir=tmp_path)
+    assert sum(r.getMessage().startswith("cache saved") for r in caplog.records) >= len(embed.batches(texts))
