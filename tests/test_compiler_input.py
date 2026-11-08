@@ -181,7 +181,7 @@ def test_compile_is_discoverable_on_the_package():
 # ------------------------------------------------------------------ the typed result
 def test_result_exposes_typed_scores_and_shortcuts():
     r = Compiler(PY).run(emit=())
-    assert set(r.scores) == {"bloat", "live"} and r.bloat.value == r.scores["bloat"].value and r.liveness.value == r.scores["live"].value
+    assert set(r.scores) == {"bloat", "live", "cognitive", "cyclomatic", "mi", "typed", "documented"} and r.bloat.value == r.scores["bloat"].value and r.liveness.value == r.scores["live"].value
     assert r.diagnostics is r.program.diagnostics and r.graph is r.program.graph and r.metrics is r.program.metrics
     assert r.to_dict()["metrics"]["liveness_score"]["value"] == r.liveness.value
 
