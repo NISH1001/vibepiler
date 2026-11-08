@@ -2,8 +2,8 @@
 
 Operands are the identifier and literal tokens (a whole string is one operand), operators every other token: keywords,
 punctuation, operator symbols. That is the classic token reading, the same in every language; radon's Halstead counts
-only arithmetic, boolean and comparison operators, so its numbers are smaller than these. A nested function is a unit
-of its own and is left out.
+only arithmetic, boolean and comparison operators, so its numbers are smaller than these. A nested function the graph
+knows is a unit of its own and is left out; an inline callback is part of its holder.
 
     volume V = N log2 n        difficulty D = n1/2 · N2/n2        effort E = D · V
     MI = max(0, (171 − 5.2 ln V − 0.23 CC − 16.2 ln LOC) · 100 / 171)        (Visual Studio's 0–100 variant)
@@ -22,13 +22,13 @@ from vibepiler.frontend.loader import SourceFile
 SKIP = frozenset({"comment"})
 
 
-def halstead(body: TSNode, spec: LanguageSpec, sf: SourceFile) -> dict:
+def halstead(body: TSNode, spec: LanguageSpec, sf: SourceFile, units: frozenset[tuple[int, int]]) -> dict:
     operators: Counter[str] = Counter()
     operands: Counter[str] = Counter()
     stack = [body]
     while stack:
         n = stack.pop()
-        if n.type in SKIP or (n is not body and n.type in spec.function_types):
+        if n.type in SKIP or (n is not body and n.type in spec.function_types and (n.start_byte, n.end_byte) in units):
             continue
         if n.type in spec.leaf_types:
             operands[sf.text(n)] += 1

@@ -12,15 +12,17 @@ from vibepiler.passes.astutil import max_nesting
 from vibepiler.passes.base import Pass
 from vibepiler.passes.cognitive import cognitive
 from vibepiler.passes.halstead import halstead, maintainability
+from vibepiler.passes.metric import SCOPES
 from vibepiler.passes.diagnostic import Diagnostic, Severity
 
 
-def cyclomatic(body: TSNode, spec: LanguageSpec, sf: SourceFile) -> int:
-    """McCabe's number, 1 + decision points, counted as radon counts them; nested functions count on their own."""
+def cyclomatic(body: TSNode, spec: LanguageSpec, sf: SourceFile, units: frozenset[tuple[int, int]]) -> int:
+    """McCabe's number, 1 + decision points, counted as radon counts them. A nested function that is a unit of its own
+    counts on its own; an inline callback counts here."""
     cc, stack = 1, list(body.children)
     while stack:
         n = stack.pop()
-        if n.type in spec.function_types:
+        if n.type in spec.function_types and (n.start_byte, n.end_byte) in units:
             continue
         if spec.is_branch(n, sf) or n.type in spec.opaque_branch_types:
             cc += 1
@@ -39,20 +41,26 @@ class ComplexityPass(Pass):
         th = program.config.thresholds
         diags: list[Diagnostic] = []
         rows = []
-        for n in program.graph.nodes(CALLABLE_KINDS):
-            d = program.symbol_def(n)
-            if d is None or d.node is None:
+        g = program.graph
+        bodies = {n.id: d.node for n in g.nodes(CALLABLE_KINDS) if (d := program.symbol_def(n)) is not None and d.node is not None}
+        spans: dict[str | None, set[tuple[int, int]]] = {}  # per module: the spans of functions that are units of their own
+        for nid, body in bodies.items():
+            spans.setdefault(g.node(nid).module, set()).add((body.start_byte, body.end_byte))
+        units = {m: frozenset(s) for m, s in spans.items()}  # the walkers start below a function's own node
+        for n in g.nodes(CALLABLE_KINDS):
+            if (body := bodies.get(n.id)) is None:
                 continue
             spec = program.spec_for(n)
             sf = program.facts[n.module].file  # type: ignore[index]
-            body = d.node
-            cc = cyclomatic(body, spec, sf)
+            mine = units[n.module]
+            cc = cyclomatic(body, spec, sf, mine)
             nesting = max_nesting(body, spec.nesting_types, spec.function_types)
-            cog = cognitive(n.name, body, spec, sf)
+            cog = cognitive(n.name, body, spec, sf, mine)
+            own_loc = max(1, n.loc - sum(c.loc for c in g.children(n.id) if c.kind in SCOPES))
             n.attrs["complexity"] = cc
             n.attrs["cognitive_complexity"] = cog
-            n.attrs["halstead"] = h = halstead(body, spec, sf)
-            n.attrs["mi"] = maintainability(h["volume"], cc, n.loc)
+            n.attrs["halstead"] = h = halstead(body, spec, sf, mine)
+            n.attrs["mi"] = maintainability(h["volume"], cc, own_loc)
             n.attrs["nesting"] = nesting
             n.attrs["loc"] = n.loc
             n.attrs["param_count"] = len(n.attrs.get("params", []))

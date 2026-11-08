@@ -674,10 +674,11 @@ function buildMeaning() {
   for (const [key, M] of Object.entries(MM_MEASURES)) {
     const vals = [...new Set(P.map(M.get))].sort((a, b) => a - b), lim = M.limit(limitOf);
     // start just past the compiler's limit: what it would flag is what lights up
-    const t = M.up ? (vals.find(v => v > lim) ?? vals[vals.length - 1]) : ([...vals].reverse().find(v => v < lim) ?? vals[0]);
-    measured[key] = { vals, t };
+    const past = M.up ? vals.find(v => v > lim) : [...vals].reverse().find(v => v < lim);
+    // nothing past the line: start with nothing lit (clear) until the slider moves, rather than lighting the extreme
+    measured[key] = { vals, t: past ?? (M.up ? vals[vals.length - 1] : vals[0]), clear: past === undefined, lim };
   }
-  const M = () => MM_MEASURES[state.colour], on = p => { const m = M(), v = m.get(p), t = measured[state.colour].t; return m.up ? v >= t : v <= t; };
+  const M = () => MM_MEASURES[state.colour], on = p => { const m = M(), v = m.get(p), sc = measured[state.colour]; return !sc.clear && (m.up ? v >= sc.t : v <= sc.t); };
   function rampOf(p) { // position among the lit values, log for long-tailed counts
     const m = M(), sc = measured[state.colour], f = m.log ? v => Math.log1p(Math.max(0, v)) : v => v;
     const lo = f(sc.t), hi = f(m.up ? sc.vals[sc.vals.length - 1] : sc.vals[0]), u = hi === lo ? 1 : (f(m.get(p)) - lo) / (hi - lo);
@@ -945,13 +946,13 @@ function buildMeaning() {
     // the slider runs from mild to extreme: low values on the left for "higher is worse", high ones for "lower is worse"
     tr.value = Math.round(1000 * (m.up ? i : sc.vals.length - 1 - i) / Math.max(1, sc.vals.length - 1));
     document.getElementById('mm-tl').textContent = state.colour + (m.up ? ' ≥' : ' ≤');
-    document.getElementById('mm-tv').textContent = m.fmt(sc.t);
+    document.getElementById('mm-tv').textContent = sc.clear ? 'none past ' + m.fmt(sc.lim) : m.fmt(sc.t);
     document.getElementById('mm-tc').textContent = `${lit} of ${P.length}`;
   }
   colourSel.addEventListener('change', () => { state.colour = colourSel.value; order = null; syncThreshold(); legend(); kick(); });
   tr.addEventListener('input', () => {
     const m = M(), sc = measured[state.colour], n = sc.vals.length - 1, k = Math.round(+tr.value / 1000 * n);
-    sc.t = sc.vals[m.up ? k : n - k]; syncThreshold(); legend(); kick();
+    sc.t = sc.vals[m.up ? k : n - k]; sc.clear = false; syncThreshold(); legend(); kick();
   });
   const search = document.getElementById('mm-search'), names = {};
   for (const p of byImportance) names[p.q] ||= p;

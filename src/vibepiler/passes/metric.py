@@ -129,6 +129,8 @@ class Share(Metric):
         return type(self)(self.have + other.have, self.total + other.total)
 
     def __str__(self) -> str:
+        if not self.total:
+            return f"{self.label} n/a (nothing to count)"
         return f"{self.label} {self.value:.1%} ({self.have} of {self.total} {self.noun})"
 
 
@@ -181,6 +183,8 @@ class OverLimit(Metric):
         return type(self)(self.limit or other.limit, self.loc + other.loc, self.weighted + other.weighted, self.functions + other.functions, self.over + other.over, worst)
 
     def __str__(self) -> str:
+        if not self.functions:
+            return f"{self.label} n/a (no functions)"
         side = "below" if self.raw_better == "high" else "over"
         worst = f"; worst {self.worst:g}" if self.worst is not None else ""
         return f"{self.label} {self.value:.1%} ({self.over} of {self.functions} functions {side} {self.limit:g}{worst})"

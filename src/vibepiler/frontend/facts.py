@@ -100,6 +100,8 @@ class FileFacts:
     has_main_guard: bool = False
     is_test: bool = False
     attrs: dict[str, Any] = field(default_factory=dict)
+    _by_qualname: dict[str, SymbolDef] = field(default_factory=dict, init=False, repr=False, compare=False)
+    _by_qualname_of: int = field(default=-1, init=False, repr=False, compare=False)  # len(defs) it was built from
 
     @property
     def rel(self) -> str:
@@ -110,4 +112,8 @@ class FileFacts:
         return self.file.language
 
     def defs_by_qualname(self) -> dict[str, SymbolDef]:
-        return {d.qualname: d for d in self.defs}
+        """Built once; rebuilt only if a definition was added since (extraction appends, nothing removes)."""
+        if self._by_qualname_of != len(self.defs):
+            self._by_qualname = {d.qualname: d for d in self.defs}
+            self._by_qualname_of = len(self.defs)
+        return self._by_qualname

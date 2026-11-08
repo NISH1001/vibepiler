@@ -4,8 +4,8 @@ Unlike cyclomatic complexity, nesting costs: an `if` inside a loop inside a `try
 at the top. A structure (`if`, loop, `catch`/`except`, `switch`/`match`, ternary, a comprehension's `for`) costs 1 plus
 how deep it sits and nests what it holds; `elif`, an `if`'s `else` and a comprehension's `if` cost 1 flat; a loop's or
 a `try`'s `else` costs nothing; each run of one boolean operator costs 1; a jump to a label and a bare-name call to the
-function itself cost 1. Lambdas nest without costing, and a comprehension's element nests under its `for`. A nested function is a unit of its own, as for cyclomatic
-complexity. The Python rules agree with complexipy; the language tables live on each `LanguageSpec`.
+function itself cost 1. Lambdas nest without costing, and a comprehension's element nests under its `for`. A nested function the graph knows is a unit of its own;
+an inline callback nests like a lambda. The Python rules agree with complexipy; the language tables live on each `LanguageSpec`.
 """
 
 from __future__ import annotations
@@ -19,7 +19,9 @@ ALTERNATIVES = ("else_clause", "elif_clause")
 TRANSPARENT = ("parenthesized_expression",)
 
 
-def cognitive(name: str, body: TSNode, spec: LanguageSpec, sf: SourceFile) -> int:
+def cognitive(name: str, body: TSNode, spec: LanguageSpec, sf: SourceFile, units: frozenset[tuple[int, int]]) -> int:
+    """`units` are the spans of the functions that are units of their own; any other function (an inline callback)
+    counts here, one level deeper, like a lambda."""
     total = 0
 
     def bool_run_starts(n: TSNode, op: str) -> bool:
@@ -37,9 +39,9 @@ def cognitive(name: str, body: TSNode, spec: LanguageSpec, sf: SourceFile) -> in
     def visit(n: TSNode, nest: int) -> None:
         nonlocal total
         t = n.type
-        if t in spec.function_types:
+        if t in spec.function_types and (n.start_byte, n.end_byte) in units:
             return
-        if t in spec.lambda_types:
+        if t in spec.lambda_types or t in spec.function_types:
             for c in n.children:
                 visit(c, nest + 1)
             return
