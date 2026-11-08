@@ -50,3 +50,18 @@ def timed(step: str) -> Iterator[None]:
 def progress(what: str, done: int, total: int, **info: object) -> None:
     """A live counter: the CLI rewrites one line with it; any other sink sees an INFO record with `progress` in extra."""
     log.bind(progress={"what": what, "done": done, "total": total, **info}).info("{} {} / {}", what, done, total)
+
+
+@contextmanager
+def verbose(on: bool = True) -> Iterator[None]:
+    """vibepiler's records on for the duration, into whatever loguru sinks there are (stderr by default), then off
+    again unless VIBEPILER_DEBUG asked for them always: `Compiler(..., verbose=True)`."""
+    if not on:
+        yield
+        return
+    log.enable("vibepiler")
+    try:
+        yield
+    finally:
+        if not os.environ.get("VIBEPILER_DEBUG"):
+            log.disable("vibepiler")

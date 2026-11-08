@@ -362,3 +362,22 @@ def test_the_pass_log_draws_a_progress_bar_with_an_eta(verbose):
     assert (task.completed, task.total) == (64, 100) and "embedding" in task.description
     passlog.finish()
     assert passlog.bar is None  # gone with its pass
+
+
+def test_verbose_from_python_prints_every_step_and_is_quiet_again_after():
+    import vibepiler
+    from vibepiler.compiler import Compiler
+
+    seen = []
+    sink = logger.add(lambda m: seen.append(m.record["message"]), level="DEBUG", filter="vibepiler")  # any sink: stderr by default
+    try:
+        Compiler(FIX, verbose=True).run(emit=())
+        assert any(m.startswith("config:") for m in seen) and any(m.startswith("discover:") for m in seen) and any(m.startswith("link:") for m in seen)
+        seen.clear()
+        vibepiler.compile(FIX, emit=())
+        assert seen == []  # off unless asked, and the last run left nothing on
+        vibepiler.compile(FIX, verbose=True, emit=())
+        assert any(m.startswith("discover:") for m in seen)
+    finally:
+        logger.remove(sink)
+    test_vibepiler_is_silent_until_enabled()

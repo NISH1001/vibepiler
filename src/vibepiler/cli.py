@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from typing import List, Optional
 
@@ -123,22 +124,31 @@ def _run(compiler: Compiler, **run):  # noqa: ANN003, ANN202
 
 
 
+_STDERR_SINK: int | None = 0  # loguru's own stderr sink, set aside while the pass log prints, then put back
+
+
 def _listen(passlog: PassLog) -> int:
-    """Turn vibepiler's records on into the pass log; loguru's own stderr sink goes, so a line is not printed twice
-    (it stays under VIBEPILER_DEBUG=1, which asked for it)."""
-    if not os.environ.get("VIBEPILER_DEBUG"):
+    """Turn vibepiler's records on into the pass log; loguru's stderr sink steps aside for the run, so a line is not
+    printed twice (it stays under VIBEPILER_DEBUG=1, which asked for it)."""
+    global _STDERR_SINK
+    if not os.environ.get("VIBEPILER_DEBUG") and _STDERR_SINK is not None:
         try:
-            logger.remove(0)
+            logger.remove(_STDERR_SINK)
         except ValueError:
-            pass  # already gone
+            _STDERR_SINK = None  # someone else removed it: theirs to manage, not ours to restore
+        else:
+            _STDERR_SINK = -1  # set aside; _unlisten restores it
     logger.enable("vibepiler")
     return logger.add(passlog, level=passlog.level, format="{message}", filter="vibepiler")
 
 
 def _unlisten(sink: int) -> None:
+    global _STDERR_SINK
     logger.remove(sink)
+    if _STDERR_SINK == -1:
+        _STDERR_SINK = logger.add(sys.stderr)  # loguru's default, back for anything run later in the same process
     if not os.environ.get("VIBEPILER_DEBUG"):
-        logger.disable("vibepiler")  # quiet again for anything run in the same process
+        logger.disable("vibepiler")  # quiet again
 
 @app.command()
 def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
