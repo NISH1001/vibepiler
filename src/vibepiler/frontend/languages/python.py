@@ -64,15 +64,27 @@ class PythonSpec(PythonFlow, LanguageSpec):
     name = "python"
     branch_types = frozenset({
         "if_statement", "elif_clause", "for_statement", "while_statement", "except_clause",
-        "boolean_operator", "conditional_expression", "for_in_clause", "case_clause",
-        "match_statement", "with_statement", "assert_statement",
-    })
+        "boolean_operator", "conditional_expression", "for_in_clause", "if_clause", "case_clause", "assert_statement",
+    })  # radon's rules: `with` and `match` add nothing, each `case` does
+    loop_else_parents = frozenset({"for_statement", "while_statement", "try_statement"})
+    opaque_branch_types = frozenset({"assert_statement"})  # one check, whatever its condition holds
     nesting_types = frozenset({
         "if_statement", "for_statement", "while_statement", "try_statement", "with_statement",
         "function_definition", "class_definition", "match_statement",
     })
     leaf_types = frozenset({"identifier", "string", "string_content", "integer", "float", "true", "false", "none"})
     function_types = frozenset({"function_definition"})
+
+    def is_branch(self, node: Node, sf: SourceFile) -> bool:
+        """A loop's or a try's `else` is a path of its own; an `if`'s `else` and a `case _:` are not."""
+        if node.type == "else_clause":
+            return node.parent is not None and node.parent.type in self.loop_else_parents
+        if node.type == "if_clause" and node.parent is not None and node.parent.type == "case_clause":
+            return False  # a case guard: radon counts the case, not its guard
+        if node.type == "case_clause":
+            pattern = next((c for c in node.children if c.type == "case_pattern"), None)
+            return not (pattern is not None and [c.type for c in pattern.children] == ["_"])  # `case _:` is the else
+        return node.type in self.branch_types
 
     # ------------------------------------------------------------------ naming
     def module_name(self, sf: SourceFile) -> tuple[str, list[str]]:

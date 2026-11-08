@@ -4,9 +4,27 @@ from __future__ import annotations
 
 from vibepiler.ir.model import CALLABLE_KINDS
 from vibepiler.ir.program import Program
-from vibepiler.passes.astutil import descendants_excluding, max_nesting
+from tree_sitter import Node as TSNode
+
+from vibepiler.frontend.languages.base import LanguageSpec
+from vibepiler.frontend.loader import SourceFile
+from vibepiler.passes.astutil import max_nesting
 from vibepiler.passes.base import Pass
 from vibepiler.passes.diagnostic import Diagnostic, Severity
+
+
+def cyclomatic(body: TSNode, spec: LanguageSpec, sf: SourceFile) -> int:
+    """McCabe's number, 1 + decision points, counted as radon counts them; nested functions count on their own."""
+    cc, stack = 1, list(body.children)
+    while stack:
+        n = stack.pop()
+        if n.type in spec.function_types:
+            continue
+        if spec.is_branch(n, sf) or n.type in spec.opaque_branch_types:
+            cc += 1
+        if n.type not in spec.opaque_branch_types:
+            stack.extend(n.children)
+    return cc
 
 
 class ComplexityPass(Pass):
@@ -26,12 +44,7 @@ class ComplexityPass(Pass):
             spec = program.spec_for(n)
             sf = program.facts[n.module].file  # type: ignore[index]
             body = d.node
-            cc = 1
-            for sub in descendants_excluding(body, spec.function_types):
-                if sub is body:
-                    continue
-                if spec.is_branch(sub, sf):
-                    cc += 1
+            cc = cyclomatic(body, spec, sf)
             nesting = max_nesting(body, spec.nesting_types, spec.function_types)
             n.attrs["complexity"] = cc
             n.attrs["nesting"] = nesting
