@@ -3,7 +3,9 @@
 Most metrics are additive: a unit's state is what it holds itself plus what its children hold, so one walker rolls
 every one of them up function -> class -> module -> folder -> repo (`roll_up`). Two shapes cover the new ones:
 `Share` (have / total: typed, documented) and `OverLimit` (how far past a fixed limit, line-weighted: cognitive,
-cyclomatic, maintainability). A limit metric keeps its raw number (the worst one in the unit) beside the value.
+cyclomatic, maintainability). A share reads as a percentage; an excess score does not: 0.4 is the share of complexity
+past the limit, weighted by lines, not 40% of anything countable, so it prints as a decimal beside the share of lines
+in functions over the limit, which is. A limit metric keeps its raw number (the worst one in the unit) beside the value.
 Bloat is not additive (its tangle is a noisy-OR, its waste an allocation) and keeps its own roll-up.
 """
 
@@ -150,6 +152,7 @@ class OverLimit(Metric):
     functions: int = 0
     over: int = 0
     worst: float | None = None
+    over_loc: int | None = 0  # lines in functions past the limit: how widespread, beside how far (None: an older run's)
 
     @classmethod
     def rescale(cls, raw: float, limit: float) -> float:
@@ -160,31 +163,40 @@ class OverLimit(Metric):
     @classmethod
     def measured(cls, raw: float, limit: float, loc: int) -> Self:
         v = cls.rescale(raw, limit)
-        return cls(limit=limit, loc=loc, weighted=v * loc, functions=1, over=int(v > 0), worst=raw)
+        return cls(limit=limit, loc=loc, weighted=v * loc, functions=1, over=int(v > 0), worst=raw, over_loc=loc if v > 0 else 0)
 
     @property
     def value(self) -> float:
         return self.weighted / self.loc if self.loc else 0.0
 
+    @property
+    def over_share(self) -> float | None:
+        """The share of lines in functions past the limit, a true percentage; None for an older run's numbers."""
+        if self.over_loc is None:
+            return None
+        return self.over_loc / self.loc if self.loc else 0.0
+
     def terms(self) -> dict[str, float]:
         return {"over": float(self.over)}
 
     def as_dict(self) -> dict:
-        return {"value": self.value, "limit": self.limit, "loc": self.loc, "weighted": self.weighted, "functions": self.functions, "over": self.over, "worst": self.worst}
+        return {"value": self.value, "limit": self.limit, "loc": self.loc, "weighted": self.weighted, "functions": self.functions, "over": self.over, "worst": self.worst, "over_loc": self.over_loc}
 
     @classmethod
     def of(cls, unit, default_loc: int = 0) -> Self | None:  # noqa: ANN001, ARG003
         d = cls.stored(unit)
-        return cls(**{k: d[k] for k in ("limit", "loc", "weighted", "functions", "over", "worst")}) if d else None
+        return cls(**{k: d[k] for k in ("limit", "loc", "weighted", "functions", "over", "worst")}, over_loc=d.get("over_loc")) if d else None
 
     def __add__(self, other: Self) -> Self:
         pick = max if self.raw_better == "low" else min
         worst = pick((w for w in (self.worst, other.worst) if w is not None), default=None)
-        return type(self)(self.limit or other.limit, self.loc + other.loc, self.weighted + other.weighted, self.functions + other.functions, self.over + other.over, worst)
+        over_loc = None if self.over_loc is None or other.over_loc is None else self.over_loc + other.over_loc
+        return type(self)(self.limit or other.limit, self.loc + other.loc, self.weighted + other.weighted, self.functions + other.functions, self.over + other.over, worst, over_loc)
 
     def __str__(self) -> str:
         if not self.functions:
             return f"{self.label} n/a (no functions)"
         side = "below" if self.raw_better == "high" else "over"
         worst = f"; worst {self.worst:g}" if self.worst is not None else ""
-        return f"{self.label} {self.value:.1%} ({self.over} of {self.functions} functions {side} {self.limit:g}{worst})"
+        lines = f", {self.over_share:.0%} of lines," if self.over_share is not None else ""
+        return f"{self.label} {self.value:.2f} ({self.over} of {self.functions} functions{lines} {side} {self.limit:g}{worst})"
