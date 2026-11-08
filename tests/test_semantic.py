@@ -215,3 +215,63 @@ def test_prepare_model_dir_downloads_once_into_the_cache(tmp_path):
     assert model_file == "onnx/model_quantized.onnx" and (d / model_file).is_file() and d.parent == tmp_path
     assert embed.prepare_model_dir("nomic-ai/CodeRankEmbed", spec, cache_dir=tmp_path, snapshot=snapshot) == (d, model_file)
     assert calls == ["nishparadox/CodeRankEmbed-onnx-int8"]
+
+
+# ----- classes and modules: the line-weighted mean of their functions' vectors -------------------------------------
+UNITS = {
+    "shapes.py": "class Circle:\n    def area(self, r):\n        return 3.14 * r * r\n\n    def perimeter(self, r):\n        return 2 * 3.14 * r\n\n\nclass Square:\n    def area(self, s):\n        return s * s\n\n    def perimeter(self, s):\n        return 4 * s\n\n\nclass Point:\n    x: int = 0\n",
+    "io_utils.py": "def read_text(path):\n    with open(path) as f:\n        return f.read()\n\n\ndef write_text(path, text):\n    with open(path, 'w') as f:\n        f.write(text)\n",
+    "files.py": "def load(path):\n    with open(path) as f:\n        return f.read()\n\n\ndef save(path, data):\n    with open(path, 'w') as f:\n        f.write(data)\n",
+}
+
+
+@pytest.fixture()
+def units_program(tmp_path):
+    for name, src in UNITS.items():
+        (tmp_path / name).write_text(src)
+    prog = build_program(tmp_path, config=Config.load(tmp_path))
+    run_passes(prog, opt_level=3)
+    return prog
+
+
+def test_a_unit_vector_is_the_line_weighted_mean_of_its_functions(units_program):
+    import numpy as np
+
+    nodes, vectors, _ = embed.symbol_vectors(units_program)
+    units, uvec = embed.unit_vectors(units_program)
+    by = {u.qualname: i for i, u in enumerate(units)}
+    members = [i for i, n in enumerate(nodes) if n.qualname.startswith("Circle.")]
+    mean = sum(vectors[i] * nodes[i].loc for i in members)
+    assert np.allclose(uvec[by["Circle"]], mean / np.linalg.norm(mean))
+    assert "Point" not in by  # no embedded method: nothing to stand for it
+
+
+def test_nearest_in_blocks_agrees_with_all_pairs():
+    import numpy as np
+
+    rng = np.random.default_rng(1)
+    v = rng.normal(size=(300, 16)).astype(np.float32)
+    v /= np.linalg.norm(v, axis=1, keepdims=True)
+    idx, sims = embed.nearest(v, k=3, block=37)
+    full = v @ v.T
+    np.fill_diagonal(full, -np.inf)
+    want = np.argsort(-full, axis=1, kind="stable")[:, :3]
+    assert (idx == want).all() and np.allclose(sims, np.take_along_axis(full, want, axis=1))
+
+
+def test_similar_works_for_a_class_or_a_module_against_its_own_kind(units_program):
+    from vibepiler.semantic.similar import similar_symbols
+
+    g = units_program.graph
+    circle = next(n.id for n in g.nodes() if n.qualname == "Circle")
+    hits = similar_symbols(units_program, circle, top=5)
+    assert [n.qualname for n, _ in hits] == ["Square"]
+    io = next(n.id for n in g.nodes() if n.kind.value == "module" and n.file == "io_utils.py")
+    assert [n.file for n, _ in similar_symbols(units_program, io, top=1)] == ["files.py"]
+
+
+def test_classes_and_modules_carry_their_nearest_in_meaning(units_program):
+    g = units_program.graph
+    io = next(n for n in g.nodes() if n.kind.value == "module" and n.file == "io_utils.py")
+    (top, sim), *_ = io.attrs["nearest"]
+    assert g.node(top).file == "files.py" and 0 < sim <= 1

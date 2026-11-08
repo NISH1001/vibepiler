@@ -1190,7 +1190,7 @@ function renderNode(id) {
   document.getElementById('node-empty').style.display = 'none';
   const ins = (inn[id] || []).filter(e => e.kind !== 'contains').map(e => `<li data-go="${esc(e.src)}"><span class="pill">${e.kind}</span> ${esc(label(nodeById[e.src]))}</li>`);
   const outs = (out[id] || []).filter(e => e.kind !== 'contains').map(e => `<li data-go="${esc(e.dst)}"><span class="pill">${e.kind}</span> ${esc(label(nodeById[e.dst]))}${e.attrs && e.attrs.members ? ' <span class="meta">.' + esc(e.attrs.members.join(', .')) + '</span>' : ''}</li>`);
-  const attrs = Object.entries(n.attrs).filter(([k, v]) => !['imports', 'aliases', 'entry', 'shape_hash', 'bloat', 'liveness'].includes(k) && v !== null && v !== '' && v !== false && !(Array.isArray(v) && !v.length));
+  const attrs = Object.entries(n.attrs).filter(([k, v]) => !['imports', 'aliases', 'entry', 'shape_hash', 'bloat', 'liveness', 'nearest', ...METRIC_ROWS.map(r => r[0])].includes(k) && v !== null && v !== '' && v !== false && !(Array.isArray(v) && !v.length));
   const ds = diagsByNode[id] || [];
   document.getElementById('node').innerHTML = `
     <div class="section"><div style="display:flex;gap:8px;align-items:baseline"><span class="pill" style="background:color-mix(in srgb, ${KIND()[n.kind]} 30%, transparent)">${esc(n.kind)}</span><b class="mono" style="font-size:13px">${esc(n.qualname || n.name)}</b></div>
@@ -1201,6 +1201,7 @@ function renderNode(id) {
     ${n.attrs.bloat ? bloatBlock(n.attrs.bloat, n.attrs.loc) : ''}
     ${n.attrs.liveness ? livenessBlock(n.attrs.liveness, ds) : ''}
     ${metricsBlock(n.attrs)}
+    ${nearestBlock(n)}
     ${ds.length ? `<div class="section"><h3>Findings (${ds.length})</h3>${ds.map(d => `<div class="finding" style="padding:6px 0"><div class="head"><span class="sev ${d.severity}"></span><span class="code">${esc(d.code)}</span></div><div class="msg">${esc(d.message)}</div>${d.suggestion ? `<div class="fix">${esc(d.suggestion)}</div>` : ''}</div>`).join('')}</div>` : ''}
     <div class="section"><h3>Properties</h3><dl class="kv">${attrs.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(Array.isArray(v) ? v.join(', ') : typeof v === 'object' ? JSON.stringify(v) : v)}</dd>`).join('')}</dl></div>
     <div class="section"><h3>Used by (${ins.length})</h3><ul class="list">${ins.join('') || '<li style="color:var(--ink-3);cursor:default">nothing in the project</li>'}</ul></div>
@@ -1227,6 +1228,11 @@ function metricRaw(key, m) {
   if (!m.functions) return 'no functions';
   const side = key === 'maintainability' ? 'below' : 'over';
   return m.functions === 1 ? `${m.worst} (limit ${m.limit})` : `${m.over} of ${m.functions} functions ${side} ${m.limit}; worst ${m.worst}`;
+}
+function nearestBlock(n) { // a class's or module's vector is the line-weighted mean of its functions' (-O3)
+  const near = (n.attrs.nearest || []).filter(([id]) => nodeById[id]);
+  if (!near.length) return '';
+  return `<div class="section"><h3>Closest in meaning</h3><div class="meta2" style="margin-bottom:4px">The ${n.kind === 'module' ? 'modules' : 'classes'} whose functions do the most similar work, by the mean of their functions' embeddings.</div><ul class="list">${near.map(([id, s]) => `<li data-go="${esc(id)}"><span class="mono">${esc(label(nodeById[id]))}</span><span class="meta">${Math.round(100 * s)}%</span></li>`).join('')}</ul></div>`;
 }
 function metricsBlock(a) {
   const rows = METRIC_ROWS.filter(([k]) => a[k]).map(([k, label, low]) => {
