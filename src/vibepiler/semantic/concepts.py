@@ -18,7 +18,7 @@ from collections import Counter
 from vibepiler.ir.model import EdgeKind
 from vibepiler.ir.program import Program
 from vibepiler.progress import timed
-from vibepiler.semantic.embed import symbol_vectors, words
+from vibepiler.semantic.embed import nearest, symbol_vectors, words
 
 KNN = 8  # neighbours per function in the similarity graph
 MIN_SIM = 0.15  # weaker neighbours carry no meaning
@@ -73,20 +73,15 @@ def _singular(w: str) -> str:
 def _communities(vectors) -> list[list[int]]:  # noqa: ANN001
     """Louvain communities of the k-nearest-neighbour graph over the vectors; stable because seeded."""
     import networkx as nx
-    import numpy as np
     from networkx.algorithms.community import louvain_communities
 
     n = vectors.shape[0]
-    sims = vectors @ vectors.T
-    np.fill_diagonal(sims, -1.0)
-    k = min(KNN, n - 1)
+    idx, sims = nearest(vectors, KNN)  # a block of rows at a time: memory block x n, not n x n
     G = nx.Graph()
     G.add_nodes_from(range(n))
     for i in range(n):
-        for j in np.argsort(-sims[i], kind="stable")[:k]:
-            s = float(sims[i, j])
+        for j, s in zip(idx[i].tolist(), sims[i].tolist()):
             if s >= MIN_SIM:
-                j = int(j)
                 G.add_edge(i, j, weight=max(s, G[i][j]["weight"] if G.has_edge(i, j) else 0.0))
     comms = [sorted(c) for c in louvain_communities(G, weight="weight", resolution=_resolution(n), seed=0) if len(c) >= MIN_CONCEPT]
     return sorted(comms, key=lambda c: (-len(c), c[0]))
