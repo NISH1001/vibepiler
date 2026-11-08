@@ -389,19 +389,19 @@ Every finding also carries an `action`, delete, fold or simplify, and the **elim
 
 ### Bootstrapped on itself
 
-The first thing it was run on was vibepiler. Six rounds of the loop, each measured with `--baseline` (a seventh, below, came with the metrics):
+The first thing it was run on was vibepiler. Eight rounds of the loop, each measured with `--baseline` by the vibepiler of its day:
 
-![Bloat and tangle over the six bootstrap rounds, and the removable lines per round](docs/img/bootstrap.png)
+![Bloat and tangle over the eight bootstrap rounds, and the removable lines per round](docs/img/bootstrap.png)
 
 *Left: bloat and tangle, two unitless shares on one axis. Right: the lines the analysis could show removable. Vector versions for papers: [`docs/img/bootstrap.svg`](docs/img/bootstrap.svg), [`docs/img/bootstrap.pdf`](docs/img/bootstrap.pdf); regenerate with `uv run scripts/bootstrap_figure.py` (the script declares matplotlib itself, PEP 723).*
 
-| | start | round 1 | round 2 | round 3 | round 4 | round 5 | round 6 |
-|---|---|---|---|---|---|---|---|
-| removable lines shown by analysis | 71 | 34 | 41 | 31 | 18 | 18 | 18 |
-| tangle | 0.30 | 0.31 | 0.27 | 0.26 | 0.25 | 0.23 | 0.23 |
-| bloat | 31% | 31% | 28% | 26% | 25% | 23% | 23% |
-| live | | | | | | 100% (3362 of 3362) | 100% (3536 of 3536) |
-| most tangled function | `BloatScorePass.run` 100 | same | `AbstractionPass.run` 57 | `read_manifests` 43 | `BloatPass._dependencies` 36 | same, 37 | `_Extractor.visit` (JS) 35 |
+| | start | round 1 | round 2 | round 3 | round 4 | round 5 | round 6 | round 7 | round 8 |
+|---|---|---|---|---|---|---|---|---|---|
+| removable lines shown by analysis | 71 | 34 | 41 | 31 | 18 | 18 | 18 | 22 | 38 |
+| tangle (cognitive from round 7) | 0.30 | 0.31 | 0.27 | 0.26 | 0.25 | 0.23 | 0.23 | 0.20 | 0.23 |
+| bloat | 31% | 31% | 28% | 26% | 25% | 23% | 23% | 20% | 24% |
+| live | | | | | | 100% (3362 of 3362) | 100% (3536 of 3536) | 100% (3912 of 3912) | 100% (4184 of 4184) |
+| most tangled function | `BloatScorePass.run` 100 | same | `AbstractionPass.run` 57 | `read_manifests` 43 | `BloatPass._dependencies` 36 | same, 37 | `_Extractor.visit` (JS) 35 | `BloatPass._exceptions`, cognitive 45 | `embed_texts`, cognitive 47 |
 
 Round one was waste: five dead helpers in the tree-sitter wrapper left over from the first implementation, a constant nothing read, unused imports, the `extract` method every language adapter had copied, and two copies of the "does this class inherit from a framework" check. Rounds two and three were tangle: the tool's own scoring pass, at cyclomatic complexity 100, became five stages; the markdown emitter became one function per section; the CLI's printing moved into a terminal backend, which is what the mixed-responsibilities finding on `cli.py` meant; the abstraction and entry-point passes were split the same way.
 
@@ -415,7 +415,9 @@ Round six came after v0.2, which added choosing paths, reporting scope and test-
 
 Round seven came with the [metrics](#metrics), and the first thing cognitive complexity did was find a linker bug. It reported two helpers inside the new `cognitive()` function as dead. They were live: a nested function that called its sibling linked to nothing, because a bare name was looked up only among the current scope's own children, never through the enclosing function. Fixing that took vibepiler's waste from 42 lines to 30 and its live score to 100%. Then the eight functions at the top of the cognitive table were split into named steps, the worst first: call and reference linking (75), import resolution (63), the JS `export` and class visitors (66, 59), CommonJS exports (57), duplicate detection and bloat's own claim classifier (54 each), the DOT emitter (51) and reachability (50). Each refactor was checked against a fingerprint of the whole output (every node, edge, finding and metric) on the fixtures and a frozen copy of vibepiler, and the visitors also against the previous commit on every syntactic form they handle; nothing moved. Cognitive went from 17.6% to 12.0% (worst function 75 → 45), cyclomatic from 18.9% to 14.5%.
 
-What is left is honest: 62 functions over the cognitive limit, most of them tree-walkers that are long because the grammar is, about 1,200 lines alive only by name because 57% of call sites link, and 38% of the public surface documented. The second number is the one a type-aware linker would move.
+Round eight came after four feature releases (semantic search at scale, logging, CLI and Python parity, the Claude Code plugin), which took bloat from 20% back to 24%: most of it is `embed_texts`, the batching and progress loop for embeddings, at cognitive 47. The self-run removed no code. It found four bugs in the analyzer instead, each fixed test-first. An import cycle through `vibepiler/__init__.py` was closed only by an `if TYPE_CHECKING:` import and a lazy import inside `__getattr__`, neither of which runs when the package loads, so imports inside a function or under `TYPE_CHECKING` no longer count toward cycles. `complexipy` read as an unused dependency because the tests load it through `pytest.importorskip`, which is now an import. `vibepiler.compile` read as test-only, so what a top-level package re-exports is now public API. A type-only import used in a string annotation read as unused, so names inside string annotations now count. Its own fix briefly made the Python visitor the most tangled function in the repo (cognitive 37 to 47); the new branches moved into named methods and it is back to 41.
+
+What is left is honest: 68 functions over the cognitive limit, most of them tree-walkers that are long because the grammar is, about 1,170 lines alive only by name because 58% of call sites link, and 40% of the public surface documented. The second number is the one a type-aware linker would move.
 
 ## Liveness, the metric
 
