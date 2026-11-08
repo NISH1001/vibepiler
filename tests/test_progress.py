@@ -286,3 +286,58 @@ def test_the_cli_leaves_vibepiler_silent_again_and_verbose_beats_quiet(tmp_path)
     assert res.exit_code == 0, res.output
     assert "batch 1/" in res.output
     test_vibepiler_is_silent_until_enabled()  # the CLI's sink is gone and the library is quiet again
+
+
+# ----- the cache off, the files written, the whole pipeline under -v ---------------------------------------------------
+
+
+def test_no_cache_neither_reads_nor_writes_the_embedding_cache(tmp_path):
+    texts = [f"def f{i}(x):\n    return x - {i}\n" for i in range(40)]
+    embed.embed_texts(FakeEmbedder(), texts, cache_dir=tmp_path)
+    before = {p.name: p.read_bytes() for p in tmp_path.iterdir()}
+    counting = Dies(allowed=10**6)
+    fresh = embed.embed_texts(counting, [*texts, "def g():\n    return 0\n"], cache_dir=tmp_path, use_cache=False)
+    assert counting.calls == len(embed.batches([*texts, "x"]))  # every text embedded again, none read back
+    assert fresh.shape[0] == 41
+    assert {p.name: p.read_bytes() for p in tmp_path.iterdir()} == before  # and nothing written
+
+
+def test_the_cache_switch_reaches_the_config_from_the_cli_and_python(tmp_path):
+    from vibepiler.compiler import Compiler
+    from vibepiler.config import Config
+
+    assert Config().embedding_cache is True
+    assert Compiler(FIX, use_cache=False).config.embedding_cache is False
+    (tmp_path / "vibepiler.toml").write_text("embedding_cache = false\n")
+    assert Config.load(tmp_path).embedding_cache is False
+    res = CliRunner().invoke(app, ["compile", FIX, "-O3", "--no-cache", "-q", "--emit", "json", "-o", str(tmp_path / "out")])
+    assert res.exit_code == 0, res.output
+    assert not list((tmp_path / "emb").glob("*.npz"))  # the fixture points the cache here
+
+
+def test_the_cli_ends_with_the_files_it_wrote(tmp_path):
+    out = tmp_path / "out"
+    res = CliRunner().invoke(app, ["compile", FIX, "-q", "--emit", "html,json,md", "-o", str(out)])
+    assert res.exit_code == 0, res.output
+    tail = res.output.strip().splitlines()[-5:]
+    assert any(str(out.resolve() / "report.html") in line for line in tail), tail
+    assert any("ir.json" in line for line in tail) and any("report.md" in line for line in tail)
+
+
+def test_verbose_shows_the_whole_pipeline(tmp_path):
+    res = CliRunner().invoke(app, ["compile", FIX, "-v", "--emit", "html", "-o", str(tmp_path)])
+    assert res.exit_code == 0, res.output
+    for line in ("config:", "discover:", "parse:", "link:", "emit report.html"):
+        assert line in res.output, line
+    assert "GB peak" in next(x for x in res.output.splitlines() if "pass duplicates" in x)  # every pass with its memory
+
+
+def test_discovery_says_which_files_it_skipped_as_too_large(tmp_path, monkeypatch, logs):
+    from vibepiler.frontend import loader
+
+    monkeypatch.setattr(loader, "MAX_FILE_BYTES", 100)
+    (tmp_path / "small.py").write_text("x = 1\n")
+    (tmp_path / "huge.py").write_text("y = 2\n" * 100)
+    files = loader.discover(tmp_path)
+    assert [f.rel for f in files] == ["small.py"]
+    assert any(m.startswith("discover:") and "huge.py" in m for m, _ in logs)

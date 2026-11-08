@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from loguru import logger as log
+
 
 @dataclass
 class Thresholds:
@@ -38,6 +40,7 @@ class Config:
     use_gitignore: bool = True
     embedding_model: str = "nomic-ai/CodeRankEmbed"  # -O3 model; "minishlab/potion-code-16M-v2" for the fast static mode
     embedding_max_tokens: int = 4096  # -O3: tokens embedded per function, 0 for the model's whole context; memory grows with its square
+    embedding_cache: bool = True  # -O3: read and write ~/.cache/vibepiler/embeddings; False embeds everything afresh and stores nothing
     accept: list[str] = field(default_factory=list)  # findings judged intentional: "code" or "code:qualname-glob"; counted, not reported
 
     @classmethod
@@ -45,6 +48,7 @@ class Config:
         if root.is_file():
             root = root.parent  # a file's config is its folder's
         data: dict[str, Any] = {}
+        source: Path | None = None
         for candidate in (root / "vibepiler.toml", root / "pyproject.toml"):
             if candidate.is_file():
                 try:
@@ -56,6 +60,7 @@ class Config:
                 else:
                     data = raw.get("tool", {}).get("vibepiler", {})
                 if data:
+                    source = candidate
                     break
         cfg = cls()
         thresholds = data.pop("thresholds", {})
@@ -66,7 +71,9 @@ class Config:
         for k, v in thresholds.items():
             if hasattr(cfg.thresholds, k):
                 setattr(cfg.thresholds, k, v)
-        for k, v in overrides.items():
-            if v is not None and hasattr(cfg, k):
-                setattr(cfg, k, v)
+        given = {k: v for k, v in overrides.items() if v is not None and hasattr(cfg, k)}
+        for k, v in given.items():
+            setattr(cfg, k, v)
+        log.debug("config: {}{}", source or "defaults (no vibepiler.toml or [tool.vibepiler])", f"; from the caller: {', '.join(f'{k}={v}' for k, v in given.items())}" if given else "")
+        log.debug("config: -O{}, model {}, {} tokens a function, cache {}, include {}, exclude {}", cfg.opt_level, cfg.embedding_model, cfg.embedding_max_tokens or "all", "on" if cfg.embedding_cache else "off", cfg.include or "all", cfg.exclude or "none")
         return cfg

@@ -8,6 +8,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable
 
+from loguru import logger as log
+
 from vibepiler.backend import emit_dot, emit_html, emit_json, emit_markdown, emit_mermaid
 from vibepiler.config import Config
 from vibepiler.frontend.languages import available
@@ -90,13 +92,14 @@ class Compiler:
         exclude: list[str] | None = None,
         isolate: bool | None = None,
         max_tokens: int | None = None,
+        use_cache: bool | None = None,
     ) -> None:
         if language is not None and language not in available():
             raise ValueError(f"unknown language {language!r}; known: {available()}")
         self.remote = parse_remote(source) if isinstance(source, str) else None
         if self.remote is not None:  # cloned (or refreshed) into the cache, then compiled as the folder it is
             include = [*(include or []), *filter(None, [remote_subpath(str(source))])]
-            source = fetch_remote(*self.remote, log=lambda _: None)
+            source = fetch_remote(*self.remote, log=lambda m: log.debug("remote: {}", m))
         self.kind, target = classify_source(source)
         self.language = language
         self.target = target if self.kind == "string" else target.resolve()
@@ -111,6 +114,8 @@ class Compiler:
         self.config = replace(cfg, include=list(cfg.include), exclude=list(cfg.exclude))  # chaining never edits the caller's Config
         if max_tokens is not None:  # -O3: tokens embedded per function, 0 for the model's whole context
             self.config.embedding_max_tokens = max_tokens
+        if use_cache is not None:  # -O3: False embeds everything afresh and leaves the embedding cache untouched
+            self.config.embedding_cache = use_cache
         self.on_phase = on_phase or (lambda *_: None)
         self.include(*(include or []))
         self.exclude(*(exclude or []))
@@ -185,9 +190,11 @@ class Compiler:
             out = Path(out_dir)
             out.mkdir(parents=True, exist_ok=True)
             for kind in emit:
+                t_kind = time.perf_counter()
                 path = self._emit(program, kind, out)
                 if path is not None:
                     outputs[kind] = path
+                    log.debug("emit {}  {:.1f} KB  {:.2f} s", path.name, path.stat().st_size / 1024, time.perf_counter() - t_kind)
         timings["emit"] = time.perf_counter() - t
         program.metrics["timings_phases"] = {k: round(v, 3) for k, v in timings.items()}
         if outputs:
@@ -229,8 +236,9 @@ def compile(  # noqa: A001 - the compiler metaphor, on purpose
     exclude: list[str] | None = None,
     isolate: bool | None = None,
     max_tokens: int | None = None,
+    use_cache: bool | None = None,
     on_phase: PhaseCallback | None = None,
     **run,  # noqa: ANN003
 ) -> CompileResult:
     """One call: `Compiler(source, ...).run(...)`. `run` keywords: opt_level, emit, out_dir, only, skip, on_pass."""
-    return Compiler(source, config, on_phase, language=language, include=include, exclude=exclude, isolate=isolate, max_tokens=max_tokens).run(**run)
+    return Compiler(source, config, on_phase, language=language, include=include, exclude=exclude, isolate=isolate, max_tokens=max_tokens, use_cache=use_cache).run(**run)

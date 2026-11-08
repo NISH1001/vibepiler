@@ -14,6 +14,7 @@ from functools import cached_property
 from pathlib import Path
 
 import pathspec
+from loguru import logger as log
 from tree_sitter import Tree
 
 from vibepiler.frontend.parser import parse, walk
@@ -201,6 +202,7 @@ def discover(
 
     wanted = set(languages) if languages else None
     out: list[SourceFile] = []
+    skipped = {"ignored": 0, "too large": [], "unreadable": [], "pruned folders": 0}
 
     def consider(p: Path) -> None:
         rel = p.relative_to(root).as_posix()
@@ -208,12 +210,15 @@ def discover(
         if lang is None or (wanted and lang not in wanted):
             return
         if spec.match_file(rel):
+            skipped["ignored"] += 1
             return
         try:
             if p.stat().st_size > MAX_FILE_BYTES:
+                skipped["too large"].append(rel)
                 return
             data = p.read_bytes()
         except OSError:
+            skipped["unreadable"].append(rel)
             return
         out.append(SourceFile(path=p, rel=rel, language=lang, root=root, source=data))
 
@@ -227,6 +232,8 @@ def discover(
                 sub = f"{rel_dir}/{name}/" if rel_dir != "." else f"{name}/"
                 if not spec.match_file(sub):
                     keep.append(name)
+                else:
+                    skipped["pruned folders"] += 1
             dirnames[:] = sorted(keep)
             for name in sorted(filenames):
                 consider(d / name)
@@ -237,4 +244,9 @@ def discover(
         elif top == root or not spec.match_file(top.relative_to(root).as_posix() + "/"):
             walk_dir(top)
     unique = {f.rel: f for f in out}  # overlapping include paths read a file once
+    langs: dict[str, int] = {}
+    for f in unique.values():
+        langs[f.language] = langs.get(f.language, 0) + 1
+    log.debug("discover: {} files ({}) from {}; patterns: {} default, {} .gitignore, {} --exclude", len(unique), ", ".join(f"{k} {v}" for k, v in sorted(langs.items())) or "none", ", ".join(str(s.relative_to(root)) for s in starts) or ".", len(DEFAULT_IGNORES), len(patterns) - len(DEFAULT_IGNORES) - len(exclude or []), len(exclude or []))
+    log.debug("discover: skipped {} ignored files and {} ignored folders{}{}", skipped["ignored"], skipped["pruned folders"], f"; too large (> {MAX_FILE_BYTES // 1_000_000} MB): {', '.join(skipped['too large'][:5])}" + (f" and {len(skipped['too large']) - 5} more" if len(skipped["too large"]) > 5 else "") if skipped["too large"] else "", f"; unreadable: {', '.join(skipped['unreadable'][:5])}" if skipped["unreadable"] else "")
     return sorted(unique.values(), key=lambda f: f.rel)
