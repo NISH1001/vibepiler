@@ -152,11 +152,11 @@ vibepiler compile <path | owner/repo[@ref] | git url> [paths...] [-O0|-O1|-O2|-O
                          [--exclude "glob,glob"]... [--isolate] [--lang python,typescript]
                          [--fail-on warning|error|bloat>0.25|live<0.9] [-q] [-v|--verbose]
                          [-R] [--baseline previous/ir.json] [--cache DIR] [--refresh]
-                         [--max-tokens N] [--no-cache]                        # -O3 embedding: token cap, skip the cache
-vibepiler size    <path> [paths...] [--exclude ...] [--isolate] [-O1|-O2|-O3] [--top N] [--max-tokens N] [--no-cache]   # waste, tangle and bloat per folder
+                         [--max-tokens N] [--no-cache] [--model NAME]         # -O3 embedding: token cap, skip the cache, model
+vibepiler size    <path> [paths...] [--exclude ...] [--isolate] [-O1|-O2|-O3] [--top N] [--max-tokens N] [--no-cache] [--model NAME]   # waste, tangle and bloat per folder
 vibepiler graph   <path> [paths...] [--exclude ...] [--isolate] [--level module|symbol] [--format dot|mermaid|json] [--packages]
 vibepiler paths   <path> --from <symbol> [--to <symbol>] [--depth N]
-vibepiler similar <path> <symbol> [-n 10] [--max-tokens N] [--no-cache]   # -O3 tier: nearest by meaning (functions, classes or modules)
+vibepiler similar <path> <symbol> [-n 10] [--max-tokens N] [--no-cache] [--model NAME]   # -O3 tier: nearest by meaning (functions, classes or modules)
 vibepiler passes
 ```
 
@@ -498,7 +498,7 @@ languages = ["python"]              # default: all detected
 opt_level = 2
 entry_patterns = ["*.lambda_handler", "jobs/*"]   # extra roots by qualname or file glob
 treat_exports_as_roots = false      # default: only JS/TS entry modules (index, pages/, app/, ...)
-embedding_model = "nomic-ai/CodeRankEmbed"   # -O3; or "jinaai/jina-embeddings-v2-base-code", or "minishlab/potion-code-16M-v2" (fast mode)
+embedding_model = "nomic-ai/CodeRankEmbed"   # -O3; or "jinaai/jina-embeddings-v2-base-code", or "minishlab/potion-code-16M-v2" (fast mode); --model on the command line, model= from Python
 embedding_max_tokens = 4096          # -O3: tokens embedded per function, 0 for whole functions; memory grows with its square (one 8192-token function took 6.8 GB, 4096 takes 1.9, 2048 takes 0.8); --max-tokens on the command line
 embedding_cache = true               # -O3: false embeds everything afresh and stores nothing; --no-cache on the command line
 
@@ -534,6 +534,9 @@ result = vibepiler.compile("path/to/project", include=["api/"], emit=["json"], o
 result = Compiler(".", max_tokens=4096).run(opt_level=3)   # -O3 embeds up to 4096 tokens a function (0: whole functions); the rest of the config is the project's
 result = Compiler(".", use_cache=False).run(opt_level=3)    # -O3 without reading or writing the embedding cache, as --no-cache
 result = Compiler(".", verbose=True).run()                  # every stage's progress, as -v: to loguru's sinks (stderr by default), off again after
+result = Compiler(".", languages=["python", "typescript"]).run()   # as --lang python,typescript
+result = Compiler(".", model="minishlab/potion-code-16M-v2").run(opt_level=3)   # as --model: the fast static embedding model
+result = Compiler("owner/repo", clone_dir="/tmp/clones", refresh=True).run()   # as --cache DIR --refresh: where to clone, and clone afresh
 result.bloat.waste, result.bloat.score     # typed scores; result.scores has every one by label
 result.liveness.value                      # share of definitions that reach a use: result.scores["live"]
 program = result.program                   # result.diagnostics, result.graph and result.metrics are shortcuts into it

@@ -381,3 +381,23 @@ def test_verbose_from_python_prints_every_step_and_is_quiet_again_after():
     finally:
         logger.remove(sink)
     test_vibepiler_is_silent_until_enabled()
+
+
+def test_languages_and_model_reach_the_compiler_from_python_and_the_cli(tmp_path):
+    import vibepiler
+    from vibepiler.compiler import Compiler
+
+    (tmp_path / "a.py").write_text("def f():\n    return 1\n")
+    (tmp_path / "b.js").write_text("function g() { return 2 }\n")
+    (tmp_path / "c.ts").write_text("export function h(): number { return 3 }\n")
+    files = {f.rel for f in Compiler(tmp_path, languages=["python", "typescript"]).run(emit=()).program.files}  # --lang python,typescript
+    assert files == {"a.py", "c.ts"}
+    with pytest.raises(ValueError, match="unknown language"):
+        Compiler(tmp_path, languages=["cobol"])
+    assert Compiler(tmp_path, model="minishlab/potion-code-16M-v2").config.embedding_model == "minishlab/potion-code-16M-v2"
+    assert vibepiler.compile(tmp_path, model="minishlab/potion-code-16M-v2", emit=()).program.config.embedding_model.startswith("minishlab")
+    res = CliRunner().invoke(app, ["compile", str(tmp_path), "-q", "-v", "--model", "minishlab/potion-code-16M-v2", "--emit", "json", "-o", str(tmp_path / "out")])
+    assert res.exit_code == 0, res.output
+    assert "model minishlab/potion-code-16M-v2" in res.output
+    for cmd in ("size", "similar"):
+        assert "--model" in CliRunner().invoke(app, [cmd, "--help"]).output
