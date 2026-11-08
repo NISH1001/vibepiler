@@ -20,6 +20,7 @@ from vibepiler.backend.terminal import (
     err_console,
     print_baseline,
     print_findings,
+    print_outputs,
     print_phase,
     print_remarks,
     print_skipped,
@@ -34,6 +35,7 @@ from vibepiler.ir.model import EdgeKind, NodeKind
 from vibepiler.ir.program import Program
 from vibepiler.passes.diagnostic import Severity
 from vibepiler.passes.registry import all_passes, parse_gate, run_passes
+from vibepiler.progress import mem_text
 from vibepiler.remote import (
     default_cache,
     fetch_remote,
@@ -156,6 +158,7 @@ def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
     baseline: Optional[Path] = typer.Option(None, "--baseline", help="A previous run's ir.json: print how waste, tangle and bloat moved since it."),
     quiet: bool = typer.Option(False, "-q", "--quiet", help="Only print the phase lines and the summary."),
     max_tokens: Optional[int] = typer.Option(None, "--max-tokens", min=0, help="-O3: tokens embedded per function (default 4096 or the config's embedding_max_tokens); 0 embeds whole functions up to the model's context, which needs far more memory."),
+    no_cache: bool = typer.Option(False, "--no-cache", help="-O3: embed every function afresh, without reading or writing the embedding cache (~/.cache/vibepiler/embeddings)."),
     verbose: bool = typer.Option(False, "-v", "--verbose", help="Print what the slow passes are doing as they run: model load, cache reuse, every embedding batch, each step's time and memory."),
     max_print: int = typer.Option(60, "--max-print", help="Max findings printed to the terminal."),
     cache: Optional[Path] = typer.Option(None, "--cache", help="Where remote repos are cloned (default ~/.cache/vibepiler)."),
@@ -168,27 +171,23 @@ def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
     langs = [x.strip() for x in lang.split(",")] if lang else None
     if langs and (bad_langs := [x for x in langs if x not in available()]):
         raise typer.BadParameter(f"unknown language(s) {bad_langs}; choose from {', '.join(available())}")
-    cfg = _scoped_config(root, path, paths, exclude, isolate, languages=langs, embedding_max_tokens=max_tokens)
     min_sev = _parse_warn(warn)
     emits = tuple(e.strip() for e in emit.split(",") if e.strip())
     bad = [e for e in emits if e not in EMITTERS]
     if bad:
         raise typer.BadParameter(f"unknown --emit {bad}; choose from {', '.join(EMITTERS)}")
-
-    console.print(f"[bold]vibepiler[/bold] {__version__} compiling [cyan]{root}[/cyan]" + (f" [dim]({', '.join(cfg.include)})[/dim]" if cfg.include else ""))
-
     passlog = PassLog(verbose)
 
     def on_pass(p, diags, secs):  # noqa: ANN001
         passlog.finish()
         if not quiet:
             n = len(diags)
-            console.print(f"      [dim]pass[/dim] {p.name:19} {n:4} finding{'s' if n != 1 else ''}  [dim]{secs * 1000:.0f} ms[/dim]")
+            console.print(f"      [dim]pass[/dim] {p.name:19} {n:4} finding{'s' if n != 1 else ''}  [dim]{secs * 1000:.0f} ms{f'  {mem_text()}' if verbose else ''}[/dim]")
 
-    sink = None
-    if verbose or not quiet:  # -v asks for the detail even under -q
-        sink = _listen(passlog)
+    sink = _listen(passlog) if verbose or not quiet else None  # -v asks for the detail even under -q
     try:
+        cfg = _scoped_config(root, path, paths, exclude, isolate, languages=langs, embedding_max_tokens=max_tokens, embedding_cache=False if no_cache else None)
+        console.print(f"[bold]vibepiler[/bold] {__version__} compiling [cyan]{root}[/cyan]" + (f" [dim]({', '.join(cfg.include)})[/dim]" if cfg.include else ""))
         result = _run(
             Compiler(root, cfg, on_phase=print_phase),
             opt_level=opt,
@@ -211,6 +210,7 @@ def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
         print_remarks(program, max_print)
     if baseline:
         print_baseline(program, baseline)
+    print_outputs(result.outputs)
     if fail_on:
         _gate(program, fail_on)
 
@@ -235,13 +235,14 @@ def size(
     opt: int = typer.Option(None, "-O", "--opt", min=1, max=3, help="Which passes feed the score (default from config, usually -O2)."),
     top: int = typer.Option(15, "--top", help="How many remarks to print."),
     max_tokens: Optional[int] = typer.Option(None, "--max-tokens", min=0, help="-O3: tokens embedded per function; 0 for whole functions."),
+    no_cache: bool = typer.Option(False, "--no-cache", help="-O3: embed every function afresh, without reading or writing the embedding cache (~/.cache/vibepiler/embeddings)."),
     exclude: Optional[List[str]] = typer.Option(None, "--exclude", "--ignore", help="Gitignore-style patterns to leave out, comma-separated or repeated."),
     isolate: bool = typer.Option(False, "--isolate", help="Read only the named paths (faster). By default the whole source is read, so callers outside them count, and only the named paths are reported."),
     cache: Optional[Path] = typer.Option(None, "--cache", help="Where remote repos are cloned (default ~/.cache/vibepiler)."),
 ) -> None:
     """The size report: waste, tangle and bloat per folder, like `size` on a binary, plus the top remarks."""
     root, _ = _resolve_source(path, cache)
-    cfg = _scoped_config(root, path, paths, exclude, isolate, embedding_max_tokens=max_tokens)
+    cfg = _scoped_config(root, path, paths, exclude, isolate, embedding_max_tokens=max_tokens, embedding_cache=False if no_cache else None)
     program = _run(Compiler(root, cfg), opt_level=opt, emit=()).program
     b = program.metrics.get("bloat_score")
     if not b:
@@ -385,12 +386,13 @@ def similar(
     symbol: str = typer.Argument(..., help="A function or method (app.utils.sum_even), a class, or a module or its file path."),
     top: int = typer.Option(10, "-n", "--top", help="How many neighbours to show."),
     max_tokens: Optional[int] = typer.Option(None, "--max-tokens", min=0, help="Tokens embedded per function, as for compile (0: whole functions); match the compile run to reuse its cache."),
+    no_cache: bool = typer.Option(False, "--no-cache", help="-O3: embed every function afresh, without reading or writing the embedding cache (~/.cache/vibepiler/embeddings)."),
 ) -> None:
     """Find what is most similar in meaning to SYMBOL: functions for a function, classes for a class, modules for a module (embedding tier; needs vibepiler[semantic])."""
     from vibepiler.semantic.similar import similar_symbols
 
     root, _ = _resolve_source(path, None)
-    program = build_program(root, config=Config.load(root, embedding_max_tokens=max_tokens))
+    program = build_program(root, config=Config.load(root, embedding_max_tokens=max_tokens, embedding_cache=False if no_cache else None))
     start = _find_symbol(program, symbol)
     try:
         hits = similar_symbols(program, start, top=top)

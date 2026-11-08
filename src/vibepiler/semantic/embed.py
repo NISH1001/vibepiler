@@ -271,33 +271,34 @@ def batches(texts: Sequence[str], max_batch: int = BATCH_MAX, char_budget: int =
     return out
 
 
-def embed_texts(embedder: Embedder, texts: Sequence[str], cache_dir: Path | None = None):
+def embed_texts(embedder: Embedder, texts: Sequence[str], cache_dir: Path | None = None, use_cache: bool = True):
     """Embed texts, reusing cached vectors for texts seen before (keyed by content hash, model and token cap).
 
     The cache is one file per model and cap, shared by every project. While a run embeds, it checkpoints only the
     vectors it made to a part file of its own; at the end everything is merged into the shared file once. A part left
-    by a killed run is picked up and merged by the next one."""
+    by a killed run is picked up and merged by the next one. `use_cache=False` reads none of it and writes nothing."""
     import numpy as np
 
     cache_dir = cache_dir or CACHE_DIR
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    if use_cache:
+        cache_dir.mkdir(parents=True, exist_ok=True)
     cap = getattr(embedder, "max_tokens", None)  # the same text embeds differently under another cap
     stem = f"{_slug(embedder.name)}{f'__{cap}t' if cap else ''}"
     path = cache_dir / f"{stem}.npz"
-    parts = sorted(cache_dir.glob(f"{stem}.part-*.npz"))
+    parts = sorted(cache_dir.glob(f"{stem}.part-*.npz")) if use_cache else []
     cached: dict[str, "np.ndarray"] = {}
-    for f in [path, *parts]:
+    for f in [path, *parts] if use_cache else []:
         cached.update(_load(f))
     hashes = [_hash(t) for t in texts]
     by_hash = dict(zip(hashes, texts))
     missing = sorted({h for h in hashes if h not in cached})
     new: dict[str, "np.ndarray"] = {}
-    if missing:
+    if missing and use_cache:
         borrowed = _other_caps(cache_dir, _slug(embedder.name), path, cap, {h: by_hash[h] for h in missing})
         new.update(borrowed)
         cached.update(borrowed)
         missing = [h for h in missing if h not in borrowed]
-    log.debug("cache {}: {} reused, {} to embed with {}{}", str(path).replace(str(Path.home()), "~", 1), len(set(hashes)) - len(missing), len(missing), embedder.name, f" ({len(new)} reused from another token cap)" if new else "")
+    log.debug("cache {}: {} reused, {} to embed with {}{}", str(path).replace(str(Path.home()), "~", 1) if use_cache else "off", len(set(hashes)) - len(missing), len(missing), embedder.name, f" ({len(new)} reused from another token cap)" if new else "")
     own_part = cache_dir / f"{stem}.part-{os.getpid()}-{time.time_ns()}.npz"
     try:
         if missing:
@@ -314,14 +315,14 @@ def embed_texts(embedder: Embedder, texts: Sequence[str], cache_dir: Path | None
                     rate = done / max(time.perf_counter() - start, 1e-9)
                     log.debug("batch {}/{}  {} functions, longest {} chars  {:.2f} s  {}", b, len(plan), len(batch), max(len(todo[k]) for k in batch), time.perf_counter() - t, mem_text())
                     progress("embedding", done, len(todo), batch=b, batches=len(plan), rate=rate)
-                    if time.perf_counter() - saved_at >= CHECKPOINT_SECONDS:  # a killed run keeps what it embedded
+                    if use_cache and time.perf_counter() - saved_at >= CHECKPOINT_SECONDS:  # a killed run keeps what it embedded
                         _save(own_part, new, "checkpoint")
                         saved_at, unsaved = time.perf_counter(), 0
             finally:
-                if unsaved:
+                if unsaved and use_cache:
                     _save(own_part, new, "checkpoint")
     finally:  # done, stopped or failed: one merged write of everything, then the parts go
-        if new or parts:
+        if use_cache and (new or parts):
             _finish(path, cached, [*parts, own_part])
     mat = np.stack([cached[h] for h in hashes]) if hashes else np.zeros((0, 1), dtype=np.float32)
     norms = np.linalg.norm(mat, axis=1, keepdims=True)
@@ -353,7 +354,7 @@ def symbol_vectors(program: Program, min_loc: int = 2):
     ]
     nodes.sort(key=lambda n: (n.file or "", n.start_line or 0))
     log.debug("embedding {} functions ({} lines in all)", len(nodes), sum(n.loc for n in nodes))
-    vectors = embed_texts(embedder, [symbol_text(program, n, max_chars=chars_for(tokens) if tokens else None) for n in nodes])
+    vectors = embed_texts(embedder, [symbol_text(program, n, max_chars=chars_for(tokens) if tokens else None) for n in nodes], use_cache=program.config.embedding_cache)
     program.metrics["_semantic"] = {"nodes": nodes, "vectors": vectors, "model": embedder.name}
     return nodes, vectors, embedder.name
 

@@ -61,6 +61,23 @@ def print_skipped(program: Program) -> None:
             console.print(f"      [yellow]skipped[/yellow] {key.replace('_', '-')}: {m['skipped']}")
 
 
+
+OUTPUT_ORDER = ("html", "md", "json", "dot", "mermaid")  # the report to open first, then what tools read
+OUTPUT_ROLE = {"html": "open in a browser", "md": "findings as text", "json": "the whole IR", "dot": "graphviz", "mermaid": "mermaid"}
+
+
+def print_outputs(outputs: dict[str, Path]) -> None:
+    """Last thing printed: where the files went, the report first, full paths so they can be clicked or copied."""
+    if not outputs:
+        return
+    folder = next(iter(outputs.values())).parent.resolve()
+    console.print(f"\n[bold]written[/bold] to [cyan]{folder}[/cyan]", soft_wrap=True)
+    for kind in sorted(outputs, key=lambda k: OUTPUT_ORDER.index(k) if k in OUTPUT_ORDER else len(OUTPUT_ORDER)):
+        path = outputs[kind].resolve()
+        extra = " (+ graph-symbols.dot)" if kind == "dot" else ""
+        console.print(f"  {path}{extra}  [dim]{OUTPUT_ROLE.get(kind, kind)}[/dim]", soft_wrap=True, highlight=False)
+
+
 def print_findings(program: Program, min_sev: Severity, max_print: int, report: Path) -> None:
     shown = [d for d in program.diagnostics if d.severity >= min_sev]
     if not shown:

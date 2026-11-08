@@ -19,6 +19,7 @@ conservative too.
 from __future__ import annotations
 
 import builtins as _py_builtins
+import time
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,6 +33,7 @@ from vibepiler.frontend.loader import STRING_ROOT, SourceFile, check_includes, d
 from vibepiler.ir.graph import ProgramGraph
 from vibepiler.ir.model import CALLABLE_KINDS, Edge, EdgeKind, Node, NodeKind
 from vibepiler.ir.program import Program
+from vibepiler.progress import log, timed
 
 PY_BUILTINS = frozenset(dir(_py_builtins))
 
@@ -124,21 +126,30 @@ class _Builder:
 
     # ------------------------------------------------------------------ driver
     def build(self) -> Program:
-        self._extract()
-        self._index_modules()
-        self._create_symbols()
-        self._resolve_imports()
-        self._resolve_inheritance()
-        self._resolve_calls_and_refs()
+        with timed(f"parse: {len(self.files)} files"):
+            self._extract()
+        with timed("link: modules indexed, symbols created"):
+            self._index_modules()
+            self._create_symbols()
+        with timed("link: imports and bases resolved"):
+            self._resolve_imports()
+            self._resolve_inheritance()
+        with timed("link: calls and references resolved"):
+            self._resolve_calls_and_refs()
         self._finalize_meta()
+        st = self.stats
+        log.debug("link: {} call sites: {} to project code, {} to packages, {} to builtins, {} unresolved or partial; {} parse errors", st["calls_total"], st["calls_resolved"], st["calls_external"], st["calls_builtin"], st["calls_total"] - st["calls_resolved"] - st["calls_external"] - st["calls_builtin"], len(self.parse_errors))
         return Program(root=self.root, graph=self.graph, files=self.files, facts=self.facts, config=self.cfg)
 
     # ------------------------------------------------------------------ phase 1
     def _extract(self) -> None:
+        slow: list[tuple[float, str]] = []
         for sf in self.files:
             spec = get_language(sf.language)
+            t = time.perf_counter()
             try:
                 facts = spec.extract(sf)
+                slow.append((time.perf_counter() - t, sf.rel))
             except Exception as exc:  # a broken file must not kill the whole build
                 self.parse_errors.append(f"{sf.rel}: {type(exc).__name__}: {exc}")
                 continue
@@ -166,6 +177,9 @@ class _Builder:
                 },
             )
             self.graph.add_node(node)
+        slow.sort(reverse=True)
+        if slow and slow[0][0] >= 0.05:  # only worth a line when some file is slow
+            log.debug("parse: slowest {}", ", ".join(f"{rel} {secs:.2f} s" for secs, rel in slow[:3]))
 
     def _index_modules(self) -> None:
         # canonical names first so aliases never shadow them
