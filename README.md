@@ -530,7 +530,7 @@ vibepiler ships as a [Claude Code plugin](https://code.claude.com/docs/en/plugin
 /plugin install vibepiler@vibepiler
 ```
 
-or, from a shell, `claude plugin marketplace add NISH1001/vibepiler && claude plugin install vibepiler@vibepiler`. `claude plugin marketplace update` picks up new releases. To pin a release, add it to the repo: `NISH1001/vibepiler@v0.4.4`. To try it in one folder only, without installing it globally, run both commands from that folder with `--scope local` (recorded in its `.claude/settings.local.json`, only for you). Then ask in plain words ("what is dead in this repo?", "clean up the duplicated helpers") or call a skill:
+or, from a shell, `claude plugin marketplace add NISH1001/vibepiler && claude plugin install vibepiler@vibepiler`. `claude plugin marketplace update` picks up the latest from `main`. To try it in one folder only, without installing it globally, run both commands from that folder with `--scope local` (recorded in its `.claude/settings.local.json`, only for you). Then ask in plain words ("what is dead in this repo?", "clean up the duplicated helpers") or call a skill:
 
 ```
 /vibepiler:compile                      # run vibepiler (-O2) and summarise: size line, top of the plan, worst complexity
@@ -552,7 +552,7 @@ cp -r /tmp/vibepiler/skills/compile /tmp/vibepiler/skills/cleanup .agents/skills
 cp -r /tmp/vibepiler/skills/compile /tmp/vibepiler/skills/cleanup .claude/skills/     # Claude Code without the plugin (or ~/.claude/skills/)
 ```
 
-Copied skills are called without the plugin prefix (`/compile`, `/cleanup`) and do not update themselves. Each skill pins the vibepiler release it was written for, so its flags always match the CLI it runs.
+Copied skills are called without the plugin prefix (`/compile`, `/cleanup`) and do not update themselves. The skills run vibepiler from `main`, the same place the plugin comes from, so the flags they use are the ones the CLI has.
 
 ## Using it from Python
 
