@@ -281,19 +281,23 @@ def embed_texts(embedder: Embedder, texts: Sequence[str], cache_dir: Path | None
         by_hash = {_hash(t): t for t in texts}
         todo = [by_hash[h] for h in missing]
         plan, done, start = batches(todo), 0, time.perf_counter()
-        for b, batch in enumerate(plan, 1):
-            t = time.perf_counter()
-            for k, v in zip(batch, embedder.embed([todo[k] for k in batch])):
-                cached[missing[k]] = np.asarray(v, dtype=np.float32)
-            done += len(batch)
-            rate = done / max(time.perf_counter() - start, 1e-9)
-            log.debug("batch %d/%d  %d functions, longest %d chars  %.2f s  %s", b, len(plan), len(batch), max(len(todo[k]) for k in batch), time.perf_counter() - t, mem_text())
-            progress("embedding", done, len(todo), batch=b, batches=len(plan), rate=rate)
+        saved_at, unsaved = start, 0
         try:
-            keys = list(cached)
-            np.savez(path, hashes=np.array(keys), vectors=np.stack([cached[k] for k in keys]))
-        except OSError as exc:
-            warnings.warn(f"embedding cache not written ({exc}); vectors will be recomputed next run", RuntimeWarning, stacklevel=2)
+            for b, batch in enumerate(plan, 1):
+                t = time.perf_counter()
+                for k, v in zip(batch, embedder.embed([todo[k] for k in batch])):
+                    cached[missing[k]] = np.asarray(v, dtype=np.float32)
+                done += len(batch)
+                unsaved += len(batch)
+                rate = done / max(time.perf_counter() - start, 1e-9)
+                log.debug("batch %d/%d  %d functions, longest %d chars  %.2f s  %s", b, len(plan), len(batch), max(len(todo[k]) for k in batch), time.perf_counter() - t, mem_text())
+                progress("embedding", done, len(todo), batch=b, batches=len(plan), rate=rate)
+                if time.perf_counter() - saved_at >= CHECKPOINT_SECONDS:  # a killed run keeps what it embedded
+                    _save(path, cached)
+                    saved_at, unsaved = time.perf_counter(), 0
+        finally:  # done, stopped or failed: keep every vector embedded so far
+            if unsaved:
+                _save(path, cached)
     mat = np.stack([cached[h] for h in hashes]) if hashes else np.zeros((0, 1), dtype=np.float32)
     norms = np.linalg.norm(mat, axis=1, keepdims=True)
     norms[norms == 0] = 1.0
@@ -327,6 +331,23 @@ def symbol_vectors(program: Program, min_loc: int = 2):
     vectors = embed_texts(embedder, [symbol_text(program, n, max_chars=chars_for(tokens) if tokens else None) for n in nodes])
     program.metrics["_semantic"] = {"nodes": nodes, "vectors": vectors, "model": embedder.name}
     return nodes, vectors, embedder.name
+
+
+CHECKPOINT_SECONDS = 30.0  # while embedding, the cache is written at least this often
+
+
+def _save(path: Path, cached: dict) -> None:
+    """Write the cache whole to a temporary file, then move it into place: a run killed mid-write leaves the old one."""
+    import numpy as np
+
+    tmp = path.with_name(path.name + ".tmp.npz")
+    try:
+        keys = list(cached)
+        np.savez(tmp, hashes=np.array(keys), vectors=np.stack([cached[k] for k in keys]))
+        os.replace(tmp, path)
+        log.debug("cache saved, %d vectors", len(keys))
+    except OSError as exc:
+        warnings.warn(f"embedding cache not written ({exc}); vectors will be recomputed next run", RuntimeWarning, stacklevel=2)
 
 
 def unit_vectors(program: Program):
