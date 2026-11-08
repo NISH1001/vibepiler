@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import time
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,6 +25,7 @@ from typing import Callable, Protocol, Sequence
 
 from vibepiler.ir.model import CALLABLE_KINDS, Node
 from vibepiler.ir.program import Program
+from vibepiler.progress import log, mem_text, progress, timed
 
 DEFAULT_MODEL = "nomic-ai/CodeRankEmbed"
 
@@ -246,12 +248,19 @@ def embed_texts(embedder: Embedder, texts: Sequence[str], cache_dir: Path | None
             cached = {}
     hashes = [_hash(t) for t in texts]
     missing = sorted({h for h in hashes if h not in cached})
+    log.debug("cache %s: %d reused, %d to embed with %s", str(path).replace(str(Path.home()), "~", 1), len(set(hashes)) - len(missing), len(missing), embedder.name)
     if missing:
         by_hash = {_hash(t): t for t in texts}
         todo = [by_hash[h] for h in missing]
-        for batch in batches(todo):
+        plan, done, start = batches(todo), 0, time.perf_counter()
+        for b, batch in enumerate(plan, 1):
+            t = time.perf_counter()
             for k, v in zip(batch, embedder.embed([todo[k] for k in batch])):
                 cached[missing[k]] = np.asarray(v, dtype=np.float32)
+            done += len(batch)
+            rate = done / max(time.perf_counter() - start, 1e-9)
+            log.debug("batch %d/%d  %d functions, longest %d chars  %.2f s  %s", b, len(plan), len(batch), max(len(todo[k]) for k in batch), time.perf_counter() - t, mem_text())
+            progress("embedding", done, len(todo), batch=b, batches=len(plan), rate=rate)
         try:
             keys = list(cached)
             np.savez(path, hashes=np.array(keys), vectors=np.stack([cached[k] for k in keys]))
@@ -270,7 +279,8 @@ def symbol_vectors(program: Program, min_loc: int = 2):
     if memo is not None:
         return memo["nodes"], memo["vectors"], memo["model"]
     model = program.config.embedding_model
-    embedder = get_embedder(model)
+    with timed(f"model {model} loaded"):
+        embedder = get_embedder(model)
     if embedder is None:
         return None, None, model
     g = program.graph
@@ -284,6 +294,7 @@ def symbol_vectors(program: Program, min_loc: int = 2):
         and (g.parent(n.id) is None or g.parent(n.id).kind.value != "function")  # nested closures/wrappers
     ]
     nodes.sort(key=lambda n: (n.file or "", n.start_line or 0))
+    log.debug("embedding %d functions (%d lines in all)", len(nodes), sum(n.loc for n in nodes))
     vectors = embed_texts(embedder, [symbol_text(program, n) for n in nodes])
     program.metrics["_semantic"] = {"nodes": nodes, "vectors": vectors, "model": embedder.name}
     return nodes, vectors, embedder.name

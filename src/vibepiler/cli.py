@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import List, Optional
 
@@ -12,7 +13,18 @@ from rich.tree import Tree
 
 from vibepiler import __version__
 from vibepiler.backend import emit_dot, emit_json, emit_mermaid
-from vibepiler.backend.terminal import console, err_console, print_baseline, print_findings, print_phase, print_remarks, print_skipped, print_summary, size_line
+from vibepiler.backend.terminal import (
+    PassLog,
+    console,
+    err_console,
+    print_baseline,
+    print_findings,
+    print_phase,
+    print_remarks,
+    print_skipped,
+    print_summary,
+    size_line,
+)
 from vibepiler.compiler import EMITTERS, Compiler
 from vibepiler.config import Config
 from vibepiler.frontend.languages import available
@@ -21,7 +33,13 @@ from vibepiler.ir.model import EdgeKind, NodeKind
 from vibepiler.ir.program import Program
 from vibepiler.passes.diagnostic import Severity
 from vibepiler.passes.registry import all_passes, parse_gate, run_passes
-from vibepiler.remote import default_cache, fetch_remote, parse_remote, remote_subpath, repo_name
+from vibepiler.remote import (
+    default_cache,
+    fetch_remote,
+    parse_remote,
+    remote_subpath,
+    repo_name,
+)
 
 app = typer.Typer(
     name="vibepiler",
@@ -118,6 +136,7 @@ def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
     remarks: bool = typer.Option(False, "-R", "--remarks", help="Print missed-optimization remarks: the elimination plan, one line per edit with the lines it frees."),
     baseline: Optional[Path] = typer.Option(None, "--baseline", help="A previous run's ir.json: print how waste, tangle and bloat moved since it."),
     quiet: bool = typer.Option(False, "-q", "--quiet", help="Only print the phase lines and the summary."),
+    verbose: bool = typer.Option(False, "-v", "--verbose", help="Print what the slow passes are doing as they run: model load, cache reuse, every embedding batch, each step's time and memory."),
     max_print: int = typer.Option(60, "--max-print", help="Max findings printed to the terminal."),
     cache: Optional[Path] = typer.Option(None, "--cache", help="Where remote repos are cloned (default ~/.cache/vibepiler)."),
     refresh: bool = typer.Option(False, "--refresh", help="Re-clone a remote repo instead of reusing the cached clone."),
@@ -138,20 +157,31 @@ def compile(  # noqa: A001 - mirrors the compiler metaphor on purpose
 
     console.print(f"[bold]vibepiler[/bold] {__version__} compiling [cyan]{root}[/cyan]" + (f" [dim]({', '.join(cfg.include)})[/dim]" if cfg.include else ""))
 
+    passlog = PassLog(verbose)
+
     def on_pass(p, diags, secs):  # noqa: ANN001
+        passlog.finish()
         if not quiet:
             n = len(diags)
             console.print(f"      [dim]pass[/dim] {p.name:19} {n:4} finding{'s' if n != 1 else ''}  [dim]{secs * 1000:.0f} ms[/dim]")
 
-    result = _run(
-        Compiler(root, cfg, on_phase=print_phase),
-        opt_level=opt,
-        emit=emits,
-        out_dir=out,
-        only=[s.strip() for s in only.split(",")] if only else None,
-        skip=[s.strip() for s in skip.split(",")] if skip else None,
-        on_pass=on_pass,
-    )
+    log = logging.getLogger("vibepiler")
+    if not quiet:
+        log.addHandler(passlog)
+        log.setLevel(logging.DEBUG if verbose else logging.INFO)
+    try:
+        result = _run(
+            Compiler(root, cfg, on_phase=print_phase),
+            opt_level=opt,
+            emit=emits,
+            out_dir=out,
+            only=[s.strip() for s in only.split(",")] if only else None,
+            skip=[s.strip() for s in skip.split(",")] if skip else None,
+            on_pass=on_pass,
+        )
+    finally:
+        passlog.finish()
+        log.removeHandler(passlog)
     program = result.program
     print_skipped(program)
     if not quiet:

@@ -161,6 +161,7 @@ vibepiler passes
 
 - `-O0` builds the graph only. `-O1` runs the linear passes. `-O2` (default) adds the quadratic ones (duplicate detection). `-O3` adds the embedding tier (see below).
 - `-W` is the minimum severity printed to the terminal. `-Wall` shows `info` findings. Everything is always in `ir.json`/`report.md`.
+- `-v` prints what the slow passes are doing as they run: the model load, how much of the embedding cache was reused, every embedding batch (functions, longest one, seconds, memory) and each step's time and peak memory. Without it, a single line counts the embedding progress and disappears when the pass finishes. From Python, attach a handler to the `vibepiler` logger, or set `VIBEPILER_DEBUG=1`.
 - `-R` prints the **missed-optimization remarks** (after clang's `-Rpass-missed`): the elimination plan, one line per edit with the lines it frees and how sure the tool is.
 - `--baseline previous/ir.json` prints how waste, tangle and bloat moved since an earlier run. That is the loop: apply the top remark, re-run, repeat.
 - `--fail-on warning`, `--fail-on bloat>0.25`, `--fail-on live<0.9` or any [metric](#metrics) (`cognitive>0.1`, `typed<0.8`) makes it a CI gate.
