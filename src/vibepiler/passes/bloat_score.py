@@ -55,7 +55,7 @@ WHOLE = {"dead-symbol", "unreachable-symbol", "unreachable-module", "stub-functi
 SHELL = {"class-as-function", "namespace-class", "single-subclass", "tiny-module"}  # the container minus what it contains
 DUPLICATES = {"duplicate-function", "near-duplicate-function", "semantic-duplicate"}
 CLAUSES = {"redundant-try", "swallowed-exception", "log-and-reraise"}
-THRESHOLD_TERMS = {"high-complexity": ("complexity", "complexity"), "deep-nesting": ("nesting", "nesting"), "too-many-params": ("params", "params"), "long-function": ("loc", "function_loc")}
+THRESHOLD_TERMS = {"high-cognitive-complexity": ("cognitive", "cognitive"), "deep-nesting": ("nesting", "nesting"), "too-many-params": ("params", "params"), "long-function": ("loc", "function_loc")}
 
 Claim = tuple[float, Node, Diagnostic]  # lines asked, on which node, by which finding
 Term = tuple[float, str]  # tangle term, finding code
