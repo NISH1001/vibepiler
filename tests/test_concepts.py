@@ -192,3 +192,12 @@ def test_map_colours_by_any_measure_with_a_live_threshold():
         assert f'<option value="{mode}"' in viewer
     assert '<option value="health" selected>' in viewer
     assert 'id="mm-thresh"' in viewer and 'type="range"' in viewer
+
+
+def test_the_map_has_a_paper_set_for_the_light_theme_and_the_field_for_the_dark():
+    from importlib import resources
+
+    viewer = resources.files("vibepiler.backend").joinpath("viewer.html").read_text(encoding="utf-8")
+    assert "const MM_SETS = {" in viewer and "field: {" in viewer and "paper: {" in viewer
+    assert "#meaning.paper" in viewer and "attributeFilter: ['data-theme']" in viewer
+    assert "function metricsBlock(a)" in viewer and "${metricsBlock(n.attrs)}" in viewer

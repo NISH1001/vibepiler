@@ -75,6 +75,9 @@
   #view-concepts { position: relative; }
   #meaning { position: relative; flex: 1; min-width: 0; overflow: hidden; outline: none; touch-action: none;
     background: radial-gradient(ellipse 85% 75% at 50% 40%, var(--field-2) 0%, var(--field) 60%, #070b16 100%); }
+  #meaning.paper { --field: #fbfaf7; --field-2: #ffffff; --field-ink: #1a1a19; --field-ink-2: #55554f; --field-line: rgba(0,0,0,0.12); background: #fbfaf7; }
+  #meaning.paper .mm-tip { background: rgba(255, 255, 255, 0.97); box-shadow: 0 6px 18px rgba(0,0,0,0.12); }
+  #meaning.paper .legend { background: rgba(255, 255, 255, 0.94); } #meaning.paper .legend .k.orb::before { box-shadow: none; }
   #mm-canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; }
   #mm-canvas.drag { cursor: grabbing; } #mm-canvas.hit { cursor: pointer; }
   .mm-bar { max-width: calc(100% - 20px); }
@@ -109,6 +112,7 @@
   .cbar .n { width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cbar .b { flex: 1; height: 6px; background: var(--surface-3); border-radius: 3px; overflow: hidden; } .cbar .b i { display: block; height: 100%; background: var(--method); }
   .cbar .c { width: 3ch; text-align: right; color: var(--ink-3); }
+  .cbar.mrow .n { width: 34%; } .cbar.mrow .c { width: 4ch; } .mraw { color: var(--ink-3); font-size: 11px; margin: -2px 0 4px; }
   .howto { margin: 0; padding-left: 18px; color: var(--ink-2); } .howto li { margin: 3px 0; }
   .toolbar { position: absolute; top: 10px; left: 10px; z-index: 2; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; max-width: calc(100% - 420px); }
   .toolbar .group { display: flex; gap: 0; background: var(--surface-2); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
@@ -609,11 +613,32 @@ const CONCEPTS = DATA.metrics.concepts && DATA.metrics.concepts.concepts && DATA
   if (!CONCEPTS) { el.textContent = DATA.metrics.concepts && DATA.metrics.concepts.skipped ? 'needs vibepiler[semantic]' : 'needs -O3'; return; }
   el.innerHTML = `<b>${(CONCEPTS.points || []).length || CONCEPTS.symbols}</b> functions, <b>${CONCEPTS.concepts.length}</b> concepts`;
 })();
-const MM_PALETTE = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#9085e9', '#008300']; // validated on the field: fixed order, never cycled
 // health: one status per function, the worst one wins; healthy recedes so problems read at a glance
-const MM_HEALTH = [['#34446e', 'healthy'], ['#9aa5c0', 'unused'], ['#ffb020', 'tangled'], ['#ff6b6b', 'copied']];
 // a measure: one hue, dim to bright over the functions past the threshold; the rest fade to the field
-const MM_RAMP = ['#7a5d1c', '#b07a12', '#e9a21a', '#ffc94d', '#fff0c2'], MM_BELOW = '#2c3656';
+// Two validated sets (dataviz validator: CVD separation, contrast, ramp order): the deep field on screen, paper in the
+// light theme for print. Problems are amber and crimson/coral, apart under deutan/protan (ΔE 10.5 paper, 12.7 field);
+// unused is also a ring, not only a colour. Folders take a fixed categorical order, never cycled.
+const MM_SETS = {
+  field: { palette: ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#9085e9', '#008300'],
+    health: [['#34446e', 'healthy'], ['#9aa5c0', 'unused'], ['#ffb020', 'tangled'], ['#ff6b6b', 'copied']],
+    ramp: ['#7a5d1c', '#b07a12', '#e9a21a', '#ffc94d', '#fff0c2'], below: '#2c3656', other: '#5d6884', copy: '#ff6b6b', down: '#ffc53d', up: '#9fd4ff',
+    ink: '#ffffff', ink2: '#eef1f8', ink3: '#dfe5f2', stream: '#dfe7fb', halo: 'rgba(9,14,28,0.85)' },
+  paper: { palette: ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6'],
+    health: [['#b4bccb', 'healthy'], ['#7d8699', 'unused'], ['#b26b00', 'tangled'], ['#c2185b', 'copied']],
+    ramp: ['#d0a050', '#b8842a', '#996400', '#714500', '#472900'], below: '#dde1e8', other: '#9aa1af', copy: '#c2185b', down: '#b26b00', up: '#2a78d6',
+    ink: '#1a1a19', ink2: '#2c2c2a', ink3: '#3d3d3a', stream: '#5d6884', halo: 'rgba(251,250,247,0.9)' },
+};
+let MM_PALETTE, MM_HEALTH, MM_RAMP, MM_BELOW, MM_OTHER, MM_COPY, MM_DOWN, MM_UP, MM_INK, MM_INK2, MM_INK3, MM_STREAM, MM_HALO;
+const mmPaper = () => { const t = document.documentElement.dataset.theme; return t ? t === 'light' : !matchMedia('(prefers-color-scheme: dark)').matches; };
+function mmUseTheme() { // true when the set changed
+  const k = mmPaper() ? 'paper' : 'field'; if (mmUseTheme.k === k) return false; mmUseTheme.k = k;
+  const c = MM_SETS[k];
+  [MM_PALETTE, MM_HEALTH, MM_RAMP, MM_BELOW, MM_OTHER, MM_COPY, MM_DOWN, MM_UP] = [c.palette, c.health, c.ramp, c.below, c.other, c.copy, c.down, c.up];
+  [MM_INK, MM_INK2, MM_INK3, MM_STREAM, MM_HALO] = [c.ink, c.ink2, c.ink3, c.stream, c.halo];
+  const el = document.getElementById('meaning'); if (el) el.classList.toggle('paper', k === 'paper');
+  return true;
+}
+mmUseTheme();
 const mmPct = v => Math.round(v * 100) + '%';
 // get: the value; up: higher is worse; limit: where the compiler draws its line (from its own findings when it has any)
 const MM_MEASURES = {
@@ -630,7 +655,6 @@ const MM_MEASURES = {
 };
 const mmAttrLimit = (key, fallback) => { const n = DATA.nodes.find(n => n.attrs && n.attrs[key] && n.attrs[key].limit); return n ? n.attrs[key].limit : fallback; };
 const MM_DEAD = new Set(['dead-symbol', 'unreachable-symbol']); // as liveness counts them: an unused export is live
-const MM_OTHER = '#5d6884', MM_COPY = '#ff6b6b', MM_DOWN = '#ffc53d', MM_UP = '#9fd4ff';
 const MM_CONTAINERS = new Set(['src', 'lib', 'app', 'apps', 'packages', 'frontend', 'backend', 'web', 'client', 'server']);
 function mmFolder(file) {
   const parts = (file || '').split('/').slice(0, -1); if (!parts.length) return '(root)';
@@ -686,7 +710,8 @@ function buildMeaning() {
   }
   const folderCount = {}; for (const p of P) folderCount[p.folder] = (folderCount[p.folder] || 0) + 1;
   const folders = Object.keys(folderCount).sort((a, b) => folderCount[b] - folderCount[a] || a.localeCompare(b));
-  const folderColour = Object.fromEntries(folders.map((f, i) => [f, i < MM_PALETTE.length ? MM_PALETTE[i] : MM_OTHER]));
+  const folderIndex = Object.fromEntries(folders.map((f, i) => [f, i]));
+  const folderColour = new Proxy({}, { get: (_, f) => folderIndex[f] < MM_PALETTE.length ? MM_PALETTE[folderIndex[f]] : MM_OTHER }); // follows the theme
   const themeColour = t => t >= 0 && t < MM_PALETTE.length ? MM_PALETTE[t] : MM_OTHER;
   const colourOf = p => state.colour === 'health' ? MM_HEALTH[p.health][0] : M() ? (on(p) ? rampOf(p) : MM_BELOW)
     : state.colour === 'theme' ? themeColour(p.c >= 0 ? C[p.c].theme : -1) : folderColour[p.folder];
@@ -772,8 +797,8 @@ function buildMeaning() {
           const x1 = sx(st.a.cx), y1 = sy(st.a.cy), x2 = sx(st.b.cx), y2 = sy(st.b.cy);
           st.geo = [x1, y1, (x1 + x2) / 2 - (y2 - y1) * 0.22, (y1 + y2) / 2 + (x2 - x1) * 0.22, x2, y2];
           const w = 0.6 + 2.6 * Math.log2(1 + st.n) / Math.log2(1 + streamMax);
-          let colour = '#dfe7fb', alpha = 0.12 + 0.3 * st.n / streamMax, width = w;
-          if (one) { if (st === one) { colour = '#ffffff'; alpha = 0.95; width = w + 1.5; } else alpha = 0.05; }
+          let colour = MM_STREAM, alpha = 0.12 + 0.3 * st.n / streamMax, width = w;
+          if (one) { if (st === one) { colour = MM_INK; alpha = 0.95; width = w + 1.5; } else alpha = 0.05; }
           else if (around) {
             const out = around.has(st.a.i), inn = around.has(st.b.i);
             if (out || inn) { colour = out ? MM_DOWN : MM_UP; alpha = 0.85; width = w + 0.8; } else alpha = 0.05;
@@ -782,7 +807,7 @@ function buildMeaning() {
           ctx.strokeStyle = colour; ctx.globalAlpha = alpha; ctx.lineWidth = width; dash(3, 9, 22); ctx.stroke();
         }
       } else { // between functions on screen
-        ctx.strokeStyle = '#dfe7fb'; ctx.lineWidth = 1; ctx.globalAlpha = 0.28; dash(2, 7, 18); ctx.beginPath();
+        ctx.strokeStyle = MM_STREAM; ctx.lineWidth = 1; ctx.globalAlpha = 0.28; dash(2, 7, 18); ctx.beginPath();
         let n = 0; for (const [a, b] of calls) { if (n > 5000) break; if (vis(a) || vis(b)) { curve(a, b); n++; } } ctx.stroke();
       }
       if (state.hover) { // a hovered function's own calls, before any click
@@ -829,8 +854,8 @@ function buildMeaning() {
     }
     ctx.globalAlpha = 1;
     for (const p of [state.hover, state.sel].filter(Boolean)) { // rings
-      ctx.beginPath(); ctx.arc(px(p), py(p), r0 * 2 + 3, 0, 6.2832); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = p === state.sel ? 2 : 1.2;
-      ctx.shadowColor = '#ffffff'; ctx.shadowBlur = p === state.sel ? 14 : 6; ctx.stroke(); ctx.shadowBlur = 0;
+      ctx.beginPath(); ctx.arc(px(p), py(p), r0 * 2 + 3, 0, 6.2832); ctx.strokeStyle = MM_INK; ctx.lineWidth = p === state.sel ? 2 : 1.2;
+      ctx.shadowColor = MM_INK; ctx.shadowBlur = p === state.sel ? 14 : 6; ctx.stroke(); ctx.shadowBlur = 0;
     }
     labels(s, focus);
   }
@@ -845,19 +870,19 @@ function buildMeaning() {
       if (bx > W || bx + w < 0 || by > H || by + h < 0 || !free(bx - 3, by, w + 6, h)) return;
       if (hit && alpha > 0.3) boxes.push({ x: bx - 3, y: by - 2, w: w + 6, h: h + 4, ...hit });
       ctx.font = font; ctx.textBaseline = 'middle'; ctx.textAlign = anchor === 'center' ? 'center' : 'left'; ctx.globalAlpha = alpha;
-      if (halo) { ctx.lineWidth = 3.5; ctx.strokeStyle = 'rgba(9,14,28,0.85)'; ctx.strokeText(text, x, y); }
+      if (halo) { ctx.lineWidth = 3.5; ctx.strokeStyle = MM_HALO; ctx.strokeText(text, x, y); }
       ctx.fillStyle = colour; ctx.fillText(text, x, y); ctx.globalAlpha = 1;
     }
     const ramp = (v, a, b) => Math.max(0, Math.min(1, (v - a) / (b - a)));
     const fnFont = '500 11px "IBM Plex Mono", monospace';
-    for (const p of [state.sel, state.hover].filter(Boolean)) put(p.name, px(p) + 10, py(p), '600 12px "IBM Plex Mono", monospace', '#ffffff', 1, 'left');
-    if (focus) { for (const i of focus) { const p = P[i]; put(p.name, px(p) + 7, py(p), fnFont, '#eef1f8', 0.95, 'left'); } return; }
+    for (const p of [state.sel, state.hover].filter(Boolean)) put(p.name, px(p) + 10, py(p), '600 12px "IBM Plex Mono", monospace', MM_INK, 1, 'left');
+    if (focus) { for (const i of focus) { const p = P[i]; put(p.name, px(p) + 7, py(p), fnFont, MM_INK2, 0.95, 'left'); } return; }
     const tA = 1 - ramp(s, 1.3, 2.4), cA = ramp(s, 1.15, 1.7) * (1 - ramp(s, 9, 14)), fA = ramp(s, 2.6, 4);
-    if (fA > 0) { let n = 0; for (const p of byImportance) { if (n > 350) break; const x = px(p), y = py(p); if (x < 0 || x > W || y < 0 || y > H) continue; n++; put(p.name, x + 7, y, fnFont, '#dfe5f2', fA * (state.concept === null || p.c === state.concept ? 0.95 : 0.3), 'left'); } }
+    if (fA > 0) { let n = 0; for (const p of byImportance) { if (n > 350) break; const x = px(p), y = py(p); if (x < 0 || x > W || y < 0 || y > H) continue; n++; put(p.name, x + 7, y, fnFont, MM_INK3, fA * (state.concept === null || p.c === state.concept ? 0.95 : 0.3), 'left'); } }
     const litC = state.hoverConcept ?? state.concept;
-    if (litC !== null) { const c = C[litC]; put(c.label, sx(c.cx), sy(c.cy) - 16, '600 13px "IBM Plex Sans", sans-serif', '#ffffff', 1, 'center', true, { c: c.i }); }
-    if (tA > 0) for (const th of T.filter(x => x.size >= 12)) put(th.label.toUpperCase(), sx(th.cx), sy(th.cy), '600 13px "IBM Plex Sans", sans-serif', '#ffffff', tA * 0.95, 'center', true, { t: th.i });
-    if (cA > 0) for (const c of [...C].sort((a, b) => b.size - a.size)) put(c.label, sx(c.cx), sy(c.cy), '600 12px "IBM Plex Sans", sans-serif', '#f4f6fb', cA * (litC === null || litC === c.i ? 0.92 : 0.35), 'center', true, { c: c.i });
+    if (litC !== null) { const c = C[litC]; put(c.label, sx(c.cx), sy(c.cy) - 16, '600 13px "IBM Plex Sans", sans-serif', MM_INK, 1, 'center', true, { c: c.i }); }
+    if (tA > 0) for (const th of T.filter(x => x.size >= 12)) put(th.label.toUpperCase(), sx(th.cx), sy(th.cy), '600 13px "IBM Plex Sans", sans-serif', MM_INK, tA * 0.95, 'center', true, { t: th.i });
+    if (cA > 0) for (const c of [...C].sort((a, b) => b.size - a.size)) put(c.label, sx(c.cx), sy(c.cy), '600 12px "IBM Plex Sans", sans-serif', MM_INK2, cA * (litC === null || litC === c.i ? 0.92 : 0.35), 'center', true, { c: c.i });
   }
 
   // ---- hit tests ----
@@ -950,6 +975,9 @@ function buildMeaning() {
     document.getElementById('mm-tc').textContent = `${lit} of ${P.length}`;
   }
   colourSel.addEventListener('change', () => { state.colour = colourSel.value; order = null; syncThreshold(); legend(); kick(); });
+  const retheme = () => { if (mmUseTheme()) { legend(); kick(); } }; // paper in the light theme, the field in the dark one
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', retheme);
+  new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
   tr.addEventListener('input', () => {
     const m = M(), sc = measured[state.colour], n = sc.vals.length - 1, k = Math.round(+tr.value / 1000 * n);
     sc.t = sc.vals[m.up ? k : n - k]; sc.clear = false; syncThreshold(); legend(); kick();
@@ -1036,6 +1064,7 @@ function buildMeaning() {
         <div class="meta2" style="margin-top:6px"><span class="swatch" style="background:${folderColour[p.folder]}"></span>${esc(p.folder)}${c ? ` · in ${conceptLink(c)}` : ''}${th ? ` · <span class="linkish" data-t="${th.i}">${esc(th.label)}</span>` : ''}</div>
         <div class="kv"><div><b>${p.loc}</b><span>lines</span></div><div><b style="color:${p.complex ? MM_HEALTH[2][0] : 'inherit'}">${p.cog}</b><span>cognitive</span></div><div><b>${new Set(p.in).size}</b><span>called by</span></div><div><b>${new Set(p.out).size}</b><span>calls</span></div></div>
         ${p.dead ? '<div class="meta2" style="margin-top:8px;color:var(--warning)">Unused: nothing reachable calls this.</div>' : ''}${p.complex ? `<div class="meta2" style="margin-top:4px;color:var(--warning)">Tangled: cognitive complexity ${p.cog}, over the limit (cyclomatic ${p.cc}).</div>` : ''}
+        ${metricsBlock((nodeById[p.id] || { attrs: {} }).attrs)}
         <div style="margin-top:10px"><button data-go="${esc(p.id)}">open in the program graph</button></div></div>
       ${p.twins.length ? `<div class="section"><h3>Copies (${p.twins.length})</h3><ul class="list">${p.twins.map(pr => { const o = pr.a === p ? pr.b : pr.a; return `<li data-p="${o.i}"><span class="copy">${copyLabel(pr)}</span><span class="mono" style="word-break:break-all">${esc(o.q)}</span><span class="meta">${esc((o.file || '').split('/').pop())}</span></li>`; }).join('')}</ul></div>` : ''}
       ${list('Called by', p.in, 'What leads here: pale blue on the map.')}
@@ -1171,6 +1200,7 @@ function renderNode(id) {
       <div id="trace-status" style="color:var(--ink-2);margin-top:6px;min-height:1.2em"></div></div>
     ${n.attrs.bloat ? bloatBlock(n.attrs.bloat, n.attrs.loc) : ''}
     ${n.attrs.liveness ? livenessBlock(n.attrs.liveness, ds) : ''}
+    ${metricsBlock(n.attrs)}
     ${ds.length ? `<div class="section"><h3>Findings (${ds.length})</h3>${ds.map(d => `<div class="finding" style="padding:6px 0"><div class="head"><span class="sev ${d.severity}"></span><span class="code">${esc(d.code)}</span></div><div class="msg">${esc(d.message)}</div>${d.suggestion ? `<div class="fix">${esc(d.suggestion)}</div>` : ''}</div>`).join('')}</div>` : ''}
     <div class="section"><h3>Properties</h3><dl class="kv">${attrs.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(Array.isArray(v) ? v.join(', ') : typeof v === 'object' ? JSON.stringify(v) : v)}</dd>`).join('')}</dl></div>
     <div class="section"><h3>Used by (${ins.length})</h3><ul class="list">${ins.join('') || '<li style="color:var(--ink-3);cursor:default">nothing in the project</li>'}</ul></div>
@@ -1186,6 +1216,24 @@ function livenessBlock(l, ds) {
   const pct = Math.round(l.value * 1000) / 10, dead = Object.entries(l.dead || {}).filter(([, v]) => v).map(([k, v]) => `${v} ${k}`).join(', ');
   const where = ds.filter(d => LIVENESS_CODES.includes(d.code)).map(d => `<li style="cursor:default"><span class="pill">${esc(d.code)}</span> ${esc((d.data.names || []).join(', '))} <span class="meta">line ${d.line}</span></li>`).join('');
   return `<div class="section"><h3>Liveness ${pct}%</h3><div class="bloatbar"><i style="width:${pct}%;background:${tint(1 - l.value)}"></i></div><div class="meta2">${l.live} of ${l.defined} definitions reach a use${dead ? ' · dead: ' + esc(dead) : ''} · live = definitions that reach a use / definitions</div>${where ? `<ul class="list">${where}</ul>` : ''}</div>`;
+}
+// every Metric is a value in [0, 1]; the bar shows the value, its colour how bad it is (a share is good when high)
+const METRIC_ROWS = [
+  ['cognitive', 'cognitive', true], ['cyclomatic', 'cyclomatic', true], ['maintainability', 'maintainability', true],
+  ['typed', 'typed', false], ['documented', 'documented', false],
+];
+function metricRaw(key, m) {
+  if ('have' in m) return m.total ? `${m.have} of ${m.total} ${key === 'typed' ? 'parameters and returns annotated' : 'public units documented'}` : 'nothing to count';
+  if (!m.functions) return 'no functions';
+  const side = key === 'maintainability' ? 'below' : 'over';
+  return m.functions === 1 ? `${m.worst} (limit ${m.limit})` : `${m.over} of ${m.functions} functions ${side} ${m.limit}; worst ${m.worst}`;
+}
+function metricsBlock(a) {
+  const rows = METRIC_ROWS.filter(([k]) => a[k]).map(([k, label, low]) => {
+    const m = a[k], v = m.value, pct = Math.round(100 * v);
+    return `<div class="cbar mrow"><span class="n">${label}</span><span class="b"><i style="width:${pct}%;background:${tint(low ? v : 1 - v)}"></i></span><span class="c">${pct}%</span></div><div class="mraw">${esc(metricRaw(k, m))}</div>`;
+  });
+  return rows.length ? `<div class="section"><h3>Metrics</h3>${rows.join('')}<div class="meta2">Each in [0, 1]: how far past a fixed limit, weighted by lines (lower is better), or a share (higher is better).</div></div>` : '';
 }
 function bloatBlock(b, loc) { const pct = Math.round(b.score * 100); return `<div class="section"><h3>Bloat ${pct}%</h3><div class="bloatbar"><i style="width:${pct}%;background:${tint(b.score)}"></i></div><div class="meta2">${Math.round(b.removable_loc)} of ${loc || '?'} lines could go (waste ${(100 * b.waste).toFixed(1)}%) · tangle ${(100 * b.tangle).toFixed(1)}% · bloat = 1 − (1 − waste)(1 − tangle)</div></div>`; }
 
