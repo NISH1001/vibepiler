@@ -293,3 +293,30 @@ def test_nearest_holds_a_bounded_block_whatever_the_size(monkeypatch):
     monkeypatch.setattr(embed, "NEAREST_BUDGET", 100_000)
     embed.nearest(v, 2)
     assert seen and max(seen) <= 100_000 and sum(seen) == 5000 * 5000
+
+
+def test_nearest_breaks_exact_ties_to_the_lower_index():
+    import numpy as np
+
+    rng = np.random.default_rng(3)
+    base = rng.integers(0, 2, size=(40, 8)).astype(np.float32)  # 0/1 entries: every product is an exact integer
+    v = np.vstack([base, base, base])  # so twins tie exactly, however the products are blocked
+    full = v @ v.T
+    np.fill_diagonal(full, -np.inf)
+    want = np.argsort(-full, axis=1, kind="stable")[:, :5]
+    for block in (7, 64, None):
+        idx, _ = embed.nearest(v, 5, block=block)
+        assert (idx == want).all()
+
+
+def test_a_class_inside_a_method_does_not_count_for_the_outer_class(tmp_path):
+    (tmp_path / "m.py").write_text("class Outer:\n    def build(self, a):\n        class Local:\n            def run(self, b):\n                return [b for b in range(b) if b % 3]\n        return Local().run(a) + [a, a * 2, a * 3]\n")
+    prog = build_program(tmp_path, config=Config.load(tmp_path))
+    run_passes(prog, opt_level=3)
+    import numpy as np
+
+    nodes, vectors, _ = embed.symbol_vectors(prog)
+    units, uvec = embed.unit_vectors(prog)
+    outer = uvec[[u.qualname for u in units].index("Outer")]
+    build = vectors[[n.qualname for n in nodes].index("Outer.build")]
+    assert np.allclose(outer, build)  # Local.run is Local's, not Outer's
