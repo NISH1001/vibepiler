@@ -298,21 +298,20 @@ vibepiler similar . src/app/utils.py        # a module (by its file): the module
 ```
 
 - **Default model**: [`nomic-ai/CodeRankEmbed`](https://huggingface.co/nomic-ai/CodeRankEmbed), a 137M-parameter encoder trained for code retrieval (CoIR 60.1, the best open model under 200M). The upstream release needs PyTorch and custom model code, so vibepiler runs an int8 ONNX build of it, [`nishparadox/CodeRankEmbed-onnx-int8`](https://huggingface.co/nishparadox/CodeRankEmbed-onnx-int8) (138 MB, pinned to a commit), through [fastembed](https://github.com/qdrant/fastembed): no PyTorch anywhere. Model files land in `~/.cache/vibepiler/models/`; vectors are cached by content hash in `~/.cache/vibepiler/embeddings/`, so only the first run of a repo pays for embedding.
-- **Alternative**: `embedding_model = "jinaai/jina-embeddings-v2-base-code"` (161M, code-trained, official int8 ONNX, 160 MB) if you would rather not depend on a community-converted model. Same speed, slightly weaker separation.
+- **Alternative**: `embedding_model = "jinaai/jina-embeddings-v2-base-code"` (161M, code-trained, official int8 ONNX, 160 MB) if you would rather not depend on a community-converted model. Same speed and quality, but 5.1 GB peak memory on django against 3.0 GB, and slightly weaker separation.
 - **Fast mode**: `embedding_model = "minishlab/potion-code-16M-v2"`, a 16M static code embedding model run with [model2vec](https://github.com/minishlab/model2vec) (pure numpy). Roughly 500x faster, weaker on "same job, different code"; use it on repos with tens of thousands of functions.
 - **Nothing is truncated**: each function or method is embedded whole (signature and body); the only limit is the model's 8,192-token context. Speed comes from sorting texts by length before batching, so a batch of short functions is never padded up to one long one. That beat truncating to 800 characters on every model measured. Tests and nested closures are skipped, since they are repetitive by design.
-- **Why these**: measured on a 1,037-function repo (Apple-silicon laptop, CPU only), whole function bodies, length-sorted batches:
+- **Why these**: measured on labelled clones (CodeNet Python800: 2,000 programs, 20 solutions to each of 100 problems) and on three real repos (Apple M3 Max, CPU only, whole function bodies, length-sorted batches); full numbers in [docs/eval/semantic](docs/eval/semantic/RESULTS.md):
 
-  | model | code-trained | functions/s | separates the known twin pair* | notes |
-  |---|---|---|---|---|
-  | `CodeRankEmbed` int8 | yes | 33 | +0.086 | default |
-  | `CodeRankEmbed` fp32 | yes | 16 | +0.100 | same ranking, half the speed |
-  | `jina-embeddings-v2-base-code` int8 | yes | 36 | +0.059 | alternative |
-  | `BAAI/bge-small-en-v1.5` | no | 52 | +0.040 | general text model, 33M |
-  | `granite-embedding-small-english-r2` | partly | 67 (800-char inputs) | +0.029 | 47M, fastest transformer tried |
-  | `potion-code-16M-v2` (static) | yes | 17,000 | misses it (nearest neighbour is a longer function sharing tokens) | fast mode |
+  | model | code-trained | finds same-job code (MAP@R)* | functions/s (django, 8k fns) | peak memory (django) | notes |
+  |---|---|---|---|---|---|
+  | `CodeRankEmbed` int8 | yes | 0.559 | 39 | 3.0 GB | default: 132 MB model, loads in 0.5 s |
+  | `CodeRankEmbed` fp32 (PyTorch) | yes | 0.580 | 27 | 6.2 GB | the same model unquantized: tied on quality, 1.4× slower, twice the memory, a 912 MB install |
+  | `jina-embeddings-v2-base-code` int8 | yes | 0.574 | 40 | 5.1 GB | alternative |
+  | `BAAI/bge-small-en-v1.5` | no | 0.247 | 75 | 1.0 GB | general text model, 33M; fastembed's build caps inputs at 512 tokens |
+  | `potion-code-16M-v2` (static) | yes | 0.247 | 19,000 | 0.2 GB | fast mode |
 
-  \* cosine of two functions that do the same job with different code (a `for` loop versus a `sum` over a generator) minus the 99th percentile of all unrelated pairs in the same file. Code-trained transformers win regardless of size, which matches the June 2026 code-to-code retrieval benchmark ([arXiv 2606.27401](https://arxiv.org/abs/2606.27401)): contrastive training on code matters more than parameter count. Static models are fast because they average fixed per-token vectors, which is also why they cannot see past vocabulary.
+  \* mean average precision at R: for each program, how many of its R true twins (other solutions to the same problem) rank above everything else; 1.0 is perfect. Code-trained transformers win regardless of size, which matches the June 2026 code-to-code retrieval benchmark ([arXiv 2606.27401](https://arxiv.org/abs/2606.27401)): contrastive training on code matters more than parameter count. Static models are fast because they average fixed per-token vectors, which is also why they cannot see past vocabulary.
 - **`semantic-duplicates`**: two functions are reported only when each is the other's nearest neighbour *and* their cosine similarity is above `thresholds.semantic_similarity` (per-model default: 0.72 for CodeRankEmbed, 0.82 for the jina model, 0.88 for bge-small, 0.90 for potion; cosine distributions differ a lot between models). That mutual-nearest-neighbour rule is what keeps the output honest: a 1,800-function repo has 1.6 million pairs, and a plain threshold would list thousands. Pairs the structural pass already reported are left out; same-named methods on different classes (interface implementations) and dunder methods are ignored.
 - **`responsibilities`**: within each module, functions are greedily clustered at `thresholds.responsibility_similarity` (per-model default). A module is reported when it has two to five groups of three or more functions that together cover most of it; a module that shatters into many tiny groups is just large, not mixed.
 - **Swap the model** with `embedding_model = "..."` in the config: any fastembed model name, or any `minishlab/potion-*` static model.
