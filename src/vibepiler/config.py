@@ -12,6 +12,7 @@ from typing import Any
 class Thresholds:
     complexity: int = 10  # cyclomatic complexity per function (McCabe; NIST SP 500-235)
     cognitive: int = 15  # cognitive complexity per function (SonarQube's default)
+    maintainability: int = 20  # maintainability index per function, below is poor (Visual Studio's band)
     function_loc: int = 60  # lines per function
     nesting: int = 4  # max nesting depth
     params: int = 6  # parameters per function

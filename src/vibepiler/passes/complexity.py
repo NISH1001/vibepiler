@@ -50,7 +50,7 @@ class ComplexityPass(Pass):
             nesting = max_nesting(body, spec.nesting_types, spec.function_types)
             cog = cognitive(n.name, body, spec, sf)
             n.attrs["complexity"] = cc
-            n.attrs["cognitive"] = cog
+            n.attrs["cognitive_complexity"] = cog
             n.attrs["halstead"] = h = halstead(body, spec, sf)
             n.attrs["mi"] = maintainability(h["volume"], cc, n.loc)
             n.attrs["nesting"] = nesting

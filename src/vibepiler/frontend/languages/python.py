@@ -95,6 +95,28 @@ class PythonSpec(PythonFlow, LanguageSpec):
         op = node.child_by_field_name("operator") if node.type == "boolean_operator" else None
         return sf.text(op) if op is not None else None
 
+    def annotation_slots(self, def_node: Node, sf: SourceFile) -> tuple[int, int]:
+        params = def_node.child_by_field_name("parameters")
+        typed = slots = 0
+        for i, p in enumerate(params.named_children if params is not None else []):
+            if p.type in ("keyword_separator", "positional_separator", "comment"):
+                continue
+            if i == 0 and p.type == "identifier" and sf.text(p) in self.self_names:
+                continue
+            slots += 1
+            typed += p.type in ("typed_parameter", "typed_default_parameter")
+        name = def_node.child_by_field_name("name")
+        if name is None or sf.text(name) != "__init__":
+            slots += 1
+            typed += def_node.child_by_field_name("return_type") is not None
+        return typed, slots
+
+    def documented(self, def_node: Node, sf: SourceFile) -> bool:
+        return _starts_with_string(def_node.child_by_field_name("body"))
+
+    def module_documented(self, sf: SourceFile) -> bool:
+        return _starts_with_string(sf.tree.root_node)
+
     # ------------------------------------------------------------------ naming
     def module_name(self, sf: SourceFile) -> tuple[str, list[str]]:
         rel = Path(sf.rel)
@@ -623,3 +645,10 @@ def _ancestors(node: Node, depth: int):
             return
         yield cur
         cur = cur.parent
+
+
+def _starts_with_string(block: Node | None) -> bool:
+    first = next((c for c in block.named_children if c.type != "comment"), None) if block is not None else None
+    if first is not None and first.type == "expression_statement" and first.named_child_count == 1:
+        first = first.named_children[0]
+    return first is not None and first.type == "string"  # the grammar gives a docstring bare or wrapped

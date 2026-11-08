@@ -67,6 +67,7 @@ _DECL_NAME_PARENTS = {
     "namespace_export", "internal_module", "module", "ambient_declaration",
 }
 _UNWRAP = {"non_null_expression", "parenthesized_expression", "as_expression", "satisfies_expression", "type_assertion"}
+_DECLARATION_WRAPPERS = frozenset({"export_statement", "variable_declarator", "lexical_declaration", "variable_declaration", "public_field_definition", "field_definition", "assignment_expression", "expression_statement"})
 _TYPE_CONTEXT = {"type_annotation", "type_arguments", "generic_type", "union_type", "intersection_type", "array_type", "object_type", "type_predicate", "asserts", "lookup_type", "index_type_query", "conditional_type", "tuple_type", "readonly_type", "typeof_type", "type_query"}
 
 
@@ -205,6 +206,16 @@ class JavaScriptSpec(JavaScriptFlow, LanguageSpec):
     def labeled_jump(self, node: Node) -> bool:
         return node.type in ("break_statement", "continue_statement") and any(c.type == "statement_identifier" for c in node.children)
 
+    def documented(self, def_node: Node, sf: SourceFile) -> bool:
+        """A `/** ... */` comment right above the declaration, or above the `export` or `const` that holds it."""
+        n = def_node
+        while n.parent is not None and n.parent.type in _DECLARATION_WRAPPERS:
+            n = n.parent
+        prev = n.prev_named_sibling
+        while prev is not None and prev.type == "decorator":
+            prev = prev.prev_named_sibling
+        return prev is not None and prev.type == "comment" and sf.text(prev).startswith("/**")
+
     def body_statements(self, def_node: Node, sf: SourceFile) -> list[Node]:
         body = def_node.child_by_field_name("body")
         if body is None:
@@ -269,6 +280,20 @@ class JavaScriptSpec(JavaScriptFlow, LanguageSpec):
 
 class TypeScriptSpec(JavaScriptSpec):
     name = "typescript"
+
+    def annotation_slots(self, def_node: Node, sf: SourceFile) -> tuple[int, int]:
+        params = def_node.child_by_field_name("parameters")
+        typed = slots = 0
+        for p in params.named_children if params is not None else []:
+            if p.type not in ("required_parameter", "optional_parameter") or any(c.type == "this" for c in p.children):
+                continue
+            slots += 1
+            typed += any(c.type == "type_annotation" for c in p.children)
+        name = def_node.child_by_field_name("name")
+        if name is None or sf.text(name) != "constructor":
+            slots += 1
+            typed += def_node.child_by_field_name("return_type") is not None
+        return typed, slots
 
 
 def _walk_within_function(root: Node, function_types: frozenset[str]):

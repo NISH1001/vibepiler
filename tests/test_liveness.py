@@ -158,8 +158,8 @@ def test_the_fragment_names_only_nonzero_kinds():
     assert str(Liveness(defined=0, live=0, dead=dict(KINDS0))) == "live 100.0% (0 of 0 definitions; nothing dead)"
 
 
-def test_all_metrics_prints_bloat_then_live():
-    assert [m.label for m in all_metrics()] == ["bloat", "live"]
+def test_all_metrics_lists_bloat_then_live_then_the_measures():
+    assert [m.label for m in all_metrics()] == ["bloat", "live", "cognitive", "cyclomatic", "mi", "typed", "documented"]
     assert Liveness.better == "high" and Liveness(defined=10, live=8, dead=dict(KINDS0)).trips("<", 0.9)
 
 

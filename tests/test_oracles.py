@@ -86,7 +86,7 @@ def test_cognitive_rules_match_complexipy(tmp_path, src, expected):
     complexipy = pytest.importorskip("complexipy")
     (tmp_path / "m.py").write_text(src)
     (n,) = compiled(tmp_path).values()
-    assert n.attrs["cognitive"] == expected == complexipy.code_complexity(src).functions[0].complexity
+    assert n.attrs["cognitive_complexity"] == expected == complexipy.code_complexity(src).functions[0].complexity
 
 
 def test_cognitive_never_falls_below_complexipy():
@@ -103,8 +103,8 @@ def test_cognitive_never_falls_below_complexipy():
         for fn in complexipy.file_complexity(str(root / f)).functions:
             if (n := whole.get((f, fn.line_start))) is not None and n.name == fn.name.rsplit("::", 1)[-1]:
                 checked += 1
-                if n.attrs["cognitive"] < fn.complexity:
-                    lower.append((f, fn.line_start, n.qualname, n.attrs["cognitive"], fn.complexity))
+                if n.attrs["cognitive_complexity"] < fn.complexity:
+                    lower.append((f, fn.line_start, n.qualname, n.attrs["cognitive_complexity"], fn.complexity))
     assert checked > 300 and lower == []
 
 
@@ -125,4 +125,4 @@ def test_cognitive_follows_the_sonar_paper_in_javascript(tmp_path, src, expected
     prog = build_program(tmp_path, config=Config.load(tmp_path))
     run_passes(prog, opt_level=1)
     (n,) = [n for n in prog.graph.nodes(CALLABLE_KINDS)]
-    assert n.attrs["cognitive"] == expected
+    assert n.attrs["cognitive_complexity"] == expected

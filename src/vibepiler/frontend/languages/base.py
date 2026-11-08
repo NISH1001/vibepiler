@@ -133,6 +133,18 @@ class LanguageSpec(ABC):
         """A break or continue to a label: a jump the reader has to follow."""
         return False
 
+    def annotation_slots(self, def_node: Node, sf: SourceFile) -> tuple[int, int] | None:
+        """(annotated, slots) over a function's parameters and its return; None where the language has no types."""
+        return None
+
+    def documented(self, def_node: Node, sf: SourceFile) -> bool:
+        """A docstring or a doc comment on this function or class."""
+        return False
+
+    def module_documented(self, sf: SourceFile) -> bool | None:
+        """A module docstring; None where modules are not documented by convention."""
+        return None
+
     def body_statements(self, def_node: Node, sf: SourceFile) -> list[Node]:
         """Statements of a function body, without docstrings/comments."""
         return []
