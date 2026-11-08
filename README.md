@@ -461,12 +461,23 @@ The numbers reviewers know from SonarQube, radon and Visual Studio, for Python, 
 A count goes to [0, 1] as its excess over a fixed limit, `(c − limit) / c`: 0 at or under the limit, 0.5 at twice it, never 1. A score where high is good goes as `(limit − v) / limit` below its limit. The limits are the published ones (SonarQube's 15 for cognitive complexity, McCabe's and NIST's 10 for cyclomatic, Visual Studio's 20 for MI) and each is a threshold you can change. A fixed limit, not the repo's own spread, so a value means the same thing in every repo and every run.
 
 ```
-cognitive 12.0% (62 of 548 functions over 15; worst 45)
-cyclomatic 14.5% (88 of 548 functions over 10; worst 35)
-mi 0.0% (0 of 548 functions below 20; worst 27.6)
-typed 94.6% (1465 of 1548 parameters and returns annotated)
-documented 37.8% (180 of 476 public functions, classes and modules documented)
+cognitive 0.13 (68 of 570 functions, 32% of lines, over 15; worst 47)
+cyclomatic 0.15 (91 of 570 functions, 40% of lines, over 10; worst 35)
+mi 0.00 (0 of 570 functions, 0% of lines, below 20; worst 27.6)
+typed 94.5% (1526 of 1614 parameters and returns annotated)
+documented 39.6% (194 of 490 public functions, classes and modules documented)
 ```
+
+### Reading the numbers
+
+Every value is in [0, 1], but there are two kinds, and they read differently:
+
+- **A share** (`typed`, `documented`, and `waste` and `live` above) is a plain percentage. `typed 94.5%` means 94.5% of parameters and returns are annotated. These print as percentages.
+- **An excess score** (`cognitive`, `cyclomatic`, `mi`) is the share of complexity past the limit, weighted by lines. A function at 17 paths against a limit of 10 has 7 of its 17 paths over budget, (17 − 10) / 17 ≈ 0.41, and the module's score is that averaged over its lines. It mixes how widespread the problem is with how bad it is, so `cyclomatic 0.40` is **not** "40% of functions are too complex": the same 0.40 comes from every function slightly over, or from half the code far over. These print as decimals so they are not read as shares.
+
+Beside each excess score are the parts it mixes: how widespread (the functions over the limit and the share of lines in them, a true percentage) and how bad (the worst raw number). On vibepiler, cyclomatic is 0.15 while 40% of its lines sit in functions over the limit: the excess is widespread but mild.
+
+Per function, the map, the findings and the tooltips show the raw number (cyclomatic 35, cognitive 22, MI 48) because the published limits are stated in those units; the map's slider adds the same 0–1 the reports roll up (`35 · 0.71 past the limit of 10`). In short: per-function measures are reported in their native units, and every aggregate is a 0–1 value computed from them, with the raw numbers kept beside it.
 
 Cognitive complexity is what bloat's tangle counts: it measures how hard the code is to follow, which is what tangle means, where cyclomatic counts the paths a test suite has to cover. Halstead volume, difficulty and effort are stored on every function (`attrs["halstead"]`) and reach [0, 1] through the MI. Operands are identifier and literal tokens, operators every other token, the classic reading; radon counts only arithmetic and boolean operators, so its MI runs higher.
 

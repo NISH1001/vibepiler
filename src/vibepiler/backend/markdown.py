@@ -8,6 +8,7 @@ from vibepiler.backend.common import liveness_parts, project_name, size_parts, s
 from vibepiler.ir.program import Program
 from vibepiler.passes.diagnostic import Diagnostic
 from vibepiler.passes.measures import METRICS
+from vibepiler.passes.metric import Share
 from vibepiler.passes.registry import all_passes
 
 
@@ -88,16 +89,29 @@ def _complexity(c: dict) -> list[str]:
     return lines
 
 
+READING = (
+    "Each is 0–1, read one of two ways. A **share** (typed, documented) is a plain percentage: how much of the code has it. "
+    "An **excess** score (cognitive, cyclomatic, mi) is the share of complexity past the limit, weighted by lines: a function at "
+    "twice the limit scores 0.5, one within it 0, so 0.4 is not \"40% of functions\". How widespread it is reads beside it, as the "
+    "functions and the share of lines over the limit; how bad, as the worst raw number."
+)
+
+
+def _fmt(cls: type, v: float) -> str:
+    """A share as a percent; an excess score as a decimal, so it is not read as a share of functions."""
+    return f"{v:.1%}" if issubclass(cls, Share) else f"{v:.2f}"
+
+
 def _metrics(m: dict) -> list[str]:
     """Every measure with its raw numbers, then each one per folder (the same folders as the size table)."""
     have = [(cls, cls.of(m[f"{cls.key}_score"])) for cls in METRICS if m.get(f"{cls.key}_score")]
     if not have:
         return []
-    rows = [[f"**{cls.label}**", f"{x.value:.1%}", str(x).split(" (", 1)[1].rstrip(")"), "lower" if cls.better == "low" else "higher", f"`{cls.formula}`"] for cls, x in have]
-    lines = ["", "### Metrics", "", "Each is 0–1. A limit metric is how far functions go past a fixed limit, weighted by their lines (0 means none do); a share is how much of the code has it.", "", _table(["metric", "value", "raw", "better", "formula"], rows)]
+    rows = [[f"**{cls.label}**", _fmt(cls, x.value), str(x).split(" (", 1)[1].rstrip(")"), "lower" if cls.better == "low" else "higher", f"`{cls.formula}`"] for cls, x in have]
+    lines = ["", "### Metrics", "", READING, "", _table(["metric", "value", "raw", "better", "formula"], rows)]
     by = {cls.key: {f["path"]: f["value"] for f in m[f"{cls.key}_score"]["folders"]} for cls, _ in have}
     folders = [f["path"] for f in (m.get("bloat_score") or {}).get("folders", [])][:15] or list(next(iter(by.values())))[:15]
-    lines += ["", _table(["folder", *(cls.label for cls, _ in have)], [[f"`{p}`", *(f"{by[cls.key][p]:.1%}" if p in by[cls.key] else "" for cls, _ in have)] for p in folders])]
+    lines += ["", _table(["folder", *(cls.label for cls, _ in have)], [[f"`{p}`", *(_fmt(cls, by[cls.key][p]) if p in by[cls.key] else "" for cls, _ in have)] for p in folders])]
     return lines
 
 

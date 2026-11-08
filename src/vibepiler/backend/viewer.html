@@ -640,12 +640,13 @@ function mmUseTheme() { // true when the set changed
 }
 mmUseTheme();
 const mmPct = v => Math.round(v * 100) + '%';
+const mmOver = (v, lim) => v > lim ? (v - lim) / v : 0; // (v − limit) / v, as OverLimit rescales a count
 // get: the value; up: higher is worse; limit: where the compiler draws its line (from its own findings when it has any)
 const MM_MEASURES = {
   bloat: { get: p => p.bloat, up: true, fmt: mmPct, limit: () => 0, why: 'how much of the function could go or is harder than its job, as the bloat score counts it' },
-  cognitive: { get: p => p.cog, up: true, log: true, fmt: v => v, limit: L => L('high-cognitive-complexity', 15), why: 'cognitive complexity (SonarSource): how hard the code is to follow; nesting costs more' },
-  cyclomatic: { get: p => p.cc, up: true, log: true, fmt: v => v, limit: L => L('high-complexity', 10), why: 'cyclomatic complexity (McCabe): independent paths, the tests full branch coverage needs' },
-  mi: { get: p => p.mi, up: false, fmt: v => v.toFixed(0), limit: () => mmAttrLimit('maintainability', 20), why: 'maintainability index (Visual Studio, 0 to 100): below 20 is hard to maintain' },
+  cognitive: { get: p => p.cog, up: true, log: true, fmt: v => v, excess: mmOver, limit: L => L('high-cognitive-complexity', 15), why: 'cognitive complexity (SonarSource): how hard the code is to follow; nesting costs more' },
+  cyclomatic: { get: p => p.cc, up: true, log: true, fmt: v => v, excess: mmOver, limit: L => L('high-complexity', 10), why: 'cyclomatic complexity (McCabe): independent paths, the tests full branch coverage needs' },
+  mi: { get: p => p.mi, up: false, fmt: v => v.toFixed(0), excess: (v, lim) => v < lim ? (lim - v) / lim : 0, limit: () => mmAttrLimit('maintainability', 20), why: 'maintainability index (Visual Studio, 0 to 100): below 20 is hard to maintain' },
   typed: { get: p => p.typed, up: false, fmt: mmPct, limit: () => 1, why: 'parameters and returns with a type annotation (Python, TypeScript)' },
   documented: { get: p => p.doc, up: false, fmt: v => v ? 'yes' : 'no', limit: () => 1, why: 'a docstring or a /** */ comment, public functions only' },
   live: { get: p => p.live, up: false, fmt: mmPct, limit: () => 1, why: 'how much of what the function defines something reads; 0% when nothing calls the function itself' },
@@ -971,7 +972,8 @@ function buildMeaning() {
     // the slider runs from mild to extreme: low values on the left for "higher is worse", high ones for "lower is worse"
     tr.value = Math.round(1000 * (m.up ? i : sc.vals.length - 1 - i) / Math.max(1, sc.vals.length - 1));
     document.getElementById('mm-tl').textContent = state.colour + (m.up ? ' ≥' : ' ≤');
-    document.getElementById('mm-tv').textContent = sc.clear ? 'none past ' + m.fmt(sc.lim) : m.fmt(sc.t);
+    const past = m.excess && !sc.clear ? m.excess(sc.t, sc.lim) : 0; // the same 0–1 the reports roll up, for this raw number
+    document.getElementById('mm-tv').textContent = sc.clear ? 'none past ' + m.fmt(sc.lim) : m.fmt(sc.t) + (past > 0 ? ` · ${past.toFixed(2)} past the limit of ${m.fmt(sc.lim)}` : '');
     document.getElementById('mm-tc').textContent = `${lit} of ${P.length}`;
   }
   colourSel.addEventListener('change', () => { state.colour = colourSel.value; order = null; syncThreshold(); legend(); kick(); });
@@ -1227,7 +1229,8 @@ function metricRaw(key, m) {
   if ('have' in m) return m.total ? `${m.have} of ${m.total} ${key === 'typed' ? 'parameters and returns annotated' : 'public units documented'}` : 'nothing to count';
   if (!m.functions) return 'no functions';
   const side = key === 'maintainability' ? 'below' : 'over';
-  return m.functions === 1 ? `${m.worst} (limit ${m.limit})` : `${m.over} of ${m.functions} functions ${side} ${m.limit}; worst ${m.worst}`;
+  const lines = m.over_loc == null || !m.loc ? '' : `, ${Math.round(100 * m.over_loc / m.loc)}% of lines,`; // how widespread, a true share
+  return m.functions === 1 ? `${m.worst} (limit ${m.limit})` : `${m.over} of ${m.functions} functions${lines} ${side} ${m.limit}; worst ${m.worst}`;
 }
 function nearestBlock(n) { // a class's or module's vector is the line-weighted mean of its functions' (-O3)
   const near = (n.attrs.nearest || []).filter(([id]) => nodeById[id]);
@@ -1236,10 +1239,10 @@ function nearestBlock(n) { // a class's or module's vector is the line-weighted 
 }
 function metricsBlock(a) {
   const rows = METRIC_ROWS.filter(([k]) => a[k]).map(([k, label, low]) => {
-    const m = a[k], v = m.value, pct = Math.round(100 * v);
-    return `<div class="cbar mrow"><span class="n">${label}</span><span class="b"><i style="width:${pct}%;background:${tint(low ? v : 1 - v)}"></i></span><span class="c">${pct}%</span></div><div class="mraw">${esc(metricRaw(k, m))}</div>`;
+    const m = a[k], v = m.value, pct = Math.round(100 * v), shown = 'have' in m ? pct + '%' : v.toFixed(2); // an excess score is not a share
+    return `<div class="cbar mrow"><span class="n">${label}</span><span class="b"><i style="width:${pct}%;background:${tint(low ? v : 1 - v)}"></i></span><span class="c">${shown}</span></div><div class="mraw">${esc(metricRaw(k, m))}</div>`;
   });
-  return rows.length ? `<div class="section"><h3>Metrics</h3>${rows.join('')}<div class="meta2">Each in [0, 1]: how far past a fixed limit, weighted by lines (lower is better), or a share (higher is better).</div></div>` : '';
+  return rows.length ? `<div class="section"><h3>Metrics</h3>${rows.join('')}<div class="meta2">Each in [0, 1]. A percentage is a share of the code (higher is better). A decimal is an excess score: the share of complexity past the limit, weighted by lines (lower is better); 0.5 is twice the limit, not half the functions.</div></div>` : '';
 }
 function bloatBlock(b, loc) { const pct = Math.round(b.score * 100); return `<div class="section"><h3>Bloat ${pct}%</h3><div class="bloatbar"><i style="width:${pct}%;background:${tint(b.score)}"></i></div><div class="meta2">${Math.round(b.removable_loc)} of ${loc || '?'} lines could go (waste ${(100 * b.waste).toFixed(1)}%) · tangle ${(100 * b.tangle).toFixed(1)}% · bloat = 1 − (1 − waste)(1 − tangle)</div></div>`; }
 

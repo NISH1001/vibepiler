@@ -41,7 +41,7 @@ def test_maintainability_is_visual_studios_index():
 
 
 # ----- the metrics ---------------------------------------------------------------------------------------------------
-from vibepiler.passes.measures import Cognitive, Documented, Maintainability, Typed  # noqa: E402
+from vibepiler.passes.measures import Cognitive, Cyclomatic, Documented, Maintainability, Typed  # noqa: E402
 from vibepiler.passes.registry import parse_gate  # noqa: E402
 
 
@@ -58,7 +58,9 @@ def test_over_limit_rolls_up_line_weighted_and_keeps_the_worst():
     a, b = Cognitive.measured(30, 15, 10), Cognitive.measured(5, 15, 30)
     total = a + b
     assert total.value == 0.5 * 10 / 40 and (total.functions, total.over, total.worst) == (2, 1, 30)
-    assert str(total) == "cognitive 12.5% (1 of 2 functions over 15; worst 30)"
+    assert total.over_loc == 10 and total.over_share == 0.25  # how widespread: lines in functions past the limit
+    # an excess score prints as a decimal, not a percent: 0.12 is not "12% of functions"; the widespread part is the percent
+    assert str(total) == "cognitive 0.12 (1 of 2 functions, 25% of lines, over 15; worst 30)"
     worst_mi = (Maintainability.measured(12, 20, 5) + Maintainability.measured(40, 20, 5)).worst
     assert worst_mi == 12  # for a score where high is good, the worst is the lowest
 
@@ -131,3 +133,21 @@ def test_nothing_to_measure_says_so():
 def test_a_typescript_arrow_with_one_bare_parameter_counts_its_slot():
     p = prog("export const f = x => x;\nexport const g = (y: number): number => y;\n", "typescript")
     assert (Typed.of(p).have, Typed.of(p).total) == (2, 4)
+
+
+def test_a_baseline_from_before_over_loc_still_loads():
+    old = {"value": 0.1, "limit": 10.0, "loc": 40, "weighted": 4.0, "functions": 2, "over": 1, "worst": 20}
+    m = Cyclomatic.of(old)
+    assert m.value == 0.1 and m.over_loc is None and "of lines" not in str(m)  # unknown, so not claimed
+
+
+def test_reports_say_how_to_read_excess_and_shares():
+    from importlib import resources
+
+    from vibepiler.backend import emit_markdown
+
+    p = prog("def f(x):\n" + "".join(f"    if x == {i}:\n        return {i}\n" for i in range(12)) + "    return -1\n")
+    md = emit_markdown(p)
+    assert "of lines, over 10" in md and "share of complexity past the limit" in md
+    viewer = resources.files("vibepiler.backend").joinpath("viewer.html").read_text(encoding="utf-8")
+    assert "over_loc" in viewer and "past the limit of" in viewer  # node panel and the map's slider
