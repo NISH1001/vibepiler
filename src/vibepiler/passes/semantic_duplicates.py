@@ -6,10 +6,9 @@ from vibepiler.ir.program import Program
 from vibepiler.passes.base import Pass
 from vibepiler.passes.diagnostic import Diagnostic, Severity
 from vibepiler.progress import timed
-from vibepiler.semantic.embed import default_thresholds, symbol_vectors
+from vibepiler.semantic.embed import default_thresholds, nearest, symbol_vectors
 
 SKIP_HINT = "semantic tier needs the embedding backend: pip install 'vibepiler[semantic]' (or: uv tool install 'vibepiler[semantic]')"
-MAX_SYMBOLS = 6000
 MAX_REPORTED = 100
 
 
@@ -26,23 +25,17 @@ class SemanticDuplicatesPass(Pass):
             program.metrics["semantic_duplicates"] = {"skipped": SKIP_HINT, "model": model}
             return []
         threshold = th.semantic_similarity if th.semantic_similarity is not None else default_thresholds(program.config.embedding_model)[0]
-        if len(nodes) > MAX_SYMBOLS:
-            nodes, vectors = nodes[:MAX_SYMBOLS], vectors[:MAX_SYMBOLS]
         diags: list[Diagnostic] = []
         if len(nodes) >= 2:
-            import numpy as np
-
-            with timed(f"semantic-duplicates: {len(nodes)} x {len(nodes)} similarities"):
-                sims = vectors @ vectors.T
-                np.fill_diagonal(sims, -1.0)
+            with timed(f"semantic-duplicates: nearest of {len(nodes)} functions"):
+                best, best_sim = nearest(vectors, 1)  # a block of rows at a time: memory block x n, not n x n
             # a pair counts only when each is the other's nearest neighbour: this keeps the list
             # linear in the number of symbols instead of quadratic, and surfaces real twins.
-            nearest = sims.argmax(axis=1)
             for i in range(len(nodes)):
-                j = int(nearest[i])
-                if j <= i or int(nearest[j]) != i:
+                j = int(best[i, 0])
+                if j <= i or int(best[j, 0]) != i:
                     continue
-                s = float(sims[i, j])
+                s = float(best_sim[i, 0])
                 if s < threshold:
                     continue
                 a, b = nodes[i], nodes[j]

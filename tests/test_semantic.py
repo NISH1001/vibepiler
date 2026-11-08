@@ -275,3 +275,21 @@ def test_classes_and_modules_carry_their_nearest_in_meaning(units_program):
     io = next(n for n in g.nodes() if n.kind.value == "module" and n.file == "io_utils.py")
     (top, sim), *_ = io.attrs["nearest"]
     assert g.node(top).file == "files.py" and 0 < sim <= 1
+
+
+def test_nearest_holds_a_bounded_block_whatever_the_size(monkeypatch):
+    import numpy as np
+
+    seen = []
+    real_matmul = np.ndarray.__matmul__
+
+    class Spy(np.ndarray):
+        def __matmul__(self, other):
+            out = real_matmul(np.asarray(self), np.asarray(other))
+            seen.append(out.size)
+            return out
+
+    v = np.ones((5000, 4), dtype=np.float32).view(Spy)
+    monkeypatch.setattr(embed, "NEAREST_BUDGET", 100_000)
+    embed.nearest(v, 2)
+    assert seen and max(seen) <= 100_000 and sum(seen) == 5000 * 5000

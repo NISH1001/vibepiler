@@ -363,12 +363,16 @@ def unit_vectors(program: Program):
     return out
 
 
-def nearest(vectors, k: int, block: int = 2048):  # noqa: ANN001, ANN201 - numpy arrays
+NEAREST_BUDGET = 16_000_000  # similarities held at once (64 MB as float32, a few hundred MB with the sort's temporaries)
+
+
+def nearest(vectors, k: int, block: int | None = None):  # noqa: ANN001, ANN201 - numpy arrays
     """Each row's `k` most similar other rows, best first (ties to the lower index), worked a block of rows at a time:
-    memory is block x n, never n x n, however many units there are."""
+    memory is block x n, never n x n; by default the block shrinks as n grows, so it stays near a fixed budget."""
     import numpy as np
 
     n = vectors.shape[0]
+    block = block or max(1, min(2048, NEAREST_BUDGET // max(n, 1)))
     k = max(0, min(k, n - 1))
     idx, sims = np.zeros((n, k), dtype=np.int64), np.zeros((n, k), dtype=np.float32)
     if k == 0:
