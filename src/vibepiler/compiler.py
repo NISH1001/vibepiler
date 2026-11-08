@@ -10,6 +10,8 @@ from typing import Any, Callable
 
 from loguru import logger as log
 
+from vibepiler.progress import verbose as progress_verbose
+
 from vibepiler.backend import emit_dot, emit_html, emit_json, emit_markdown, emit_mermaid
 from vibepiler.config import Config
 from vibepiler.frontend.languages import available
@@ -93,7 +95,13 @@ class Compiler:
         isolate: bool | None = None,
         max_tokens: int | None = None,
         use_cache: bool | None = None,
+        verbose: bool = False,
     ) -> None:
+        self.verbose = verbose  # every stage's progress to loguru's sinks (stderr by default), as the CLI's -v
+        with progress_verbose(verbose):
+            self._setup(source, config, on_phase, language, include, exclude, isolate, max_tokens, use_cache)
+
+    def _setup(self, source, config, on_phase, language, include, exclude, isolate, max_tokens, use_cache) -> None:  # noqa: ANN001, PLR0913
         if language is not None and language not in available():
             raise ValueError(f"unknown language {language!r}; known: {available()}")
         self.remote = parse_remote(source) if isinstance(source, str) else None
@@ -153,6 +161,10 @@ class Compiler:
         skip: list[str] | None = None,
         on_pass=None,  # noqa: ANN001
     ) -> CompileResult:
+        with progress_verbose(self.verbose):
+            return self._run(opt_level, emit, out_dir, only, skip, on_pass)
+
+    def _run(self, opt_level, emit, out_dir, only, skip, on_pass) -> CompileResult:  # noqa: ANN001
         opt = self.config.opt_level if opt_level is None else opt_level
         timings: dict[str, float] = {}
 
@@ -237,8 +249,9 @@ def compile(  # noqa: A001 - the compiler metaphor, on purpose
     isolate: bool | None = None,
     max_tokens: int | None = None,
     use_cache: bool | None = None,
+    verbose: bool = False,
     on_phase: PhaseCallback | None = None,
     **run,  # noqa: ANN003
 ) -> CompileResult:
     """One call: `Compiler(source, ...).run(...)`. `run` keywords: opt_level, emit, out_dir, only, skip, on_pass."""
-    return Compiler(source, config, on_phase, language=language, include=include, exclude=exclude, isolate=isolate, max_tokens=max_tokens, use_cache=use_cache).run(**run)
+    return Compiler(source, config, on_phase, language=language, include=include, exclude=exclude, isolate=isolate, max_tokens=max_tokens, use_cache=use_cache, verbose=verbose).run(**run)
