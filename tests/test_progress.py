@@ -53,3 +53,40 @@ def test_verbose_cli_prints_what_the_semantic_passes_do(tmp_path):
     assert "cache " in res.output and "batch 1/" in res.output and "GB peak" in res.output
     quiet = CliRunner().invoke(app, ["compile", FIX, "-O3", "--emit", "json", "-o", str(tmp_path / "b"), "-W", "error"])
     assert "batch 1/" not in quiet.output
+
+
+# ----- the token cap: one long function must not take the machine's memory ----------------------------------------
+class CappableEmbedder(FakeEmbedder):
+    max_tokens = None
+
+    def truncate(self, tokens):
+        self.max_tokens = tokens
+
+
+def test_the_embedder_is_capped_and_long_text_is_cut_before_it(monkeypatch, tmp_path):
+    from vibepiler.compiler import Compiler
+
+    made = CappableEmbedder()
+    monkeypatch.setattr(embed, "EMBEDDER_FACTORY", lambda model: made)
+    body = "".join(f"    x{i} = {i}\n" for i in range(5000))
+    prog = Compiler(f"def huge():\n{body}    return 1\n\n\ndef small():\n    return 2\n", language="python").run(opt_level=3, emit=()).program
+    assert made.max_tokens == 2048
+    nodes, _, _ = embed.symbol_vectors(prog)
+    huge = next(n for n in nodes if n.name == "huge")
+    assert len(embed.symbol_text(prog, huge, max_chars=embed.chars_for(2048))) == embed.chars_for(2048)
+
+
+def test_the_cap_is_part_of_the_cache_key(tmp_path):
+    e = CappableEmbedder()
+    e.truncate(2048)
+    embed.embed_texts(e, ["def f():\n    return 1\n"], cache_dir=tmp_path)
+    e.truncate(512)
+    embed.embed_texts(e, ["def f():\n    return 1\n"], cache_dir=tmp_path)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["fake__2048t.npz", "fake__512t.npz"]
+
+
+def test_the_cap_is_a_setting(tmp_path):
+    from vibepiler.config import Config
+
+    (tmp_path / "pyproject.toml").write_text("[tool.vibepiler]\nembedding_max_tokens = 1024\n")
+    assert Config.load(tmp_path).embedding_max_tokens == 1024 and Config().embedding_max_tokens == 2048

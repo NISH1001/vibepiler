@@ -8,8 +8,9 @@ Backends (no PyTorch in either):
 - model2vec (pure numpy static embeddings) for minishlab/potion-* models. potion-code-16M-v2
   embeds ~17,000 functions/s; weaker on "same job, different code" but fine as a fast mode.
 
-Nothing is truncated: each model's own context length (8192 tokens for both defaults) is the only
-limit. Speed comes from sorting texts by length so a batch never pads short functions up to a long one.
+Each function is embedded up to `embedding_max_tokens` (2048 by default) of the model's context (8192 for both
+defaults): a transformer's memory grows with the square of the input, and one 8192-token function took 6.8 GB where
+2048 tokens takes well under one. A function's opening (signature, docstring, first statements) says what it does. Speed comes from sorting texts by length so a batch never pads short functions up to a long one.
 """
 
 from __future__ import annotations
@@ -124,6 +125,7 @@ class FastEmbedEmbedder:
         spec = MODELS.get(model)
         if spec is None:
             self._model = TextEmbedding(model_name=model, cache_dir=str(MODELS_DIR))
+            self._spec, self.max_tokens = None, None
             return
         from fastembed.common.model_description import ModelSource, PoolingType  # type: ignore[import-not-found]
 
@@ -139,11 +141,19 @@ class FastEmbedEmbedder:
                 model_file=model_file,
             )
         self.name = name
+        self._spec = spec
+        self.max_tokens: int | None = None
         self._model = TextEmbedding(model_name=name, specific_model_path=str(directory))
-        try:  # fastembed takes the stricter of the tokenizer config's two length keys; we know the real one
-            self._model.model.tokenizer.enable_truncation(max_length=spec.max_length)
+        self.truncate(spec.max_length)
+
+    def truncate(self, tokens: int) -> None:
+        """Embed at most `tokens` of each text (never past the model's own context)."""
+        limit = min(tokens, self._spec.max_length) if self._spec else tokens
+        try:  # fastembed takes the stricter of the tokenizer config's two length keys; we set the one we mean
+            self._model.model.tokenizer.enable_truncation(max_length=limit)
+            self.max_tokens = limit
         except AttributeError:
-            warnings.warn(f"could not set the tokenizer length for {model}; fastembed's internals changed, long functions may be truncated", RuntimeWarning, stacklevel=2)
+            warnings.warn(f"could not set the tokenizer length for {self.name}; fastembed's internals changed", RuntimeWarning, stacklevel=2)
 
     def embed(self, texts: Sequence[str]) -> Sequence[Sequence[float]]:
         return [list(map(float, v)) for v in self._model.embed(list(texts), batch_size=max(1, len(texts)))]
@@ -187,8 +197,20 @@ def default_factory(model: str) -> Embedder | None:
 EMBEDDER_FACTORY: Callable[[str], Embedder | None] = default_factory
 
 
-def get_embedder(model: str = DEFAULT_MODEL) -> Embedder | None:
-    return EMBEDDER_FACTORY(model)
+def get_embedder(model: str = DEFAULT_MODEL, max_tokens: int | None = None) -> Embedder | None:
+    """The embedder for `model`, capped at `max_tokens` per text where the model can be (static models cost linear)."""
+    e = EMBEDDER_FACTORY(model)
+    if e is not None and max_tokens and hasattr(e, "truncate"):
+        e.truncate(max_tokens)
+    return e
+
+
+CHARS_PER_TOKEN = 4  # code runs ~3 characters a token: cutting at 4 leaves the tokenizer the final say
+
+
+def chars_for(tokens: int) -> int:
+    """How much of a function's text to hand the tokenizer for a cap of `tokens`."""
+    return tokens * CHARS_PER_TOKEN
 
 
 # --------------------------------------------------------------------------- text
@@ -238,7 +260,8 @@ def embed_texts(embedder: Embedder, texts: Sequence[str], cache_dir: Path | None
 
     cache_dir = cache_dir or CACHE_DIR
     cache_dir.mkdir(parents=True, exist_ok=True)
-    path = cache_dir / f"{_slug(embedder.name)}.npz"
+    cap = getattr(embedder, "max_tokens", None)  # the same text embeds differently under another cap
+    path = cache_dir / f"{_slug(embedder.name)}{f'__{cap}t' if cap else ''}.npz"
     cached: dict[str, "np.ndarray"] = {}
     if path.is_file():
         try:
@@ -279,8 +302,9 @@ def symbol_vectors(program: Program, min_loc: int = 2):
     if memo is not None:
         return memo["nodes"], memo["vectors"], memo["model"]
     model = program.config.embedding_model
-    with timed(f"model {model} loaded"):
-        embedder = get_embedder(model)
+    tokens = program.config.embedding_max_tokens
+    with timed(f"model {model} loaded, up to {tokens} tokens a function"):
+        embedder = get_embedder(model, tokens)
     if embedder is None:
         return None, None, model
     g = program.graph
@@ -295,6 +319,6 @@ def symbol_vectors(program: Program, min_loc: int = 2):
     ]
     nodes.sort(key=lambda n: (n.file or "", n.start_line or 0))
     log.debug("embedding %d functions (%d lines in all)", len(nodes), sum(n.loc for n in nodes))
-    vectors = embed_texts(embedder, [symbol_text(program, n) for n in nodes])
+    vectors = embed_texts(embedder, [symbol_text(program, n, max_chars=chars_for(tokens)) for n in nodes])
     program.metrics["_semantic"] = {"nodes": nodes, "vectors": vectors, "model": embedder.name}
     return nodes, vectors, embedder.name
