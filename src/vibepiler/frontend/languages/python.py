@@ -371,18 +371,11 @@ class _Extractor(DecoratorWalk):
         if t == "identifier":
             self.visit_identifier(node, scope)
             return
-        if t == "string" and any(a.type == "type" for a in _ancestors(node, 6)):
+        if t == "string" and self.in_annotation(node):
             self.visit_string_annotation(node, scope)
             return
         if t == "if_statement" and self.is_type_checking_guard(node):
-            # the body is for type checkers: its imports never run, so they bind names but load nothing
-            self.visit(node.child_by_field_name("condition"), scope, class_scope)
-            start = len(self.facts.imports)
-            self.visit(node.child_by_field_name("consequence"), scope, class_scope)
-            for imp in self.facts.imports[start:]:
-                imp.type_only = True
-            for alt in node.children_by_field_name("alternative"):
-                self.visit(alt, scope, class_scope)
+            self.visit_type_checking(node, scope, class_scope)
             return
         if t == "if_statement" and scope is None and self.is_main_guard(node):
             self.facts.has_main_guard = True
@@ -418,6 +411,20 @@ class _Extractor(DecoratorWalk):
         name = self.text(node)
         ctx = "type" if any(a.type == "type" for a in _ancestors(node, 3)) else "name"
         self.facts.refs.append(RefSite(chain=(name,), line=self.spec.line(node), scope=scope, context=ctx))
+
+    def visit_type_checking(self, node: Node, scope: str | None, class_scope: str | None) -> None:
+        """`if TYPE_CHECKING:`: the body is for type checkers, so its imports bind names but never run; `else` runs."""
+        self.visit(node.child_by_field_name("condition"), scope, class_scope)
+        start = len(self.facts.imports)
+        self.visit(node.child_by_field_name("consequence"), scope, class_scope)
+        for imp in self.facts.imports[start:]:
+            imp.type_only = True
+        for alt in node.children_by_field_name("alternative"):
+            self.visit(alt, scope, class_scope)
+
+    @staticmethod
+    def in_annotation(node: Node) -> bool:
+        return any(a.type == "type" for a in _ancestors(node, 6))
 
     def visit_string_annotation(self, node: Node, scope: str | None) -> None:
         """`p: "Path"`, `-> "a.B | None"`: forward references read by type checkers, so their names are used."""
