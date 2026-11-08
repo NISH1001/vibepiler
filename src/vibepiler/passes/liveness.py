@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
-from pathlib import PurePosixPath
 from typing import ClassVar, Literal
 
 from tree_sitter import Node as TSNode
@@ -24,13 +23,12 @@ from vibepiler.passes.base import Pass
 from vibepiler.passes.dataflow import FunctionLiveness, Store, analyze
 from vibepiler.passes.diagnostic import Diagnostic, Severity
 from vibepiler.passes.entry_points import is_dunder
-from vibepiler.passes.metric import Metric
+from vibepiler.passes.metric import SCOPES, Metric, roll_up
 from vibepiler.passes.unused_imports import is_binding, is_unused_import
 
 YIELDS = frozenset({"yield", "yield_expression"})  # deleting a dead `if False: yield` turns a generator into a function
 KINDS = ("stores", "params", "attributes", "symbols", "imports")
 DEAD_SYMBOL = frozenset({"dead-symbol", "unreachable-symbol"})  # an unused export is live, as it is for bloat
-SCOPES = (NodeKind.FUNCTION, NodeKind.METHOD, NodeKind.CLASS)
 ATTRIBUTE_HOOKS = ("__getattr__", "__getattribute__", "__slots__")
 COMPOUND_TARGETS = ("loop", "with", "except")  # the statement is bigger than the binding: drop the name, keep the code
 
@@ -111,7 +109,7 @@ class LivenessPass(Pass):
             diags += [self.diag("unreachable-code", Severity.WARNING, f"`{fn.qualname}`: statements after a return, raise, break or continue can never run", node=fn, line=span(f, l)[0], suggestion="Delete them.", span=span(f, l), loc=span(f, l)[1] - span(f, l)[0] + 1, action="delete", confidence="proven") for f, l in a.result.unreachable]
             diags += [self.diag("dead-branch", Severity.WARNING, f"`{fn.qualname}`: a branch on a constant condition that can never run", node=fn, line=span(f, l)[0], suggestion="Delete the branch.", span=span(f, l), loc=span(f, l)[1] - span(f, l)[0] + 1, action="delete", confidence="proven") for f, l in a.result.dead_branches if not contains_any(f, YIELDS)]
         diags += self._attribute_findings(program)
-        self._roll_up(program)
+        roll_up(program, Liveness, lambda n: self._unit(program, n))
         counts = defaultdict(int, {d.code: 0 for d in diags})
         for d in diags:
             counts[d.code] += 1
@@ -241,33 +239,13 @@ class LivenessPass(Pass):
             return counted(len(recs), {"imports": sum(1 for r in recs if is_unused_import(n, r))})
         return Liveness()
 
-    def _visit(self, program: Program, n: Node) -> Liveness:
+    def _unit(self, program: Program, n: Node) -> Liveness:
+        """What `n` defines itself, plus one definition per symbol directly inside it (dead when nothing reaches it)."""
         total = self._own(program, n)
         for c in program.graph.children(n.id):
             if c.kind in (*SCOPES, NodeKind.VARIABLE):
-                dead = c.attrs.get("dead") in DEAD_SYMBOL and not c.attrs.get("accepted")
-                total = total + counted(1, {"symbols": int(dead)})
-            if c.kind in SCOPES:
-                total = total + self._visit(program, c)
-        n.attrs["liveness"] = total.as_dict()
+                total = total + counted(1, {"symbols": int(c.attrs.get("dead") in DEAD_SYMBOL and not c.attrs.get("accepted"))})
         return total
-
-    def _roll_up(self, program: Program) -> None:
-        source, tests = Liveness(), Liveness()
-        folders: dict[str, list] = defaultdict(lambda: [0, Liveness()])
-        for m in sorted(program.graph.nodes(NodeKind.MODULE), key=lambda m: m.file or ""):
-            if not m.attrs.get("in_scope", True):
-                continue  # read for its calls, not scored: the named paths are what this compile reports on
-            lv = self._visit(program, m)
-            if m.attrs.get("is_test"):
-                tests = tests + lv
-                continue
-            source = source + lv
-            f = folders[str(PurePosixPath(m.file or m.name).parent)]
-            f[0] += 1
-            f[1] = f[1] + lv
-        rows = [{"path": p, "modules": k, **lv.as_dict()} for p, (k, lv) in folders.items()]
-        program.metrics["liveness_score"] = {**source.as_dict(), "folders": sorted(rows, key=lambda r: (r["value"], r["path"])), "tests": tests.as_dict(), "formula": Liveness.formula}
 
     @staticmethod
     def _attributes_exempt(program: Program, cls: Node) -> bool:
