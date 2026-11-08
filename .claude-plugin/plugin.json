@@ -1,6 +1,6 @@
 {
   "name": "vibepiler",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "A compiler for vibe-coded software: find dead code, duplicates, wrappers, needless abstraction and complexity, then remove them with tests between edits.",
   "author": { "name": "NISH1001" },
   "homepage": "https://github.com/NISH1001/vibepiler",
