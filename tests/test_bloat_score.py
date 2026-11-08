@@ -129,13 +129,13 @@ def test_dead_module_constants_count_toward_the_module(tmp_path):
 
 
 def test_a_tangled_module_with_nothing_to_delete_says_so(tmp_path):
-    body = "".join(f"    if x == {i}:\n        return {i}\n" for i in range(30)) + "    return -1\n"  # complexity 31: tangle (31-10)/31 = 0.68
+    body = "".join(f"    if x == {i}:\n        return {i}\n" for i in range(30)) + "    return -1\n"  # cognitive 30: tangle (30-15)/30 = 0.5
     (tmp_path / "knot.py").write_text(f"def classify(x):\n{body}")
     (tmp_path / "main.py").write_text("from knot import classify\n\nif __name__ == '__main__':\n    classify(3)\n")
     prog = build_program(tmp_path)
     run_passes(prog, opt_level=2)
     d = next(d for d in prog.diagnostics if d.code == "bloated-module" and d.file == "knot.py")
-    assert "nothing to delete" in d.message and "high-complexity" in d.message and "removable lines" not in d.message
+    assert "nothing to delete" in d.message and "high-cognitive-complexity" in d.message and "removable lines" not in d.message
     assert d.severity.label == "info" and d.data["action"] == "simplify"
 
 
