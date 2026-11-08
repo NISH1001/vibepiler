@@ -299,7 +299,7 @@
       <div class="toolbar mm-bar">
         <input type="text" id="mm-search" placeholder="find a function" list="mm-names" autocomplete="off" aria-label="Find a function"><datalist id="mm-names"></datalist>
         <div class="group" id="mm-lens" role="group" aria-label="Lens"><button data-lens="map" aria-pressed="true" title="Functions only">Map</button><button data-lens="flow" aria-pressed="false" title="Calls, flowing from caller to callee">Flow</button><button data-lens="copies" aria-pressed="false" title="Functions that duplicate each other">Copies</button></div>
-        <select id="mm-colour" aria-label="Colour by"><option value="health" selected>colour: health</option><optgroup label="a measure, with a threshold"><option value="bloat">bloat</option><option value="complexity">complexity</option><option value="live">live</option><option value="size">size</option><option value="nesting">nesting</option><option value="callers">callers</option></optgroup><optgroup label="where it lives"><option value="folder">folder</option><option value="theme">theme</option></optgroup></select>
+        <select id="mm-colour" aria-label="Colour by"><option value="health" selected>colour: health</option><optgroup label="a measure, with a threshold"><option value="bloat">bloat</option><option value="cognitive">cognitive complexity</option><option value="cyclomatic">cyclomatic complexity</option><option value="mi">maintainability</option><option value="typed">typed</option><option value="documented">documented</option><option value="live">live</option><option value="size">size</option><option value="nesting">nesting</option><option value="callers">callers</option></optgroup><optgroup label="where it lives"><option value="folder">folder</option><option value="theme">theme</option></optgroup></select>
         <label class="slider mm-thresh" id="mm-thresh" hidden><span id="mm-tl"></span><input type="range" id="mm-tr" min="0" max="1000" value="0" aria-label="Threshold"><b id="mm-tv"></b><span class="n" id="mm-tc"></span></label>
       </div>
       <div class="legend mm-legend" id="mm-legend"></div>
@@ -618,12 +618,17 @@ const mmPct = v => Math.round(v * 100) + '%';
 // get: the value; up: higher is worse; limit: where the compiler draws its line (from its own findings when it has any)
 const MM_MEASURES = {
   bloat: { get: p => p.bloat, up: true, fmt: mmPct, limit: () => 0, why: 'how much of the function could go or is harder than its job, as the bloat score counts it' },
-  complexity: { get: p => p.cc, up: true, log: true, fmt: v => v, limit: L => L('high-complexity', 10), why: 'cyclomatic complexity: independent paths through the code' },
+  cognitive: { get: p => p.cog, up: true, log: true, fmt: v => v, limit: L => L('high-cognitive-complexity', 15), why: 'cognitive complexity (SonarSource): how hard the code is to follow; nesting costs more' },
+  cyclomatic: { get: p => p.cc, up: true, log: true, fmt: v => v, limit: L => L('high-complexity', 10), why: 'cyclomatic complexity (McCabe): independent paths, the tests full branch coverage needs' },
+  mi: { get: p => p.mi, up: false, fmt: v => v.toFixed(0), limit: () => mmAttrLimit('maintainability', 20), why: 'maintainability index (Visual Studio, 0 to 100): below 20 is hard to maintain' },
+  typed: { get: p => p.typed, up: false, fmt: mmPct, limit: () => 1, why: 'parameters and returns with a type annotation (Python, TypeScript)' },
+  documented: { get: p => p.doc, up: false, fmt: v => v ? 'yes' : 'no', limit: () => 1, why: 'a docstring or a /** */ comment, public functions only' },
   live: { get: p => p.live, up: false, fmt: mmPct, limit: () => 1, why: 'how much of what the function defines something reads; 0% when nothing calls the function itself' },
   size: { get: p => p.loc, up: true, log: true, fmt: v => v + ' lines', limit: L => L('long-function', 60), why: 'lines of code' },
   nesting: { get: p => p.nest, up: true, fmt: v => v, limit: L => L('deep-nesting', 4), why: 'deepest nesting of blocks' },
   callers: { get: p => p.callers, up: true, log: true, fmt: v => v, limit: () => 9, why: 'how many places call it: the load-bearing code' },
 };
+const mmAttrLimit = (key, fallback) => { const n = DATA.nodes.find(n => n.attrs && n.attrs[key] && n.attrs[key].limit); return n ? n.attrs[key].limit : fallback; };
 const MM_DEAD = new Set(['dead-symbol', 'unreachable-symbol']); // as liveness counts them: an unused export is live
 const MM_OTHER = '#5d6884', MM_COPY = '#ff6b6b', MM_DOWN = '#ffc53d', MM_UP = '#9fd4ff';
 const MM_CONTAINERS = new Set(['src', 'lib', 'app', 'apps', 'packages', 'frontend', 'backend', 'web', 'client', 'server']);
@@ -645,7 +650,7 @@ function buildMeaning() {
   const P = CONCEPTS.points.map((p, i) => {
     const n = nodeById[p.id] || { attrs: {} }; const q = n.qualname || n.name || p.id;
     return { i, id: p.id, x: p.x * 1000, y: p.y * 1000, c: p.c, q, name: q.split('.').pop(), file: n.file, line: n.start_line, loc: n.attrs.loc || 1,
-      folder: mmFolder(n.file), cc: n.attrs.complexity || 1, nest: n.attrs.nesting || 0, callers: n.attrs.callers || 0, bloat: (n.attrs.bloat || {}).score || 0,
+      folder: mmFolder(n.file), cc: n.attrs.complexity || 1, cog: n.attrs.cognitive_complexity || 0, mi: n.attrs.mi ?? 100, typed: n.attrs.typed ? n.attrs.typed.value : 1, doc: n.attrs.documented && n.attrs.documented.total ? n.attrs.documented.value : 1, nest: n.attrs.nesting || 0, callers: n.attrs.callers || 0, bloat: (n.attrs.bloat || {}).score || 0,
       live: n.attrs.liveness ? n.attrs.liveness.value : 1, dead: MM_DEAD.has(n.attrs.dead) && !n.attrs.accepted, test: !!n.attrs.test_only, in: [], out: [], twins: [] };
   });
   const byId = Object.fromEntries(P.map(p => [p.id, p]));
@@ -659,8 +664,9 @@ function buildMeaning() {
     const ps = ids.map(id => byId[id]).filter(Boolean);
     for (let k = 1; k < ps.length; k++) { const pair = { a: ps[0], b: ps[k], kind, sim: d.data.similarity || 1, d }; copies.push(pair); ps[0].twins.push(pair); ps[k].twins.push(pair); }
   }
-  const complex = new Set(DATA.diagnostics.filter(d => d.code === 'high-complexity').map(d => d.node_id));
-  const ccLimit = Math.min(...DATA.diagnostics.filter(d => d.code === 'high-complexity').map(d => (d.data || {}).complexity || Infinity), Infinity) - 1;
+  const TANGLED = 'high-cognitive-complexity'; // what bloat's tangle counts
+  const complex = new Set(DATA.diagnostics.filter(d => d.code === TANGLED).map(d => d.node_id));
+  const ccLimit = Math.min(...DATA.diagnostics.filter(d => d.code === TANGLED).map(d => (d.data || {}).cognitive || Infinity), Infinity) - 1;
   for (const p of P) { p.complex = complex.has(p.id); p.health = p.twins.length ? 3 : p.complex ? 2 : p.dead ? 1 : 0; if (p.dead) p.live = 0; }
   // the threshold slider steps through the values that occur, so every notch changes what is lit
   const limitOf = (code, fallback) => { const m = (DATA.diagnostics.find(d => d.code === code) || {}).message || ''; const k = m.match(/\(threshold (\d+)/); return k ? +k[1] : fallback; };
@@ -957,7 +963,7 @@ function buildMeaning() {
   function place(mx, my) { tipEl.hidden = false; const w = tipEl.offsetWidth, h = tipEl.offsetHeight; tipEl.style.left = Math.min(W - w - 8, mx + 14) + 'px'; tipEl.style.top = Math.min(H - h - 8, my + 14) + 'px'; }
   function tip(p, mx, my) {
     const c = p.c >= 0 ? C[p.c] : null;
-    tipEl.innerHTML = `<b>${esc(p.q)}</b><div class="f">${esc(p.file || '')}${p.line ? ':' + p.line : ''}</div><div class="n">${p.loc} lines · complexity ${p.cc} · bloat ${mmPct(p.bloat)} · live ${mmPct(p.live)}${p.dead ? " (unused)" : ""} · called by ${p.in.length} · calls ${p.out.length}${p.twins.length ? ` · <span style="color:${MM_COPY}">${p.twins.length} cop${p.twins.length > 1 ? 'ies' : 'y'}</span>` : ''}${p.dead ? ' · unreachable' : ''}</div>${c ? `<div class="n">in <b>${esc(c.label)}</b></div>` : ''}`;
+    tipEl.innerHTML = `<b>${esc(p.q)}</b><div class="f">${esc(p.file || '')}${p.line ? ':' + p.line : ''}</div><div class="n">${p.loc} lines · cognitive ${p.cog} · cyclomatic ${p.cc} · MI ${Math.round(p.mi)} · bloat ${mmPct(p.bloat)} · live ${mmPct(p.live)}${p.dead ? " (unused)" : ""} · called by ${p.in.length} · calls ${p.out.length}${p.twins.length ? ` · <span style="color:${MM_COPY}">${p.twins.length} cop${p.twins.length > 1 ? 'ies' : 'y'}</span>` : ''}${p.dead ? ' · unreachable' : ''}</div>${c ? `<div class="n">in <b>${esc(c.label)}</b></div>` : ''}`;
     place(mx, my);
   }
   function tipConcept(c, mx, my) { tipEl.innerHTML = `<b>${esc(c.label)}</b><div class="n">concept: ${c.size} functions across ${Object.keys(c.modules).length} files${c.scattered ? ' · <span style="color:var(--warning)">no home</span>' : ''}</div><div class="n">its functions glow; click to open</div>`; place(mx, my); }
@@ -1027,8 +1033,8 @@ function buildMeaning() {
       <div class="section"><div style="font-weight:600;font-size:14px;word-break:break-all" class="mono">${esc(p.q)}</div>
         <div class="meta2 mono" style="margin-top:2px">${esc(p.file || '')}${p.line ? ':' + p.line : ''}</div>
         <div class="meta2" style="margin-top:6px"><span class="swatch" style="background:${folderColour[p.folder]}"></span>${esc(p.folder)}${c ? ` · in ${conceptLink(c)}` : ''}${th ? ` · <span class="linkish" data-t="${th.i}">${esc(th.label)}</span>` : ''}</div>
-        <div class="kv"><div><b>${p.loc}</b><span>lines</span></div><div><b style="color:${p.complex ? MM_HEALTH[2][0] : 'inherit'}">${p.cc}</b><span>complexity</span></div><div><b>${new Set(p.in).size}</b><span>called by</span></div><div><b>${new Set(p.out).size}</b><span>calls</span></div></div>
-        ${p.dead ? '<div class="meta2" style="margin-top:8px;color:var(--warning)">Unused: nothing reachable calls this.</div>' : ''}${p.complex ? `<div class="meta2" style="margin-top:4px;color:var(--warning)">Tangled: complexity ${p.cc}, over the limit.</div>` : ''}
+        <div class="kv"><div><b>${p.loc}</b><span>lines</span></div><div><b style="color:${p.complex ? MM_HEALTH[2][0] : 'inherit'}">${p.cog}</b><span>cognitive</span></div><div><b>${new Set(p.in).size}</b><span>called by</span></div><div><b>${new Set(p.out).size}</b><span>calls</span></div></div>
+        ${p.dead ? '<div class="meta2" style="margin-top:8px;color:var(--warning)">Unused: nothing reachable calls this.</div>' : ''}${p.complex ? `<div class="meta2" style="margin-top:4px;color:var(--warning)">Tangled: cognitive complexity ${p.cog}, over the limit (cyclomatic ${p.cc}).</div>` : ''}
         <div style="margin-top:10px"><button data-go="${esc(p.id)}">open in the program graph</button></div></div>
       ${p.twins.length ? `<div class="section"><h3>Copies (${p.twins.length})</h3><ul class="list">${p.twins.map(pr => { const o = pr.a === p ? pr.b : pr.a; return `<li data-p="${o.i}"><span class="copy">${copyLabel(pr)}</span><span class="mono" style="word-break:break-all">${esc(o.q)}</span><span class="meta">${esc((o.file || '').split('/').pop())}</span></li>`; }).join('')}</ul></div>` : ''}
       ${list('Called by', p.in, 'What leads here: pale blue on the map.')}

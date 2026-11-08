@@ -86,11 +86,11 @@ class ComplexityPass(Pass):
             params = [p for p in n.attrs.get("params", []) if p not in ("self", "cls")]
             if len(params) > th.params:
                 diags.append(self.diag("too-many-params", Severity.INFO, f"`{n.qualname}` takes {len(params)} parameters (threshold {th.params})", node=n, params=params))
-        rows.sort(key=lambda r: -r["complexity"])
+        rows.sort(key=lambda r: (-r["cognitive"], -r["complexity"]))
         program.metrics["complexity"] = {
             "functions": len(rows),
             "avg": round(sum(r["complexity"] for r in rows) / len(rows), 2) if rows else 0,
-            "max": rows[0]["complexity"] if rows else 0,
+            "max": max((r["complexity"] for r in rows), default=0),
             "top": rows[: th.hotspot_top_n],
         }
         return diags

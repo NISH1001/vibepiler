@@ -7,6 +7,7 @@ from collections import defaultdict
 from vibepiler.backend.common import liveness_parts, project_name, size_parts, summarize
 from vibepiler.ir.program import Program
 from vibepiler.passes.diagnostic import Diagnostic
+from vibepiler.passes.measures import METRICS
 from vibepiler.passes.registry import all_passes
 
 
@@ -82,8 +83,21 @@ def _hotspots(hs: dict) -> list[str]:
 
 
 def _complexity(c: dict) -> list[str]:
-    lines = ["", "## Complexity", "", f"{c['functions']} functions, average cyclomatic complexity {c['avg']}, max {c['max']}.", ""]
-    lines.append(_table(["function", "complexity", "lines", "nesting"], [[f"`{r['qualname']}`", r["complexity"], r["loc"], r["nesting"]] for r in c["top"]]))
+    lines = ["", "## Complexity", "", f"{c['functions']} functions, the hardest to follow first; average cyclomatic complexity {c['avg']}, max {c['max']}.", ""]
+    lines.append(_table(["function", "cognitive", "cyclomatic", "lines", "nesting"], [[f"`{r['qualname']}`", r["cognitive"], r["complexity"], r["loc"], r["nesting"]] for r in c["top"]]))
+    return lines
+
+
+def _metrics(m: dict) -> list[str]:
+    """Every measure with its raw numbers, then each one per folder (the same folders as the size table)."""
+    have = [(cls, cls.of(m[f"{cls.key}_score"])) for cls in METRICS if m.get(f"{cls.key}_score")]
+    if not have:
+        return []
+    rows = [[f"**{cls.label}**", f"{x.value:.1%}", str(x).split(" (", 1)[1].rstrip(")"), "lower" if cls.better == "low" else "higher", f"`{cls.formula}`"] for cls, x in have]
+    lines = ["", "### Metrics", "", "Each is 0–1. A limit metric is how far functions go past a fixed limit, weighted by their lines (0 means none do); a share is how much of the code has it.", "", _table(["metric", "value", "raw", "better", "formula"], rows)]
+    by = {cls.key: {f["path"]: f["value"] for f in m[f"{cls.key}_score"]["folders"]} for cls, _ in have}
+    folders = [f["path"] for f in (m.get("bloat_score") or {}).get("folders", [])][:15] or list(next(iter(by.values())))[:15]
+    lines += ["", _table(["folder", *(cls.label for cls, _ in have)], [[f"`{p}`", *(f"{by[cls.key][p]:.1%}" if p in by[cls.key] else "" for cls, _ in have)] for p in folders])]
     return lines
 
 
@@ -125,6 +139,7 @@ def emit_markdown(program: Program, max_per_pass: int = 40) -> str:
     lines += _summary(program)
     if b:
         lines += _size(m)
+    lines += _metrics(m)
     lines += _what_can_go(m)
     if "entry_points" in m:
         lines += _entry_points(m["entry_points"])
