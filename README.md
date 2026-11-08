@@ -119,7 +119,7 @@ vibepiler compile . -R -q                                   # the plan
 vibepiler compile . -R -q --baseline vibepiler-out/ir.json  # what moved
 ```
 
-**3. Let your coding agent do the loop.** Every remark carries the file, the line, the action and a suggestion, so the plan is a to-do list an agent can execute. A prompt that works:
+**3. Let your coding agent do the loop.** Every remark carries the file, the line, the action and a suggestion, so the plan is a to-do list an agent can execute. The [plugin](#in-your-coding-agent) teaches Claude Code (and any agent that reads skills) to run it as `/vibepiler:cleanup`; without it, a prompt that works:
 
 > Run `vibepiler compile . -R -q`. Apply the first remark that is `proven` or `inferred`, run the tests, then re-run vibepiler with `--baseline` and show me what moved. Stop when the plan is empty or a remark looks wrong, and tell me which.
 
@@ -516,6 +516,41 @@ single_use_helper_max_loc = 8
 semantic_similarity = 0.72          # -O3; omit to use the per-model default
 responsibility_similarity = 0.32    # -O3; omit to use the per-model default
 ```
+
+## In your coding agent
+
+vibepiler ships as a [Claude Code plugin](https://code.claude.com/docs/en/plugins) with two [Agent Skills](https://agentskills.io): the agent learns to run vibepiler, read its report, and work through the elimination plan with your tests between edits.
+
+**Claude Code.** Add this repo as a plugin marketplace, then install the plugin:
+
+```
+/plugin marketplace add NISH1001/vibepiler
+/plugin install vibepiler@vibepiler
+```
+
+or, from a shell, `claude plugin marketplace add NISH1001/vibepiler && claude plugin install vibepiler@vibepiler`. `claude plugin marketplace update` picks up new releases. Then ask in plain words ("what is dead in this repo?", "clean up the duplicated helpers") or call a skill:
+
+```
+/vibepiler:compile                      # run vibepiler (-O2) and summarise: size line, top of the plan, worst complexity
+/vibepiler:compile semantic backend/    # -O3 on one folder; real flags work too: /vibepiler:compile -O3 --exclude "**/gen/**"
+/vibepiler:cleanup                      # the elimination loop: check a finding, edit, test, re-run with --baseline, repeat
+/vibepiler:cleanup dead code only api/  # a narrower scope
+```
+
+| skill | does | edits code |
+|---|---|---|
+| `compile` | picks the run (`semantic` = `-O3`, `quick` = `-O1`, `graph` = `-O0`, folder names, any CLI flag), runs it with `uvx` when vibepiler is not installed, reads `report.md`, explains each number the way it is meant | never |
+| `cleanup` | takes the top `proven` or `inferred` item, checks it against the code (string uses, registries, exports), makes the edit, runs your tests, recompiles against the last run; stops on a failing test or a judgment call, and never commits | yes, in your working tree |
+
+**Other harnesses.** The skills are plain `SKILL.md` folders in the portable format, so any agent that reads Agent Skills can use them. Copy the ones you want from [`skills/`](skills/) to where your agent looks:
+
+```bash
+git clone --depth 1 https://github.com/NISH1001/vibepiler /tmp/vibepiler
+cp -r /tmp/vibepiler/skills/compile /tmp/vibepiler/skills/cleanup .agents/skills/     # OpenAI Codex (or ~/.agents/skills/)
+cp -r /tmp/vibepiler/skills/compile /tmp/vibepiler/skills/cleanup .claude/skills/     # Claude Code without the plugin (or ~/.claude/skills/)
+```
+
+Copied skills are called without the plugin prefix (`/compile`, `/cleanup`) and do not update themselves. Each skill pins the vibepiler release it was written for, so its flags always match the CLI it runs.
 
 ## Using it from Python
 
