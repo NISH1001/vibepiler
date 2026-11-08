@@ -10,6 +10,7 @@ from pathlib import Path
 
 from rich.console import Console
 from rich.markup import escape
+from rich.progress import BarColumn, MofNCompleteColumn, Progress, TaskID, TextColumn, TimeElapsedColumn, TimeRemainingColumn
 from rich.table import Table
 
 from vibepiler.backend.common import liveness_parts, size_parts
@@ -25,34 +26,47 @@ SEV_STYLE = {Severity.ERROR: "bold red", Severity.WARNING: "yellow", Severity.IN
 
 
 class PassLog:
-    """A loguru sink for what the running pass is doing, under its line: with `verbose`, every step dimmed; otherwise
-    one live counter that rewrites itself and goes when the pass finishes."""
+    """A loguru sink for what the running pass is doing, under its line: with `verbose`, every step dimmed; and for
+    long work, a progress bar with its rate, elapsed time and time left, which goes when the pass finishes."""
 
     def __init__(self, verbose: bool) -> None:
         self.verbose = verbose
         self.level = "DEBUG" if verbose else "INFO"
-        self.status = None
+        self.bar: Progress | None = None
+        self.tasks: dict[str, TaskID] = {}
 
     def __call__(self, message) -> None:  # noqa: ANN001 - loguru's Message
         record = message.record
         p = record["extra"].get("progress")
         if p is None:
             if self.verbose:
-                console.print(f"        [dim]· {escape(record['message'])}[/dim]", highlight=False)
+                console.print(f"        [dim]· {escape(record['message'])}[/dim]", highlight=False)  # printed above the bar
             return
-        if self.verbose:
-            return  # the step lines already carry it
-        text = f"      [dim]{p['what']} {p['done']} / {p['total']}" + (f" · batch {p['batch']}/{p['batches']}" if "batch" in p else "") + (f" · {p['rate']:.0f}/s" if "rate" in p else "") + f" · {mem_text()}[/dim]"
-        if self.status is None:
-            self.status = console.status(text, spinner="dots")
-            self.status.start()
-        else:
-            self.status.update(text)
+        if self.bar is None:
+            self.bar = Progress(
+                TextColumn("      [dim]{task.description}[/dim]"),
+                BarColumn(bar_width=30),
+                MofNCompleteColumn(),
+                TextColumn("[dim]{task.fields[detail]}[/dim]"),
+                TimeElapsedColumn(),
+                TextColumn("[dim]elapsed, about[/dim]"),
+                TimeRemainingColumn(),
+                TextColumn("[dim]left · {task.fields[memory]}[/dim]"),
+                console=console,
+                transient=True,
+            )
+            self.bar.start()
+        detail = (f"batch {p['batch']}/{p['batches']}" if "batch" in p else "") + (f" · {p['rate']:.0f}/s" if "rate" in p else "")
+        task = self.tasks.get(p["what"])
+        if task is None:
+            task = self.tasks[p["what"]] = self.bar.add_task(p["what"], total=p["total"], detail=detail, memory=mem_text())
+        self.bar.update(task, completed=p["done"], total=p["total"], detail=detail, memory=mem_text())
 
     def finish(self) -> None:
-        if self.status is not None:
-            self.status.stop()
-            self.status = None
+        if self.bar is not None:
+            self.bar.stop()
+            self.bar = None
+            self.tasks = {}
 
 
 def print_skipped(program: Program) -> None:

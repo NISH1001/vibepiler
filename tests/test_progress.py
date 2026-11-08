@@ -341,3 +341,24 @@ def test_discovery_says_which_files_it_skipped_as_too_large(tmp_path, monkeypatc
     files = loader.discover(tmp_path)
     assert [f.rel for f in files] == ["small.py"]
     assert any(m.startswith("discover:") and "huge.py" in m for m, _ in logs)
+
+
+class _Msg:
+    def __init__(self, message, **extra):
+        self.record = {"message": message, "extra": extra}
+
+
+@pytest.mark.parametrize("verbose", [False, True])
+def test_the_pass_log_draws_a_progress_bar_with_an_eta(verbose):
+    from rich.progress import Progress
+
+    from vibepiler.backend.terminal import PassLog
+
+    passlog = PassLog(verbose)
+    passlog(_Msg("embedding 32 / 100", progress={"what": "embedding", "done": 32, "total": 100, "batch": 1, "batches": 4, "rate": 40.0}))
+    passlog(_Msg("embedding 64 / 100", progress={"what": "embedding", "done": 64, "total": 100, "batch": 2, "batches": 4, "rate": 40.0}))
+    assert isinstance(passlog.bar, Progress)
+    (task,) = passlog.bar.tasks
+    assert (task.completed, task.total) == (64, 100) and "embedding" in task.description
+    passlog.finish()
+    assert passlog.bar is None  # gone with its pass
