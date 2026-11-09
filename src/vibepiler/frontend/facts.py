@@ -80,6 +80,21 @@ class RefSite:
     context: RefContext = "name"
 
 
+HintSource = Literal["annotation", "call", "name"]
+
+
+@dataclass(slots=True)
+class TypeHint:
+    """What a name holds, as written in the source: `x: Foo`, `x = Foo()`, `self.db: Database`, `x = make()`. The
+    linker turns it into a class; a name given two different hints, or a value it cannot type, holds no known class."""
+
+    scope: str | None  # where it is written, and where `chain` is looked up: the def a local lives in, None at module level
+    name: str
+    chain: tuple[str, ...]  # the annotation's dotted name, the callee, or the name copied; () = something we cannot type
+    source: HintSource = "annotation"  # call: what calling `chain` returns (a class's instance, a function's return type); name: whatever `chain` holds
+    of_class: str | None = None  # `self.name = ...` or a class-body `name: T`: a field of every instance of this class
+
+
 @dataclass(slots=True)
 class EntryHint:
     kind: str  # "main_guard", "route", "command", "test", "handler", "export_default", ...
@@ -100,6 +115,7 @@ class FileFacts:
     entry_hints: list[EntryHint] = field(default_factory=list)
     dispatches: list[tuple[str | None, str]] = field(default_factory=list)  # (scope, prefix): `getattr(self, f"visit_{x}")`
     escapes: list[tuple[str, tuple[str, ...], tuple[str, ...], tuple[str, ...], int]] = field(default_factory=list)  # (scope, callee, receiver's constructor or (), constructor, line)
+    types: list[TypeHint] = field(default_factory=list)
     has_main_guard: bool = False
     is_test: bool = False
     attrs: dict[str, Any] = field(default_factory=dict)
