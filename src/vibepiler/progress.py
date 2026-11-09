@@ -25,12 +25,11 @@ def memory() -> tuple[float | None, float]:
         peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (2**30 if sys.platform == "darwin" else 2**20)  # bytes on macOS, KB on Linux
     except ImportError:  # Windows
         peak = 0.0
-    now = None
-    try:
+    try:  # Linux only: the resident size now; elsewhere just the peak
         with open("/proc/self/statm") as f:
             now = int(f.read().split()[1]) * os.sysconf("SC_PAGE_SIZE") / 2**30
     except (OSError, ValueError, AttributeError):
-        pass
+        now = None
     return now, max(peak, now or 0.0)
 
 

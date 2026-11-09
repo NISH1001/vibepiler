@@ -474,16 +474,7 @@ class _Builder:
 
     def _local_key(self, mid: str, scope: str | None, head: str) -> tuple | None:
         """The local `head` names in `scope`, or in an enclosing def (a closure sees its function's names)."""
-        parts = scope.split(".") if scope else []
-        while parts:
-            name = ".".join(parts)
-            if ("local", mid, name, head) in self.hints:
-                return ("local", mid, name, head)
-            enclosing = self.symbols[mid].get(name)
-            if enclosing is None or self.graph.node(enclosing).kind not in CALLABLE_KINDS:
-                return None
-            parts.pop()
-        return None
+        return next((key for name in self._scopes(mid, scope) if (key := ("local", mid, name, head)) in self.hints), None)
 
     def _value_class(self, mid: str, scope: str | None, chain: tuple[str, ...]) -> str | None:
         """The class of the object `x`, `self` or `self.db.conn` holds."""
@@ -742,18 +733,22 @@ class _Builder:
         return res
 
     def _local(self, mid: str, scope: str | None, head: str) -> str | None:
+        """A def named `head` inside `scope` or inside an enclosing def."""
         table = self.symbols[mid]
-        if scope and (sid := table.get(f"{scope}.{head}")) is not None:
-            return sid
+        return next((sid for name in self._scopes(mid, scope) if (sid := table.get(f"{name}.{head}")) is not None), None)
+
+    def _scopes(self, mid: str, scope: str | None):
+        """`scope`, then each def enclosing it, innermost first: the scopes whose names code in `scope` sees. A class
+        body is not one of them for the methods inside it."""
         parts = scope.split(".") if scope else []
+        if parts:
+            yield scope
         while len(parts) > 1:
             parts.pop()
-            enclosing = table.get(".".join(parts))
+            enclosing = self.symbols[mid].get(".".join(parts))
             if enclosing is None or self.graph.node(enclosing).kind not in CALLABLE_KINDS:
-                break
-            if (sid := table.get(f"{'.'.join(parts)}.{head}")) is not None:
-                return sid
-        return None
+                return
+            yield ".".join(parts)
 
     def _resolve_binding(self, b: Binding, rest: tuple[str, ...], depth: int) -> Resolution | None:
         if isinstance(b, DefBinding):
