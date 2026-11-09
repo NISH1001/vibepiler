@@ -342,74 +342,86 @@ class _Extractor(DecoratorWalk):
 
     # --- visiting -------------------------------------------------------------
     def visit(self, node: Node, scope: str | None, class_scope: str | None, decorators: list[Node] | None = None) -> None:
-        t = node.type
-        if t == "decorated_definition":
-            decs = [c for c in node.children if c.type == "decorator"]
-            for d in decs:
-                self.visit_decorator(d, scope)
-            definition = node.child_by_field_name("definition")
-            if definition is not None:
-                self.visit(definition, scope, class_scope, decorators=decs)
-            return
-        if t == "function_definition":
-            self.visit_function(node, scope, class_scope, decorators or [])
-            return
-        if t == "class_definition":
-            self.visit_class(node, scope, decorators or [])
-            return
-        if t == "import_statement":
-            self.visit_import(node, scope)
-            return
-        if t == "import_from_statement":
-            self.visit_import_from(node, scope)
-            return
-        if t == "call":
-            self.visit_call(node, scope, class_scope)
-            return
-        if t == "attribute":
-            chain = self.chain_of(node)
-            if chain is not None:
-                p = node.parent
-                store = p is not None and p.type == "assignment" and p.child_by_field_name("left") == node
-                self.facts.refs.append(RefSite(chain=chain, line=self.spec.line(node), scope=scope, context="store" if store else "name"))
-                return
-            obj = node.child_by_field_name("object")
-            if obj is not None:
-                self.visit(obj, scope, class_scope)
-            return
-        if t == "identifier":
-            self.visit_identifier(node, scope)
-            return
-        if t == "string" and self.in_annotation(node):
-            self.visit_string_annotation(node, scope)
-            return
-        if t == "string" and (name := self.module_string(node)):
-            # `compiler_module = "db.mysql"`, INSTALLED_APPS: a module the program may load by its name (kept only if it is ours)
-            self.facts.imports.append(ImportDef(module=name, line=self.spec.line(node), kind="by_name", scope=scope))
-        if t == "if_statement" and self.is_type_checking_guard(node):
-            self.visit_type_checking(node, scope, class_scope)
-            return
-        if t == "if_statement" and scope is None and self.is_main_guard(node):
-            self.facts.has_main_guard = True
-            self.facts.entry_hints.append(EntryHint(kind="main_guard", qualname=None, line=self.spec.line(node)))
-        if t == "assignment":
-            self.note_types(node, scope, class_scope)
-            if scope is not None:
-                self.note_built(node, scope)
-        if t in ("for_statement", "with_statement") and scope is not None and scope != class_scope:
-            self.note_rebound(node, scope)
-        if t in ("assignment", "augmented_assignment") and scope is None:
-            self.visit_module_assignment(node)
-            right = node.child_by_field_name("right")
-            if right is not None:
-                self.visit(right, scope, class_scope)
-            typ = node.child_by_field_name("type")
-            if typ is not None:
-                self.visit(typ, scope, class_scope)
+        """One node: its own handler (see VISITORS), then its children unless the handler took the whole subtree."""
+        handler = self.VISITORS.get(node.type)
+        if handler is not None and not handler(self, node, scope, class_scope, decorators):
             return
         for child in node.children:
             if child.is_named or child.type in ("else", "elif"):
                 self.visit(child, scope, class_scope)
+
+    def on_decorated(self, node: Node, scope: str | None, class_scope: str | None, _decorators: list[Node] | None) -> None:
+        decs = [c for c in node.children if c.type == "decorator"]
+        for d in decs:
+            self.visit_decorator(d, scope)
+        if (definition := node.child_by_field_name("definition")) is not None:
+            self.visit(definition, scope, class_scope, decorators=decs)
+
+    def on_attribute(self, node: Node, scope: str | None, class_scope: str | None, _decorators: list[Node] | None) -> None:
+        """`a.b.c` is one reference (a store when assigned to); `f().x` visits the call."""
+        chain = self.chain_of(node)
+        if chain is None:
+            if (obj := node.child_by_field_name("object")) is not None:
+                self.visit(obj, scope, class_scope)
+            return
+        p = node.parent
+        store = p is not None and p.type == "assignment" and p.child_by_field_name("left") == node
+        self.facts.refs.append(RefSite(chain=chain, line=self.spec.line(node), scope=scope, context="store" if store else "name"))
+
+    def on_string(self, node: Node, scope: str | None, _class_scope: str | None, _decorators: list[Node] | None) -> bool:
+        if self.in_annotation(node):
+            self.visit_string_annotation(node, scope)
+            return False
+        if name := self.module_string(node):
+            # `compiler_module = "db.mysql"`, INSTALLED_APPS: a module the program may load by its name (kept only if it is ours)
+            self.facts.imports.append(ImportDef(module=name, line=self.spec.line(node), kind="by_name", scope=scope))
+        return True
+
+    def on_if(self, node: Node, scope: str | None, class_scope: str | None, _decorators: list[Node] | None) -> bool:
+        if self.is_type_checking_guard(node):
+            self.visit_type_checking(node, scope, class_scope)
+            return False
+        if scope is None and self.is_main_guard(node):
+            self.facts.has_main_guard = True
+            self.facts.entry_hints.append(EntryHint(kind="main_guard", qualname=None, line=self.spec.line(node)))
+        return True
+
+    def on_assignment(self, node: Node, scope: str | None, class_scope: str | None, _decorators: list[Node] | None) -> bool:
+        """What the assigned name holds; at module level, the variable it defines (its target is not a reference)."""
+        if node.type == "assignment":
+            self.note_types(node, scope, class_scope)
+            if scope is not None:
+                self.note_built(node, scope)
+        if scope is not None:
+            return True
+        self.visit_module_assignment(node)
+        for part in (node.child_by_field_name("right"), node.child_by_field_name("type")):
+            if part is not None:
+                self.visit(part, scope, class_scope)
+        return False
+
+    def on_rebinding(self, node: Node, scope: str | None, class_scope: str | None, _decorators: list[Node] | None) -> bool:
+        if scope is not None and scope != class_scope:
+            self.note_rebound(node, scope)
+        return True
+
+    # node type -> handler(self, node, scope, class_scope, decorators); a true result means: visit the children too
+    VISITORS = {
+        "decorated_definition": on_decorated,
+        "function_definition": lambda self, n, scope, cls, decs: self.visit_function(n, scope, cls, decs or []),
+        "class_definition": lambda self, n, scope, cls, decs: self.visit_class(n, scope, decs or []),
+        "import_statement": lambda self, n, scope, cls, decs: self.visit_import(n, scope),
+        "import_from_statement": lambda self, n, scope, cls, decs: self.visit_import_from(n, scope),
+        "call": lambda self, n, scope, cls, decs: self.visit_call(n, scope, cls),
+        "attribute": on_attribute,
+        "identifier": lambda self, n, scope, cls, decs: self.visit_identifier(n, scope),
+        "string": on_string,
+        "if_statement": on_if,
+        "assignment": on_assignment,
+        "augmented_assignment": on_assignment,
+        "for_statement": on_rebinding,
+        "with_statement": on_rebinding,
+    }
 
     def visit_identifier(self, node: Node, scope: str | None) -> None:
         parent = node.parent
