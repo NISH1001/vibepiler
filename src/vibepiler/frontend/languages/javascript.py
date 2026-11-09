@@ -589,45 +589,41 @@ class _Extractor(DecoratorWalk):
 
     def visit_declaration(self, node: Node, scope: str | None, class_scope: str | None, exported: bool, default: bool) -> None:
         for decl in node.named_children:
-            if decl.type != "variable_declarator":
-                continue
-            name = decl.child_by_field_name("name")
-            value = decl.child_by_field_name("value")
+            name = decl.child_by_field_name("name") if decl.type == "variable_declarator" else None
             if name is None:
                 continue
+            value = decl.child_by_field_name("value")
             spec = self.require_spec(value)
             if name.type == "identifier":
-                nm = self.text(name)
-                if value is not None and self._unwrap(value).type in ("arrow_function", "function_expression", "generator_function"):
-                    self.visit_function(self._unwrap(value), scope, class_scope, exported, default, [], name_override=nm)
-                    continue
-                if spec is not None:
-                    self.facts.imports.append(ImportDef(module=spec, alias=nm, line=self.line(decl), kind="module", scope=scope))
-                    continue
-                if scope is None:
-                    self.facts.defs.append(
-                        SymbolDef(kind=NodeKind.VARIABLE, name=nm, qualname=nm, start_line=self.line(decl), end_line=decl.end_point[0] + 1, node=decl, exported=exported)
-                    )
-                typ = decl.child_by_field_name("type")
-                if typ is not None:
-                    self.visit(typ, scope, class_scope)
+                self.declare_name(decl, self.text(name), value, spec, scope, class_scope, exported, default)
+            elif name.type == "object_pattern" and spec is not None:
+                self.declare_required_members(decl, name, spec, scope)
+            else:  # destructuring from an arbitrary expression: the pattern binds, the value is read
+                self.visit(name, scope, class_scope)
                 if value is not None:
                     self.visit(value, scope, class_scope)
-                continue
-            if name.type == "object_pattern" and spec is not None:
-                for p in name.named_children:
-                    if p.type == "shorthand_property_identifier_pattern":
-                        self.facts.imports.append(ImportDef(module=spec, name=self.text(p), line=self.line(decl), kind="member", scope=scope))
-                    elif p.type == "pair_pattern":
-                        k = p.child_by_field_name("key")
-                        v = p.child_by_field_name("value")
-                        if k is not None and v is not None and v.type == "identifier":
-                            self.facts.imports.append(ImportDef(module=spec, name=self.text(k), alias=self.text(v), line=self.line(decl), kind="member", scope=scope))
-                continue
-            # destructuring from an arbitrary expression: the pattern binds, the value is read
-            self.visit(name, scope, class_scope)
-            if value is not None:
-                self.visit(value, scope, class_scope)
+
+    def declare_name(self, decl: Node, nm: str, value: Node | None, spec: str | None, scope: str | None, class_scope: str | None, exported: bool, default: bool) -> None:
+        """`const f = () => ...` is a function named f; `const m = require("m")` an import; anything else a variable."""
+        if value is not None and self._unwrap(value).type in ("arrow_function", "function_expression", "generator_function"):
+            self.visit_function(self._unwrap(value), scope, class_scope, exported, default, [], name_override=nm)
+            return
+        if spec is not None:
+            self.facts.imports.append(ImportDef(module=spec, alias=nm, line=self.line(decl), kind="module", scope=scope))
+            return
+        if scope is None:
+            self.facts.defs.append(SymbolDef(kind=NodeKind.VARIABLE, name=nm, qualname=nm, start_line=self.line(decl), end_line=decl.end_point[0] + 1, node=decl, exported=exported))
+        for part in (decl.child_by_field_name("type"), value):
+            if part is not None:
+                self.visit(part, scope, class_scope)
+
+    def declare_required_members(self, decl: Node, pattern: Node, spec: str, scope: str | None) -> None:
+        """`const { a, b: c } = require("m")`: member imports of m."""
+        for p in pattern.named_children:
+            if p.type == "shorthand_property_identifier_pattern":
+                self.facts.imports.append(ImportDef(module=spec, name=self.text(p), line=self.line(decl), kind="member", scope=scope))
+            elif p.type == "pair_pattern" and (k := p.child_by_field_name("key")) is not None and (v := p.child_by_field_name("value")) is not None and v.type == "identifier":
+                self.facts.imports.append(ImportDef(module=spec, name=self.text(k), alias=self.text(v), line=self.line(decl), kind="member", scope=scope))
 
     def visit_function(
         self,

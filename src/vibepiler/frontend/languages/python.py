@@ -680,21 +680,11 @@ class _Extractor(DecoratorWalk):
     def note_types(self, node: Node, scope: str | None, class_scope: str | None) -> None:
         """What an assignment tells about the name it binds: its annotation, else the call it holds the result of.
         A value we cannot type is recorded too (an empty chain), so the name is not trusted; `= None` says nothing."""
-        left, typ, right = node.child_by_field_name("left"), node.child_by_field_name("type"), node.child_by_field_name("right")
-        if left is None:
+        left = node.child_by_field_name("left")
+        held = self.held_value(node.child_by_field_name("type"), node.child_by_field_name("right"))
+        if left is None or held is None:
             return
-        if right is not None and right.type == "await":
-            right = right.named_children[0] if right.named_children else right
-        if typ is not None:
-            chain, source = self.type_chain(typ) or (), "annotation"
-        elif right is not None and right.type == "none":
-            return
-        elif right is not None and right.type == "call" and (fn := self.chain_of(right.child_by_field_name("function"))) is not None:
-            chain, source = fn, "call"
-        elif right is not None and (copied := self.chain_of(right)) is not None:
-            chain, source = copied, "name"  # `self.db = db`
-        else:
-            chain, source = (), "annotation"
+        chain, source = held
         if left.type == "identifier":
             in_class_body = class_scope is not None and scope == class_scope
             self.facts.types.append(TypeHint(scope=scope, name=self.text(left), chain=chain, source=source, of_class=class_scope if in_class_body else None))
@@ -706,6 +696,23 @@ class _Extractor(DecoratorWalk):
             for c in left.named_children:
                 if c.type == "identifier":
                     self.facts.types.append(TypeHint(scope=scope, name=self.text(c), chain=()))
+
+    def held_value(self, typ: Node | None, right: Node | None) -> tuple[tuple[str, ...], str] | None:
+        """(chain, source) for what `name: typ = right` binds: the annotation, else the call or name the value is, else
+        nothing we can type (an empty chain). None for `= None`, which says nothing about the name."""
+        if right is not None and right.type == "await":
+            right = right.named_children[0] if right.named_children else right
+        if typ is not None:
+            return self.type_chain(typ) or (), "annotation"
+        if right is None:
+            return (), "annotation"
+        if right.type == "none":
+            return None
+        if right.type == "call" and (fn := self.chain_of(right.child_by_field_name("function"))) is not None:
+            return fn, "call"
+        if (copied := self.chain_of(right)) is not None:
+            return copied, "name"  # `self.db = db`
+        return (), "annotation"
 
     def note_rebound(self, node: Node, scope: str) -> None:
         """`for x in ...` and `with ... as x` bind x to something we do not type: x holds no one known class."""

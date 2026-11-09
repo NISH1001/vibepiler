@@ -95,6 +95,28 @@ def is_accepted(d: Diagnostic, patterns: list[str]) -> bool:
     return False
 
 
+def _selected(p: Pass, opt_level: int, only: list[str] | None, skip: list[str] | None) -> bool:
+    """`only` names passes (entry-points always runs, the others need it); otherwise the -O level picks by cost."""
+    if skip and p.name in skip:
+        return False
+    if only:
+        return p.name in only or p.name == "entry-points"
+    return p.cost <= opt_level
+
+
+def _drop_accepted(program: Program, diags: list[Diagnostic], accepted: list[dict]) -> list[Diagnostic]:
+    """The findings config `accept` does not cover; the accepted ones are recorded in `accepted` and marked on their node."""
+    kept = []
+    for d in diags:
+        if not is_accepted(d, program.config.accept):
+            kept.append(d)
+            continue
+        if d.node_id and program.graph.has_node(d.node_id):
+            program.graph.node(d.node_id).attrs["accepted"] = True
+        accepted.append({"code": d.code, "qualname": d.data.get("qualname", ""), "file": d.file})
+    return kept
+
+
 def run_passes(
     program: Program,
     opt_level: int = 2,
@@ -108,15 +130,7 @@ def run_passes(
     program.metrics["opt_level"] = opt_level
     if opt_level <= 0 and not only:
         return []
-    selected: list[Pass] = []
-    for p in _PASSES:
-        if only and p.name not in only and p.name != "entry-points":
-            continue
-        if skip and p.name in skip:
-            continue
-        if not only and p.cost > opt_level:
-            continue
-        selected.append(p)
+    selected = [p for p in _PASSES if _selected(p, opt_level, only, skip)]
     timings: dict[str, float] = {}
     accepted: list[dict] = []
     scoped = is_scoped(program)  # paths were named: the whole source was read, only they are reported
@@ -124,14 +138,7 @@ def run_passes(
         t0 = time.perf_counter()
         diags = run_pass(p.name, program)
         timings[p.name] = round(time.perf_counter() - t0, 4)
-        kept = []
-        for d in diags:
-            if is_accepted(d, program.config.accept):
-                if d.node_id and program.graph.has_node(d.node_id):
-                    program.graph.node(d.node_id).attrs["accepted"] = True
-                accepted.append({"code": d.code, "qualname": d.data.get("qualname", ""), "file": d.file})
-            else:
-                kept.append(d)
+        kept = _drop_accepted(program, diags, accepted)
         diags = [d for d in kept if keep(d, program.config.include)] if scoped else kept
         program.diagnostics.extend(diags)
         if on_pass is not None:
