@@ -120,3 +120,62 @@ def test_django_templatetags_and_management_commands_are_loaded_by_the_framework
     })
     gone = dead(prog)
     assert not {x for x in gone if "templatetags" in x or "management" in x or x.startswith(("FlatpageNode", "Command"))}
+
+
+# 5. objects handed to code we cannot see ------------------------------------------------------------------------------
+COOKIES = (
+    "class MockResponse:\n"
+    "    def __init__(self, headers):\n        self._headers = headers\n\n"
+    "    def info(self):\n        return self._headers\n\n"
+    "    def _private(self):\n        return 1\n\n\n"
+    "def extract_cookies_to_jar(jar, response):\n"
+    "    res = MockResponse(response)\n"
+    "    jar.extract_cookies(res)\n\n\n"
+    "if __name__ == '__main__':\n    extract_cookies_to_jar(None, {})\n"
+)
+
+
+def test_methods_of_an_object_handed_to_unseen_code_are_alive_but_unverified(tmp_path):
+    prog = compile_files(tmp_path, {"cookies.py": COOKIES})
+    gone = dead(prog)
+    assert "MockResponse.info" not in gone and "MockResponse._private" in gone
+    assert prog.graph.node("sym:cookies.py::MockResponse.info").attrs.get("alive_by_name")  # the unverified band
+
+
+def test_an_object_constructed_in_the_call_escapes_too_and_so_do_inherited_methods(tmp_path):
+    prog = compile_files(tmp_path, {
+        "main.py": "import atexit\n\n\nclass Base:\n    def close(self):\n        return 1\n\n\nclass Handler(Base):\n    def flush(self):\n        return 2\n\n\nclass Child(Handler):\n    def extra(self):\n        return 3\n\n\ndef setup():\n    atexit.register(Handler())\n\n\nif __name__ == '__main__':\n    setup()\n",
+    })
+    gone = dead(prog)
+    assert "Handler.flush" not in gone and "Base.close" not in gone
+    assert "Child" in gone  # only the class handed out and its ancestors, never its subclasses
+
+
+def test_pickling_or_appending_an_object_calls_none_of_its_methods(tmp_path):
+    prog = compile_files(tmp_path, {
+        "main.py": "import pickle\n\n\nclass Session:\n    def post(self):\n        return 1\n\n\ndef save(items):\n    s = Session()\n    items.append(s)\n    return pickle.dumps(s)\n\n\nif __name__ == '__main__':\n    save([])\n",
+    })
+    assert "Session.post" in dead(prog)
+
+
+def test_an_object_handed_to_another_of_our_own_objects_does_not_escape(tmp_path):
+    prog = compile_files(tmp_path, {
+        "main.py": "class SpatialReference:\n    def import_xml(self):\n        return 1\n\n\nclass Geometry:\n    def transform(self, srs):\n        return srs\n\n\ndef run():\n    g = Geometry()\n    return g.transform(SpatialReference())\n\n\nif __name__ == '__main__':\n    run()\n",
+    })
+    assert "SpatialReference.import_xml" in dead(prog)
+
+
+def test_a_class_with_a_framework_base_is_left_to_the_framework_rule(tmp_path):
+    prog = compile_files(tmp_path, {
+        "main.py": "import pytest\nfrom textual.app import App\n\n\nclass Notebook(App):\n    def compose(self):\n        return []\n\n\ndef make():\n    return pytest.approx(Notebook())\n\n\nif __name__ == '__main__':\n    make()\n",
+    })
+    assert not prog.graph.node("sym:main.py::Notebook.compose").attrs.get("alive_by_name")
+
+
+def test_in_tests_only_a_call_into_a_known_package_lets_an_object_escape(tmp_path):
+    prog = compile_files(tmp_path, {
+        "geo.py": "class SpatialReference:\n    def import_xml(self):\n        return 1\n\n\nclass Clock:\n    def sleep(self, s):\n        return s\n",
+        "tests/test_geo.py": "from unittest import mock\n\nfrom geo import Clock, SpatialReference\n\n\ndef test_transform(orig):\n    t2 = orig.clone()\n    t2.transform(SpatialReference())\n\n\ndef test_touch():\n    with mock.patch('time', Clock()):\n        pass\n",
+    })
+    gone = dead(prog)
+    assert "SpatialReference.import_xml" in gone and "Clock.sleep" not in gone

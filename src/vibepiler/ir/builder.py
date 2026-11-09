@@ -36,6 +36,9 @@ from vibepiler.ir.program import Program
 from vibepiler.progress import log, timed
 
 PY_BUILTINS = frozenset(dir(_py_builtins))
+# what an object handed to these is never asked to do: they store, copy or serialise it, they call none of its methods
+INERT_PACKAGES = frozenset({"pickle", "copy", "weakref", "json", "marshal", "shelve", "logging", "typing", "dataclasses", "collections", "itertools", "functools", "operator"})
+CONTAINER_METHODS = frozenset({"append", "add", "extend", "insert", "appendleft", "put", "put_nowait", "setdefault", "update", "remove", "discard", "index", "count", "push"})
 
 
 # --------------------------------------------------------------------------- bindings
@@ -423,6 +426,8 @@ class _Builder:
                 self._link_call(mid, spec, call)
             for scope, prefix in facts.dispatches:
                 self._link_dispatch(mid, scope, prefix)
+            for scope, callee, receiver, ctor, line in facts.escapes:
+                self._link_escape(mid, spec, scope, callee, receiver, ctor, line)
             for ref in facts.refs:
                 if ref.context != "base":  # covered by inherits edges
                     self._link_ref(mid, ref)
@@ -464,6 +469,29 @@ class _Builder:
             for m in self.graph.children(owner):
                 if m.kind is NodeKind.METHOD and m.name.startswith(prefix) and m.id != src:
                     self.graph.add_edge(Edge(src=src, dst=m.id, kind=EdgeKind.CALLS, attrs={"dispatch": prefix}))
+
+    def _link_escape(self, mid: str, spec: LanguageSpec, scope: str, callee: tuple[str, ...], receiver: tuple[str, ...], ctor: tuple[str, ...], line: int) -> None:
+        """Escape analysis: an instance of our class handed to code we cannot see (a package, or a receiver we cannot
+        resolve) may have its public methods called there, as http.cookiejar calls `MockResponse.info()`."""
+        cls = self._resolve_chain(mid, scope, ctor)
+        if cls is None or not cls.exact or self.graph.node(cls.node_id).kind is not NodeKind.CLASS:
+            return
+        if callee[-1] in CONTAINER_METHODS:
+            return  # `items.append(obj)`: almost always a list, set or dict
+        if receiver and (own := self._resolve_chain(mid, scope, receiver)) is not None and self.graph.node(own.node_id).kind is NodeKind.CLASS:
+            return  # handed to another object of ours: whatever it does with it is code we see
+        res = self._resolve_chain(mid, scope, callee)
+        if res is None:
+            if callee[0] in spec.builtins or (spec.name == "python" and callee[0] in PY_BUILTINS):
+                return
+            if self.facts[mid].is_test:
+                return  # in a test, a receiver we cannot type is nearly always one of ours (a fixture, a `.clone()`)
+        elif self.graph.node(res.node_id).kind is not NodeKind.PACKAGE or self.graph.node(res.node_id).name in INERT_PACKAGES:
+            return
+        node = self.graph.node(cls.node_id)
+        sites = node.attrs.setdefault("escapes", [])
+        if len(sites) < 3:
+            sites.append(f"{self.facts[mid].rel}:{line}")
 
     def _unresolved_call(self, spec: LanguageSpec, chain: tuple[str, ...]) -> None:
         head = chain[0]

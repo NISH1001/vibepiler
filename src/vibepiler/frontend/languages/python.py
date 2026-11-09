@@ -298,6 +298,7 @@ class _Extractor(DecoratorWalk):
         self.sf = sf
         self.facts = facts
         self.all_names: list[str] | None = None
+        self.built: dict[tuple[str, str], tuple[str, ...]] = {}  # (scope, local) -> constructor chain it was last assigned from
 
     def text(self, node: Node) -> str:
         return self.sf.text(node)
@@ -390,6 +391,8 @@ class _Extractor(DecoratorWalk):
         if t == "if_statement" and scope is None and self.is_main_guard(node):
             self.facts.has_main_guard = True
             self.facts.entry_hints.append(EntryHint(kind="main_guard", qualname=None, line=self.spec.line(node)))
+        if t == "assignment" and scope is not None:
+            self.note_built(node, scope)
         if t in ("assignment", "augmented_assignment") and scope is None:
             self.visit_module_assignment(node)
             right = node.child_by_field_name("right")
@@ -609,8 +612,39 @@ class _Extractor(DecoratorWalk):
             else:
                 self.visit(fn, scope, class_scope)
         if args is not None:
+            if scope is not None and fn is not None:
+                self.note_escapes(fn, args, scope, node)
             self.visit(args, scope, class_scope)
         # generator/comprehension arguments etc. are handled by the generic visit above
+
+    # --- escape analysis ------------------------------------------------------
+    def note_built(self, node: Node, scope: str) -> None:
+        """`res = MockResponse(r)`: remember which constructor a local was built from, for the calls after it."""
+        left, right = node.child_by_field_name("left"), node.child_by_field_name("right")
+        if left is not None and left.type == "identifier" and right is not None:
+            ctor = self.chain_of(right.child_by_field_name("function")) if right.type == "call" else None
+            if ctor is not None:
+                self.built[(scope, self.text(left))] = ctor
+            else:
+                self.built.pop((scope, self.text(left)), None)
+
+    def note_escapes(self, fn: Node, args: Node, scope: str, call: Node) -> None:
+        """Objects a function builds and hands to a call: `jar.extract_cookies(res)` or `register(Handler())`. Recorded
+        as (callee, receiver's constructor, constructor) chains; the linker decides which are our classes."""
+        callee = None
+        for a in args.named_children:
+            a = a.child_by_field_name("value") if a.type == "keyword_argument" else a
+            if a is None:
+                continue
+            ctor = self.built.get((scope, self.text(a))) if a.type == "identifier" else (
+                self.chain_of(a.child_by_field_name("function")) if a.type == "call" else None)
+            if ctor is None:
+                continue
+            callee = callee or self.loose_chain_of(fn)
+            if callee is None:
+                return
+            receiver = self.built.get((scope, callee[0]), ()) if len(callee) > 1 else ()  # `g = Geometry(); g.transform(obj)`
+            self.facts.escapes.append((scope, callee, receiver, ctor, self.spec.line(call)))
 
     # --- helpers --------------------------------------------------------------
     def dispatch_prefix(self, args: Node | None) -> str | None:
@@ -741,12 +775,14 @@ def _ancestors(node: Node, depth: int):
         cur = cur.parent
 
 
-def _descendants(node: Node):
+def _descendants(node: Node, stop: frozenset[str] = frozenset()):
+    """Every named node below `node`, not entering nodes of the `stop` types (nested defs and classes)."""
     stack = list(node.named_children)
     while stack:
         n = stack.pop()
         yield n
-        stack.extend(n.named_children)
+        if n.type not in stop:
+            stack.extend(n.named_children)
 
 
 def _starts_with_string(block: Node | None) -> bool:

@@ -99,6 +99,7 @@ class FileFacts:
     refs: list[RefSite] = field(default_factory=list)
     entry_hints: list[EntryHint] = field(default_factory=list)
     dispatches: list[tuple[str | None, str]] = field(default_factory=list)  # (scope, prefix): `getattr(self, f"visit_{x}")`
+    escapes: list[tuple[str, tuple[str, ...], tuple[str, ...], tuple[str, ...], int]] = field(default_factory=list)  # (scope, callee, receiver's constructor or (), constructor, line)
     has_main_guard: bool = False
     is_test: bool = False
     attrs: dict[str, Any] = field(default_factory=dict)
