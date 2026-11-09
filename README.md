@@ -36,7 +36,7 @@ Languages: **Python**, **JavaScript/TypeScript** (incl. JSX/TSX). Adding a langu
 You need [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`). Nothing else: no clone, no install step.
 
 ```bash
-# a project on disk (add @v0.4.8 after the URL to pin a release)
+# a project on disk (add @v0.4.9 after the URL to pin a release)
 uvx --from git+https://github.com/NISH1001/vibepiler vibepiler compile path/to/project
 
 # a repo on GitHub: owner/repo, owner/repo@branch, or any GitHub / git URL
