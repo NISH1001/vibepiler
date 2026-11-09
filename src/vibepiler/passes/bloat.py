@@ -161,47 +161,35 @@ class BloatPass(Pass):
             spec = program.spec_for(n)
             sf = program.facts[n.module].file  # type: ignore[index]
             for clause, stmts, broad in spec.except_clauses(d.node, sf):
-                line = clause.start_point[0] + 1
-                kinds = [s.type for s in stmts]
-                if not stmts or all(k in ("pass_statement", "ellipsis") or (k == "expression_statement" and sf.text(s).strip() == "...") for k, s in zip(kinds, stmts)):
-                    diags.append(
-                        self.diag(
-                            "swallowed-exception",
-                            Severity.WARNING if broad else Severity.INFO,
-                            f"`{n.qualname}` silently swallows {'all exceptions' if broad else 'an exception'} at line {line}",
-                            node=n,
-                            line=line,
-                            suggestion="Handle it, narrow it, or let it propagate. Silent `except: pass` hides real failures.",
-                            broad=broad,
-                        )
-                    )
-                    continue
-                is_reraise = [sf.text(s).strip() == "raise" or sf.text(s).strip().startswith(("throw ", "throw e", "throw err")) for s in stmts]
-                try_node = clause.parent
-                siblings = [c for c in try_node.named_children if c.type in ("except_clause", "catch_clause", "finally_clause", "else_clause")] if try_node is not None else [clause]
-                if len(stmts) == 1 and is_reraise[0] and len(siblings) == 1:
-                    diags.append(
-                        self.diag(
-                            "redundant-try",
-                            Severity.INFO,
-                            f"`{n.qualname}` catches and immediately re-raises at line {line}",
-                            node=n,
-                            line=line,
-                            suggestion="Delete the try/except; it changes nothing.",
-                        )
-                    )
-                elif len(stmts) == 2 and is_reraise[1] and spec.is_log_call(stmts[0], sf):
-                    diags.append(
-                        self.diag(
-                            "log-and-reraise",
-                            Severity.INFO,
-                            f"`{n.qualname}` logs and re-raises at line {line}",
-                            node=n,
-                            line=line,
-                            suggestion="Log once at the boundary that actually handles the error; per-call-site log-and-reraise multiplies noise.",
-                        )
-                    )
+                if (diag := self._judge_handler(n, spec, sf, clause, stmts, broad)) is not None:
+                    diags.append(diag)
         return diags
+
+    def _judge_handler(self, n, spec, sf, clause, stmts, broad: bool) -> Diagnostic | None:  # noqa: ANN001
+        """One except/catch clause: empty (swallowed), a bare re-raise as the only clause (redundant), or log then re-raise."""
+        line = clause.start_point[0] + 1
+        if all(s.type in ("pass_statement", "ellipsis") or (s.type == "expression_statement" and sf.text(s).strip() == "...") for s in stmts):
+            return self.diag(
+                "swallowed-exception",
+                Severity.WARNING if broad else Severity.INFO,
+                f"`{n.qualname}` silently swallows {'all exceptions' if broad else 'an exception'} at line {line}",
+                node=n,
+                line=line,
+                suggestion="Handle it, narrow it, or let it propagate. Silent `except: pass` hides real failures.",
+                broad=broad,
+            )
+        if len(stmts) == 1 and _reraises(stmts[0], sf) and _only_handler(clause):
+            return self.diag("redundant-try", Severity.INFO, f"`{n.qualname}` catches and immediately re-raises at line {line}", node=n, line=line, suggestion="Delete the try/except; it changes nothing.")
+        if len(stmts) == 2 and _reraises(stmts[1], sf) and spec.is_log_call(stmts[0], sf):
+            return self.diag(
+                "log-and-reraise",
+                Severity.INFO,
+                f"`{n.qualname}` logs and re-raises at line {line}",
+                node=n,
+                line=line,
+                suggestion="Log once at the boundary that actually handles the error; per-call-site log-and-reraise multiplies noise.",
+            )
+        return None
 
     # --- stubs -----------------------------------------------------------------
     def _stubs(self, program: Program) -> list[Diagnostic]:
@@ -229,3 +217,15 @@ class BloatPass(Pass):
                     )
                 )
         return diags
+
+
+def _reraises(stmt, sf) -> bool:  # noqa: ANN001
+    """`raise` alone, or JS `throw e` of what was caught."""
+    text = sf.text(stmt).strip()
+    return text == "raise" or text.startswith(("throw ", "throw e", "throw err"))
+
+
+def _only_handler(clause) -> bool:  # noqa: ANN001
+    """No other except, catch, else or finally beside this clause on its try."""
+    try_node = clause.parent
+    return try_node is None or sum(c.type in ("except_clause", "catch_clause", "finally_clause", "else_clause") for c in try_node.named_children) == 1

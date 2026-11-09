@@ -277,54 +277,68 @@ def embed_texts(embedder: Embedder, texts: Sequence[str], cache_dir: Path | None
     The cache is one file per model and cap, shared by every project. While a run embeds, it checkpoints only the
     vectors it made to a part file of its own; at the end everything is merged into the shared file once. A part left
     by a killed run is picked up and merged by the next one. `use_cache=False` reads none of it and writes nothing."""
-    import numpy as np
-
     cache_dir = cache_dir or CACHE_DIR
-    if use_cache:
-        cache_dir.mkdir(parents=True, exist_ok=True)
     cap = getattr(embedder, "max_tokens", None)  # the same text embeds differently under another cap
     stem = f"{_slug(embedder.name)}{f'__{cap}t' if cap else ''}"
     path = cache_dir / f"{stem}.npz"
-    parts = sorted(cache_dir.glob(f"{stem}.part-*.npz")) if use_cache else []
-    cached: dict[str, "np.ndarray"] = {}
-    for f in [path, *parts] if use_cache else []:
-        cached.update(_load(f))
+    cached, parts = _read_cache(cache_dir, stem, path) if use_cache else ({}, [])
     hashes = [_hash(t) for t in texts]
     by_hash = dict(zip(hashes, texts))
     missing = sorted({h for h in hashes if h not in cached})
     new: dict[str, "np.ndarray"] = {}
     if missing and use_cache:
-        borrowed = _other_caps(cache_dir, _slug(embedder.name), path, cap, {h: by_hash[h] for h in missing})
-        new.update(borrowed)
-        cached.update(borrowed)
-        missing = [h for h in missing if h not in borrowed]
+        new = _other_caps(cache_dir, _slug(embedder.name), path, cap, {h: by_hash[h] for h in missing})
+        cached.update(new)
+        missing = [h for h in missing if h not in new]
     log.debug("cache {}: {} reused, {} to embed with {}{}", str(path).replace(str(Path.home()), "~", 1) if use_cache else "off", len(set(hashes)) - len(missing), len(missing), embedder.name, f" ({len(new)} reused from another token cap)" if new else "")
     own_part = cache_dir / f"{stem}.part-{os.getpid()}-{time.time_ns()}.npz"
     try:
-        if missing:
-            todo = [by_hash[h] for h in missing]
-            plan, done, start = batches(todo), 0, time.perf_counter()
-            saved_at, unsaved = start, 0
-            try:
-                for b, batch in enumerate(plan, 1):
-                    t = time.perf_counter()
-                    for k, v in zip(batch, embedder.embed([todo[k] for k in batch])):
-                        new[missing[k]] = cached[missing[k]] = np.asarray(v, dtype=np.float32)
-                    done += len(batch)
-                    unsaved += len(batch)
-                    rate = done / max(time.perf_counter() - start, 1e-9)
-                    log.debug("batch {}/{}  {} functions, longest {} chars  {:.2f} s  {}", b, len(plan), len(batch), max(len(todo[k]) for k in batch), time.perf_counter() - t, mem_text())
-                    progress("embedding", done, len(todo), batch=b, batches=len(plan), rate=rate)
-                    if use_cache and time.perf_counter() - saved_at >= CHECKPOINT_SECONDS:  # a killed run keeps what it embedded
-                        _save(own_part, new, "checkpoint")
-                        saved_at, unsaved = time.perf_counter(), 0
-            finally:
-                if unsaved and use_cache:
-                    _save(own_part, new, "checkpoint")
+        _embed_missing(embedder, [by_hash[h] for h in missing], missing, new, cached, own_part if use_cache else None)
     finally:  # done, stopped or failed: one merged write of everything, then the parts go
         if use_cache and (new or parts):
             _finish(path, cached, [*parts, own_part])
-    mat = np.stack([cached[h] for h in hashes]) if hashes else np.zeros((0, 1), dtype=np.float32)
+    return _unit_rows([cached[h] for h in hashes])
+
+
+def _read_cache(cache_dir: Path, stem: str, path: Path) -> tuple[dict, list[Path]]:
+    """Every vector cached for this model and cap: the shared file plus parts left by runs that were cut short."""
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    parts = sorted(cache_dir.glob(f"{stem}.part-*.npz"))
+    cached: dict = {}
+    for f in [path, *parts]:
+        cached.update(_load(f))
+    return cached, parts
+
+
+def _embed_missing(embedder: Embedder, todo: list[str], keys: list[str], new: dict, cached: dict, part: Path | None) -> None:
+    """Embed `todo` in length-sorted batches into `new` and `cached` (under `keys`), checkpointing to `part` every
+    CHECKPOINT_SECONDS so a killed run keeps what it embedded; `part` None writes nothing."""
+    import numpy as np
+
+    plan, done, start = batches(todo), 0, time.perf_counter()
+    saved_at, unsaved = start, 0
+    try:
+        for b, batch in enumerate(plan, 1):
+            t = time.perf_counter()
+            for k, v in zip(batch, embedder.embed([todo[k] for k in batch])):
+                new[keys[k]] = cached[keys[k]] = np.asarray(v, dtype=np.float32)
+            done += len(batch)
+            unsaved += len(batch)
+            log.debug("batch {}/{}  {} functions, longest {} chars  {:.2f} s  {}", b, len(plan), len(batch), max(len(todo[k]) for k in batch), time.perf_counter() - t, mem_text())
+            progress("embedding", done, len(todo), batch=b, batches=len(plan), rate=done / max(time.perf_counter() - start, 1e-9))
+            if part is not None and time.perf_counter() - saved_at >= CHECKPOINT_SECONDS:
+                _save(part, new, "checkpoint")
+                saved_at, unsaved = time.perf_counter(), 0
+    finally:
+        if unsaved and part is not None:
+            _save(part, new, "checkpoint")
+
+
+def _unit_rows(rows: list):
+    """The vectors stacked into a matrix, each scaled to length 1 (a zero vector stays zero)."""
+    import numpy as np
+
+    mat = np.stack(rows) if rows else np.zeros((0, 1), dtype=np.float32)
     norms = np.linalg.norm(mat, axis=1, keepdims=True)
     norms[norms == 0] = 1.0
     return mat / norms
