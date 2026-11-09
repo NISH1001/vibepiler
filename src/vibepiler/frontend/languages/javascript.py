@@ -392,89 +392,74 @@ class _Extractor(DecoratorWalk):
 
     # --- visiting -------------------------------------------------------------
     def visit(self, node: Node, scope: str | None, class_scope: str | None, exported: bool = False, default: bool = False, decorators: list[Node] | None = None) -> None:
-        t = node.type
-        decorators = decorators or []
-        if t == "comment" or t == "property_identifier" or t == "jsx_closing_element":
-            return
-        if t == "export_statement":
-            self.visit_export(node, scope, class_scope)
-            return
-        if t == "import_statement":
-            self.visit_import(node, scope)
-            return
-        if t in ("function_declaration", "generator_function_declaration"):
-            self.visit_function(node, scope, class_scope, exported, default, decorators)
-            return
-        if t in ("class_declaration", "abstract_class_declaration"):
-            self.visit_class(node, scope, exported, default, decorators)
-            return
-        if t == "interface_declaration":
-            self.visit_type_decl(node, scope, exported, NodeKind.CLASS, {"is_interface": True})
-            return
-        if t == "enum_declaration":
-            self.visit_type_decl(node, scope, exported, NodeKind.CLASS, {"is_enum": True})
-            return
-        if t == "type_alias_declaration":
-            self.visit_type_decl(node, scope, exported, NodeKind.VARIABLE, {"type_alias": True})
-            value = node.child_by_field_name("value")
-            if value is not None:
-                self.visit(value, scope, class_scope)
-            return
-        if t in ("lexical_declaration", "variable_declaration"):
-            self.visit_declaration(node, scope, class_scope, exported, default)
-            return
-        if t == "call_expression":
-            self.visit_call(node, scope, class_scope)
-            return
-        if t == "new_expression":
-            self.visit_new(node, scope, class_scope)
-            return
-        if t == "member_expression":
-            chain = self.chain_of(node)
-            if chain is not None:
-                if chain[0] not in ("this", "super") or len(chain) > 1:
-                    self.facts.refs.append(RefSite(chain=chain, line=self.line(node), scope=scope, context=self._ctx(node)))
-                return
-            obj = node.child_by_field_name("object")
-            if obj is not None:
-                self.visit(obj, scope, class_scope)
-            return
-        if t == "identifier":
-            self.visit_identifier(node, scope)
-            return
-        if t == "shorthand_property_identifier":
-            self.facts.refs.append(RefSite(chain=(self.text(node),), line=self.line(node), scope=scope))
-            return
-        if t == "type_identifier":
-            parent = node.parent
-            if parent is not None and parent.type in _DECL_NAME_PARENTS and parent.child_by_field_name("name") == node:
-                return
-            self.facts.refs.append(RefSite(chain=(self.text(node),), line=self.line(node), scope=scope, context="type"))
-            return
-        if t in ("jsx_opening_element", "jsx_self_closing_element"):
-            self.visit_jsx(node, scope, class_scope)
-            return
-        if t == "decorator":
-            self.visit_decorator(node, scope)
-            return
-        if t == "assignment_expression":
-            self.visit_assignment(node, scope, class_scope)
-            return
-        if t in ("arrow_function", "function_expression", "generator_function"):
-            # anonymous callback: attribute everything to the enclosing scope
-            self.visit_function(node, scope, class_scope, False, False, [], anonymous=True)
-            return
-        if t == "method_definition":
-            # object-literal method: treat as anonymous
-            self.visit_function(node, scope, class_scope, False, False, [], anonymous=True)
-            return
-        if t == "pair":
-            value = node.child_by_field_name("value")
-            if value is not None:
-                self.visit(value, scope, class_scope)
+        """One node: its handler (see VISITORS) takes the whole subtree; any other node type is walked through."""
+        handler = self.VISITORS.get(node.type)
+        if handler is not None:
+            handler(self, node, scope, class_scope, exported, default, decorators or [])
             return
         for child in node.named_children:
             self.visit(child, scope, class_scope)
+
+    def on_type_alias(self, node: Node, scope: str | None, class_scope: str | None, exported: bool, _default: bool, _decorators: list[Node]) -> None:
+        self.visit_type_decl(node, scope, exported, NodeKind.VARIABLE, {"type_alias": True})
+        if (value := node.child_by_field_name("value")) is not None:
+            self.visit(value, scope, class_scope)
+
+    def on_member(self, node: Node, scope: str | None, class_scope: str | None, _exported: bool, _default: bool, _decorators: list[Node]) -> None:
+        """`a.b.c` is one reference (bare `this` is not); `f().x` visits the call."""
+        chain = self.chain_of(node)
+        if chain is None:
+            if (obj := node.child_by_field_name("object")) is not None:
+                self.visit(obj, scope, class_scope)
+        elif chain[0] not in ("this", "super") or len(chain) > 1:
+            self.facts.refs.append(RefSite(chain=chain, line=self.line(node), scope=scope, context=self._ctx(node)))
+
+    def on_type_identifier(self, node: Node, scope: str | None, _class_scope: str | None, _exported: bool, _default: bool, _decorators: list[Node]) -> None:
+        parent = node.parent
+        if parent is not None and parent.type in _DECL_NAME_PARENTS and parent.child_by_field_name("name") == node:
+            return  # the name a type declaration defines
+        self.facts.refs.append(RefSite(chain=(self.text(node),), line=self.line(node), scope=scope, context="type"))
+
+    def on_anonymous(self, node: Node, scope: str | None, class_scope: str | None, _exported: bool, _default: bool, _decorators: list[Node]) -> None:
+        """A callback or an object-literal method: what it does is attributed to the enclosing scope."""
+        self.visit_function(node, scope, class_scope, False, False, [], anonymous=True)
+
+    def on_pair(self, node: Node, scope: str | None, class_scope: str | None, _exported: bool, _default: bool, _decorators: list[Node]) -> None:
+        if (value := node.child_by_field_name("value")) is not None:
+            self.visit(value, scope, class_scope)  # the key is a name, not a reference
+
+    # node type -> handler(self, node, scope, class_scope, exported, default, decorators)
+    VISITORS = {
+        "comment": lambda *_: None,
+        "property_identifier": lambda *_: None,
+        "jsx_closing_element": lambda *_: None,
+        "export_statement": lambda self, n, scope, cls, exp, dflt, decs: self.visit_export(n, scope, cls),
+        "import_statement": lambda self, n, scope, cls, exp, dflt, decs: self.visit_import(n, scope),
+        "function_declaration": lambda self, n, scope, cls, exp, dflt, decs: self.visit_function(n, scope, cls, exp, dflt, decs),
+        "generator_function_declaration": lambda self, n, scope, cls, exp, dflt, decs: self.visit_function(n, scope, cls, exp, dflt, decs),
+        "class_declaration": lambda self, n, scope, cls, exp, dflt, decs: self.visit_class(n, scope, exp, dflt, decs),
+        "abstract_class_declaration": lambda self, n, scope, cls, exp, dflt, decs: self.visit_class(n, scope, exp, dflt, decs),
+        "interface_declaration": lambda self, n, scope, cls, exp, dflt, decs: self.visit_type_decl(n, scope, exp, NodeKind.CLASS, {"is_interface": True}),
+        "enum_declaration": lambda self, n, scope, cls, exp, dflt, decs: self.visit_type_decl(n, scope, exp, NodeKind.CLASS, {"is_enum": True}),
+        "type_alias_declaration": on_type_alias,
+        "lexical_declaration": lambda self, n, scope, cls, exp, dflt, decs: self.visit_declaration(n, scope, cls, exp, dflt),
+        "variable_declaration": lambda self, n, scope, cls, exp, dflt, decs: self.visit_declaration(n, scope, cls, exp, dflt),
+        "call_expression": lambda self, n, scope, cls, exp, dflt, decs: self.visit_call(n, scope, cls),
+        "new_expression": lambda self, n, scope, cls, exp, dflt, decs: self.visit_new(n, scope, cls),
+        "member_expression": on_member,
+        "identifier": lambda self, n, scope, cls, exp, dflt, decs: self.visit_identifier(n, scope),
+        "shorthand_property_identifier": lambda self, n, scope, cls, exp, dflt, decs: self.facts.refs.append(RefSite(chain=(self.text(n),), line=self.line(n), scope=scope)),
+        "type_identifier": on_type_identifier,
+        "jsx_opening_element": lambda self, n, scope, cls, exp, dflt, decs: self.visit_jsx(n, scope, cls),
+        "jsx_self_closing_element": lambda self, n, scope, cls, exp, dflt, decs: self.visit_jsx(n, scope, cls),
+        "decorator": lambda self, n, scope, cls, exp, dflt, decs: self.visit_decorator(n, scope),
+        "assignment_expression": lambda self, n, scope, cls, exp, dflt, decs: self.visit_assignment(n, scope, cls),
+        "arrow_function": on_anonymous,
+        "function_expression": on_anonymous,
+        "generator_function": on_anonymous,
+        "method_definition": on_anonymous,
+        "pair": on_pair,
+    }
 
     def _ctx(self, node: Node):  # noqa: ANN202
         cur = node.parent
