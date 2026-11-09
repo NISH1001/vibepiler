@@ -44,6 +44,8 @@ Link rate per repo: requests 62 → 69%, flask 51 → 57%, httpx 63 → 74%, vib
 
 vulture's errors are the same kinds as before: decorator-registered handlers, autouse fixtures, names dispatched by string. vibepiler gets those right. Both tools find real dead code the other misses (vibepiler: flask's leftover `_make_timedelta`, black's `Grammar.report`; vulture: `RequestsCookieJar._find`, `MockRequest.add_header`, an uncalled `TestServer.restart`).
 
+**Fixed after the rerun** (branch `feature/python-gaps-o-v`, one test per gap in `tests/test_entry_gaps.py`): gaps O–V. On the same corpus 12 of the 13 labelled false positives are gone and both true positives stay; the one left is gpython's `kernel_side.py`, run by path in another process. Dead / unreachable / test-only findings: django 4,068 → 3,580, flask 79 → 23, gpython 51 → 14, rich 83 → 64, httpx 11 → 1, requests 27 → 20, black 111 → 106, vibepiler 1 → 1. A hand-checked sample of what django lost was all real uses (filters and tags under `@register.filter`, lookups under `@RangeField.register_lookup`, backends now loaded, hashers named in settings). 11 findings are new, each inside a class that used to be dead as a whole: 2 look real (SpatiaLite's `geos_version`/`proj_version`, never called), 8 Django classes named only in test settings are now `test-only` instead of dead, and black's `FakeDateTime.today` is a false positive (a test double patched in for `datetime`).
+
 Harness fix: `run_all.sh` installed the tools only when `vulture` was missing, so a half-installed venv made every other tool exit 127; it now checks each tool.
 
 ## Corpus and machine
