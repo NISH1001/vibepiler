@@ -390,19 +390,19 @@ Every finding also carries an `action`, delete, fold or simplify, and the **elim
 
 ### Bootstrapped on itself
 
-The first thing it was run on was vibepiler. Eight rounds of the loop, each measured with `--baseline` by the vibepiler of its day:
+The first thing it was run on was vibepiler. Nine rounds of the loop, each measured with `--baseline` by the vibepiler of its day:
 
-![Bloat and tangle over the eight bootstrap rounds, and the removable lines per round](docs/img/bootstrap.png)
+![Bloat and tangle over the nine bootstrap rounds, and the removable lines per round](docs/img/bootstrap.png)
 
 *Left: bloat and tangle, two unitless shares on one axis. Right: the lines the analysis could show removable. Vector versions for papers: [`docs/img/bootstrap.svg`](docs/img/bootstrap.svg), [`docs/img/bootstrap.pdf`](docs/img/bootstrap.pdf); regenerate with `uv run scripts/bootstrap_figure.py` (the script declares matplotlib itself, PEP 723).*
 
-| | start | round 1 | round 2 | round 3 | round 4 | round 5 | round 6 | round 7 | round 8 |
-|---|---|---|---|---|---|---|---|---|---|
-| removable lines shown by analysis | 71 | 34 | 41 | 31 | 18 | 18 | 18 | 22 | 38 |
-| tangle (cognitive from round 7) | 0.30 | 0.31 | 0.27 | 0.26 | 0.25 | 0.23 | 0.23 | 0.20 | 0.23 |
-| bloat | 31% | 31% | 28% | 26% | 25% | 23% | 23% | 20% | 24% |
-| live | | | | | | 100% (3362 of 3362) | 100% (3536 of 3536) | 100% (3912 of 3912) | 100% (4184 of 4184) |
-| most tangled function | `BloatScorePass.run` 100 | same | `AbstractionPass.run` 57 | `read_manifests` 43 | `BloatPass._dependencies` 36 | same, 37 | `_Extractor.visit` (JS) 35 | `BloatPass._exceptions`, cognitive 45 | `embed_texts`, cognitive 47 |
+| | start | round 1 | round 2 | round 3 | round 4 | round 5 | round 6 | round 7 | round 8 | round 9 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| removable lines shown by analysis | 71 | 34 | 41 | 31 | 18 | 18 | 18 | 22 | 38 | 46 |
+| tangle (cognitive from round 7) | 0.30 | 0.31 | 0.27 | 0.26 | 0.25 | 0.23 | 0.23 | 0.20 | 0.23 | 0.23 |
+| bloat | 31% | 31% | 28% | 26% | 25% | 23% | 23% | 20% | 24% | 23% |
+| live | | | | | | 100% (3362 of 3362) | 100% (3536 of 3536) | 100% (3912 of 3912) | 100% (4184 of 4184) | 100% (4604 of 4604) |
+| most tangled function | `BloatScorePass.run` 100 | same | `AbstractionPass.run` 57 | `read_manifests` 43 | `BloatPass._dependencies` 36 | same, 37 | `_Extractor.visit` (JS) 35 | `BloatPass._exceptions`, cognitive 45 | `embed_texts`, cognitive 47 | `BloatScorePass._report`, cognitive 36 |
 
 Round one was waste: five dead helpers in the tree-sitter wrapper left over from the first implementation, a constant nothing read, unused imports, the `extract` method every language adapter had copied, and two copies of the "does this class inherit from a framework" check. Rounds two and three were tangle: the tool's own scoring pass, at cyclomatic complexity 100, became five stages; the markdown emitter became one function per section; the CLI's printing moved into a terminal backend, which is what the mixed-responsibilities finding on `cli.py` meant; the abstraction and entry-point passes were split the same way.
 
@@ -418,7 +418,9 @@ Round seven came with the [metrics](#metrics), and the first thing cognitive com
 
 Round eight came after four feature releases (semantic search at scale, logging, CLI and Python parity, the Claude Code plugin), which took bloat from 20% back to 24%: most of it is `embed_texts`, the batching and progress loop for embeddings, at cognitive 47. The self-run removed no code. It found four bugs in the analyzer instead, each fixed test-first. An import cycle through `vibepiler/__init__.py` was closed only by an `if TYPE_CHECKING:` import and a lazy import inside `__getattr__`, neither of which runs when the package loads, so imports inside a function or under `TYPE_CHECKING` no longer count toward cycles. `complexipy` read as an unused dependency because the tests load it through `pytest.importorskip`, which is now an import. `vibepiler.compile` read as test-only, so what a top-level package re-exports is now public API. A type-only import used in a string annotation read as unused, so names inside string annotations now count. Its own fix briefly made the Python visitor the most tangled function in the repo (cognitive 37 to 47); the new branches moved into named methods and it is back to 41.
 
-What is left is honest: 68 functions over the cognitive limit, most of them tree-walkers that are long because the grammar is, about 1,170 lines alive only by name because 58% of call sites link, and 40% of the public surface documented. The second number is the one a type-aware linker would move.
+Round nine came after the typed linker (v0.4.8), whose own new branches had made the Python visitor the most tangled function again (cognitive 48). At -O2 it started at bloat 10.6%, tangle 10.2%, 17 functions over cognitive 30; the nine worst were split into named steps: both language visitors became dispatch tables keyed on the node type, `embed_texts` became read the cache, embed what is missing with checkpoints, normalise; the exception, dependency and member-lookup code each lost a nested loop to a named helper; the linker's two scope walkers became one. Every step was checked against `main` on the 14 evaluation repos, every finding and the link statistics; nothing moved. At -O2 bloat went to 8.6%, tangle to 8.1%, and 9 functions are left over 30 (worst 36, was 48). At -O3, bloat went from 24.0% to 23.0%. The self-run also found a bug in the tool, fixed test-first: three of its eight "same job, different code" pairs were a function and the function it calls (`Compiler.run` and `_run`), which read alike because one is the other's body; those pairs are now left out, and the lines the semantic tier claims went from 147 to 75.
+
+What is left is honest: 77 functions over the cognitive limit, most of them tree-walkers that are long because the grammar is, and about 1,000 lines alive only by name with 64% of call sites linked (it was about 1,170 at 58% before the typed linker).
 
 ## Liveness, the metric
 
