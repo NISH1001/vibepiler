@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
-__version__ = "0.4.7"
+__version__ = "0.4.8"
 
 if not os.environ.get("VIBEPILER_DEBUG"):
     logger.disable("vibepiler")  # a library is quiet until asked: loguru.logger.enable("vibepiler"), the CLI, or VIBEPILER_DEBUG=1
