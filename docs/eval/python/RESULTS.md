@@ -5,6 +5,47 @@ Reproduce with `sh scripts/eval/python/run_all.sh` from the repo root. Raw numbe
 
 **What was skipped and why:** creosote needs each project's virtualenv installed to map imports to distributions, and the corpus code is never installed here. pydeps is replaced by `ruff analyze graph` plus Tarjan SCC (`scripts/eval/python/analyze.py`), with and without TYPE_CHECKING imports. deptry failed on requests and django (no `[project]`/requirements manifest it accepts). deadcode produced no findings on black because parse errors in `tests/data` abort it.
 
+## Rerun at 0.4.8 (2026-11-09)
+
+The same pinned corpus, tool versions and harness, rerun on vibepiler 0.4.8 (the A–N fixes, the dynamic-entry rules, escape analysis and the typed linker). Raw numbers: [`results-0.4.8.json`](results-0.4.8.json). Labels: the `*_0.4.8` keys in `scripts/eval/python/labels.json`. The sections after this one are still the 0.4.5 report.
+
+| | 0.4.5 | 0.4.8 |
+|---|---|---|
+| dead definitions: both / vibepiler-only / vulture-only (corpus) | 512 / 985 / 1,127 | 392 / 458 / 1,247 |
+| unused imports ruff F401 does not report (outside `__init__`) | 232 | 102 |
+| unused imports only ruff reports | 7 | 26 |
+| undeclared / unused dependencies | 281 / 103 | 94 / 32 |
+| call sites linked | 46–68% | 50–84% |
+| determinism (64 runs) | identical | identical |
+| -O2 wall, requests … black / django | 0.65–2.8 s / 36.7 s | 0.67–2.8 s / 36.4 s (2.7 GB) |
+
+Link rate per repo: requests 62 → 69%, flask 51 → 57%, httpx 63 → 74%, vibepiler 58 → 64%, gpython 55 → 58%, rich 68 → 84%, black 56 → 59%, django 46 → 50%. The 19 more "only ruff" unused imports are mostly names another project module imports from that file (`from .compat import quote`), which ruff reports and vibepiler now counts as used (bug A).
+
+**Hand verification, fresh seeded sample** (same draw as before: round-robin over repos):
+
+| pool | n | TP | FP | unclear | precision on decided | at 0.4.5 |
+|---|---|---|---|---|---|---|
+| dead defs, vibepiler-only | 15 | 2 | 13 | 0 | **13%** | 0% |
+| dead defs, vulture-only | 15 | 5 | 8 | 2 | **38%** | 31% |
+
+**Verdict: on dead code where the two disagree, vulture is still ahead.** vibepiler's disagreement pool is less than half its 0.4.5 size, but what is left is still mostly wrong. None of the 13 false positives comes from the typed linker, and all were already reported at 0.4.7; they are new gaps:
+
+| id | gap | sample |
+|---|---|---|
+| O | public methods of a class re-exported as public API (`requests.Session.post`) are library API, not dead | 3 of 15 |
+| P | a method kept alive because a framework calls it (a Textual `on_mount` on an external base) does not make its callees reachable | 2 |
+| Q | a `unittest.TestCase` subclass is a test entry point whatever its file is called (`scripts/release_tests.py`) | 1 |
+| R | Django imports `<ENGINE>.base` for a database backend named in a string | 1 |
+| S | a dotted string naming a function (`"django.template.context_processors.debug"`) uses it | 1 |
+| T | asv runs `time_*`/`mem_*` methods of classes in `benchmarks/` | 1 |
+| U | a nested def under a registering decorator (`@app.template_filter(...)`, `@handlers.append`) is handed to it and used | 2 |
+| V | a script whose top-level code sits inside `try/except/else` is still a script | 1 |
+| – | a file read by path and run in another process (gpython's `kernel_side.py`) | 1 |
+
+vulture's errors are the same kinds as before: decorator-registered handlers, autouse fixtures, names dispatched by string. vibepiler gets those right. Both tools find real dead code the other misses (vibepiler: flask's leftover `_make_timedelta`, black's `Grammar.report`; vulture: `RequestsCookieJar._find`, `MockRequest.add_header`, an uncalled `TestServer.restart`).
+
+Harness fix: `run_all.sh` installed the tools only when `vulture` was missing, so a half-installed venv made every other tool exit 127; it now checks each tool.
+
 ## Corpus and machine
 Machine: {'cpu': 'Apple M3 Max', 'cores': 14, 'ram_gb': 36, 'os': 'macOS-15.8.1-arm64-arm-64bit'}
 

@@ -20,7 +20,9 @@ clone django    https://github.com/django/django         2d4add11fd57b05f7ea48e8
 clone gpython   https://github.com/igaurab/gpython       c55944f5c44d6b2cf1c3cda931b7469cb19bf6b6   # main
 clone vibepiler https://github.com/NISH1001/vibepiler    d9ca2bbfce3bae1356bb3fa18673563d67fb8d5c   # main (local HEAD at eval time)
 
-[ -x tools/bin/vulture ] || { uv venv -q tools && uv pip install -q -p tools/bin/python \
+# every tool, not just the first: a half-installed venv made the others exit 127 and broke analyze.py
+ok=1; for t in vulture deadcode ruff deptry pylint radon complexipy; do [ -x tools/bin/$t ] || ok=0; done
+[ $ok = 1 ] || { { [ -x tools/bin/python ] || uv venv -q tools; } && uv pip install -q -p tools/bin/python \
   vulture==2.16 deadcode==2.6.0 ruff==0.17.4 deptry==0.25.1 creosote==5.2.0 pylint==4.1.3 radon==6.0.1 complexipy==8.3.0; }
 [ -x node/node_modules/.bin/jscpd ] || npm install -s --prefix node jscpd@4.0.5
 
