@@ -438,5 +438,219 @@
    "TP",
    "assigned then the function returns without reading it"
   ]
+ ],
+ "dead_vibepiler_only_0.4.8": [
+  [
+   "requests",
+   "src/requests/sessions.py",
+   "head",
+   "FP",
+   "public method of requests.Session, re-exported as public API; library users call it (bug O)"
+  ],
+  [
+   "flask",
+   "src/flask/app.py",
+   "_make_timedelta",
+   "TP",
+   "a copy of sansio/app.py's helper; the one in app.py has no use"
+  ],
+  [
+   "gpython",
+   "src/gpython/imageview.py",
+   "image_widget",
+   "FP",
+   "called from ImageViewer._show <- on_mount, a Textual hook the framework calls (bug P)"
+  ],
+  [
+   "rich",
+   "benchmarks/benchmarks.py",
+   "_print_table",
+   "FP",
+   "asv runs time_* methods in benchmarks/ by convention; they call it (bug T)"
+  ],
+  [
+   "black",
+   "scripts/release_tests.py",
+   "FakeDateTime",
+   "FP",
+   "used by unittest.TestCase subclass run via unittest.main() in a file not named test_* (bug Q)"
+  ],
+  [
+   "django",
+   "django/contrib/gis/db/backends/mysql/operations.py",
+   "from_text",
+   "FP",
+   "ENGINE 'django.contrib.gis.db.backends.mysql' makes Django import <engine>.base, which imports operations (bug R)"
+  ],
+  [
+   "requests",
+   "src/requests/sessions.py",
+   "put",
+   "FP",
+   "public method of requests.Session (bug O)"
+  ],
+  [
+   "flask",
+   "tests/test_templating.py",
+   "my_reverse",
+   "FP",
+   "registered with @app.template_filter('super_reverse') and used by the template (bug U)"
+  ],
+  [
+   "gpython",
+   "src/gpython/kernel_side.py",
+   "install",
+   "FP",
+   "kernel_side.py is read by path and run in the IPython kernel, which calls _gp_install (dynamic, by path)"
+  ],
+  [
+   "rich",
+   "examples/listdir.py",
+   "make_filename_text",
+   "FP",
+   "example script whose top-level code sits in try/except/else, which the script rule does not see (bug V)"
+  ],
+  [
+   "black",
+   "src/blib2to3/pgen2/grammar.py",
+   "report",
+   "TP",
+   "Grammar.report, a debug dump with no caller anywhere"
+  ],
+  [
+   "django",
+   "django/template/context_processors.py",
+   "debug",
+   "FP",
+   "named as 'django.template.context_processors.debug' in TEMPLATES settings: a dotted string ending in a function (bug S)"
+  ],
+  [
+   "requests",
+   "src/requests/sessions.py",
+   "post",
+   "FP",
+   "public method of requests.Session (bug O)"
+  ],
+  [
+   "flask",
+   "tests/test_basic.py",
+   "handler",
+   "FP",
+   "registered by decorating with @app.url_build_error_handlers.append (bug U)"
+  ],
+  [
+   "gpython",
+   "src/gpython/envpicker.py",
+   "KernelChip",
+   "FP",
+   "built in GPython.on_mount, a Textual hook (bug P)"
+  ]
+ ],
+ "dead_vulture_only_0.4.8": [
+  [
+   "requests",
+   "src/requests/cookies.py",
+   "add_header",
+   "TP",
+   "MockRequest.add_header raises NotImplementedError; http.cookiejar never calls it, nothing else does"
+  ],
+  [
+   "flask",
+   "tests/test_async.py",
+   "before",
+   "FP",
+   "registered with @app.before_request"
+  ],
+  [
+   "httpx",
+   "tests/conftest.py",
+   "clean_environ",
+   "FP",
+   "@pytest.fixture(autouse=True)"
+  ],
+  [
+   "vibepiler",
+   "tests/fixtures/pyproj/src/app/utils.py",
+   "dup_a",
+   "TP",
+   "deliberately dead code in a test fixture project; vibepiler skips tests/fixtures/** by its own repo config"
+  ],
+  [
+   "gpython",
+   "src/gpython/pane.py",
+   "run_last",
+   "FP",
+   "dispatched by name: runnumber.py:112 _in_worker(\"run_last\")"
+  ],
+  [
+   "rich",
+   "tests/conftest.py",
+   "reset_color_envvars",
+   "FP",
+   "@pytest.fixture(autouse=True)"
+  ],
+  [
+   "black",
+   "tests/data/cases/line_ranges_outside_source.py",
+   "foo3",
+   "unclear",
+   "formatter input data, never meant to run"
+  ],
+  [
+   "django",
+   "tests/auth_tests/test_checks.py",
+   "LoginRequiredMiddlewareSubclass",
+   "FP",
+   "named in MIDDLEWARE settings strings in the tests"
+  ],
+  [
+   "requests",
+   "src/requests/cookies.py",
+   "_find",
+   "TP",
+   "RequestsCookieJar._find has no caller anywhere (only its definition and docstrings)"
+  ],
+  [
+   "flask",
+   "tests/test_blueprints.py",
+   "frontend_forbidden",
+   "FP",
+   "registered with @frontend.errorhandler(403)"
+  ],
+  [
+   "httpx",
+   "tests/conftest.py",
+   "restart",
+   "TP",
+   "TestServer.restart has no caller (marked pragma: no cover)"
+  ],
+  [
+   "vibepiler",
+   "tests/test_progress.py",
+   "fake_embedder",
+   "FP",
+   "@pytest.fixture(autouse=True)"
+  ],
+  [
+   "gpython",
+   "src/gpython/app.py",
+   "_run_by_number",
+   "FP",
+   "Textual message handler registered with @on(VimTextArea.RunByNumber)"
+  ],
+  [
+   "rich",
+   "tests/test_traceback.py",
+   "get_exception",
+   "TP",
+   "defined in a test module, never called"
+  ],
+  [
+   "black",
+   "tests/data/cases/preview_return_annotation_brackets_string.py",
+   "frobnicate",
+   "unclear",
+   "formatter input data, never meant to run"
+  ]
  ]
 }
