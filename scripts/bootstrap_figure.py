@@ -2,7 +2,7 @@
 # requires-python = ">=3.12"
 # dependencies = ["matplotlib>=3.8"]
 # ///
-"""The bootstrap figure for the README and for papers: bloat and tangle over the eight rounds, and the removable lines.
+"""The bootstrap figure for the README and for papers: bloat and tangle over the nine rounds, and the removable lines.
 
 Run:  uv run scripts/bootstrap_figure.py   (the block above declares matplotlib; uv installs it for this run only)
 Writes docs/img/bootstrap.{svg,pdf,png}. Colour-blind safe (validated adjacent pairs), hatched bars, vector output.
@@ -15,10 +15,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
-ROUNDS = ["start", "r1\ndelete", "r2\nsplit", "r3\nsplit", "r4\nfold", "r5\nlive", "r6\nsplit", "r7\nmetrics", "r8\nfixes"]
-BLOAT = [0.31, 0.31, 0.28, 0.26, 0.25, 0.23, 0.23, 0.20, 0.24]  # two decimals throughout, as each round was recorded
-TANGLE = [0.30, 0.31, 0.27, 0.26, 0.25, 0.23, 0.23, 0.20, 0.23]
-WASTE_LINES = [71, 34, 41, 31, 18, 18, 18, 22, 38]
+ROUNDS = ["start", "r1\ndelete", "r2\nsplit", "r3\nsplit", "r4\nfold", "r5\nlive", "r6\nsplit", "r7\nmetrics", "r8\nfixes", "r9\nsplit"]
+BLOAT = [0.31, 0.31, 0.28, 0.26, 0.25, 0.23, 0.23, 0.20, 0.24, 0.23]  # two decimals throughout, as each round was recorded
+TANGLE = [0.30, 0.31, 0.27, 0.26, 0.25, 0.23, 0.23, 0.20, 0.23, 0.23]
+WASTE_LINES = [71, 34, 41, 31, 18, 18, 18, 22, 38, 46]
 COGNITIVE_FROM = 7  # from round 7 (v0.4.0) tangle reads cognitive complexity, not cyclomatic: a new ruler, not a jump
 
 BLUE, ORANGE, AQUA = "#2a78d6", "#eb6834", "#1baf7a"  # categorical slots 1, 2, 3 of the reference palette
@@ -66,7 +66,7 @@ def main() -> None:
     bx.set_xticks(list(x))
     bx.set_xticklabels(ROUNDS, fontsize=7)
     bx.set_title("Removable lines shown by analysis")
-    bx.set_ylabel("lines (of ~6,400 to ~9,700)", labelpad=4)
+    bx.set_ylabel("lines (of ~6,400 to ~10,400)", labelpad=4)
     bx.grid(axis="y", color=GRID, lw=0.6, zorder=0)
     bx.set_axisbelow(True)
     ax.set_axisbelow(True)
@@ -78,8 +78,9 @@ def main() -> None:
              "Round 6 followed v0.2: it split the dependency check (complexity 51 to 18) and folded the decorator code\n"
              "both adapters had copied. Round 7 (v0.4.0) measured tangle by cognitive complexity and split the eight worst\n"
              "functions. Round 8 (v0.4.5) came after four feature releases; it fixed four analyzer bugs its self-report\n"
-             "exposed and removed no code. Tangle is the share-weighted noisy OR of per-function terms;\n"
-             "bloat = 1 − (1 − waste)(1 − tangle). Measured at -O3 by each round's own vibepiler, 54–58% of call sites linked.", fontsize=7, color=INK2, va="top")
+             "exposed and removed no code. Round 9 (v0.4.9, after the typed linker) split the nine most tangled functions\n"
+             "and fixed the semantic tier's caller/callee pairs. Tangle is the share-weighted noisy OR of per-function terms;\n"
+             "bloat = 1 − (1 − waste)(1 − tangle). Measured at -O3 by each round's own vibepiler, 54–64% of call sites linked.", fontsize=7, color=INK2, va="top")
 
     out = Path(__file__).resolve().parents[1] / "docs" / "img"
     out.mkdir(parents=True, exist_ok=True)
