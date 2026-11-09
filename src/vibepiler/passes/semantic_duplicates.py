@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from vibepiler.ir.model import EdgeKind
 from vibepiler.ir.program import Program
 from vibepiler.passes.base import Pass
 from vibepiler.passes.diagnostic import Diagnostic, Severity
-from vibepiler.progress import timed
+from vibepiler.progress import log, timed
 from vibepiler.semantic.embed import default_thresholds, nearest, symbol_vectors
 
 SKIP_HINT = "semantic tier needs the embedding backend: pip install 'vibepiler[semantic]' (or: uv tool install 'vibepiler[semantic]')"
@@ -41,6 +42,8 @@ class SemanticDuplicatesPass(Pass):
                 a, b = nodes[i], nodes[j]
                 if not self._worth_reporting(a, b):
                     continue
+                if program.graph.has_edge_kind(a.id, b.id, EdgeKind.CALLS) or program.graph.has_edge_kind(b.id, a.id, EdgeKind.CALLS):
+                    continue  # `run` and the `_run` it calls read alike because one is the other's body, not a copy
                 if a.attrs.get("shape_hash") and a.attrs.get("shape_hash") == b.attrs.get("shape_hash"):
                     continue  # the structural duplicates pass already reported this pair
                 identical = s >= 0.995
@@ -61,8 +64,11 @@ class SemanticDuplicatesPass(Pass):
                     )
                 )
         diags.sort(key=lambda d: -d.data["similarity"])
+        found = len(diags)
+        if found > MAX_REPORTED:
+            log.info("semantic-duplicates: {} pairs found, the {} most similar reported", found, MAX_REPORTED)
         diags = diags[:MAX_REPORTED]
-        program.metrics["semantic_duplicates"] = {"pairs": len(diags), "symbols": len(nodes), "model": model, "threshold": threshold}
+        program.metrics["semantic_duplicates"] = {"pairs": len(diags), "found": found, "symbols": len(nodes), "model": model, "threshold": threshold}
         return diags
 
     @staticmethod

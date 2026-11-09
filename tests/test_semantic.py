@@ -320,3 +320,69 @@ def test_a_class_inside_a_method_does_not_count_for_the_outer_class(tmp_path):
     outer = uvec[[u.qualname for u in units].index("Outer")]
     build = vectors[[n.qualname for n in nodes].index("Outer.build")]
     assert np.allclose(outer, build)  # Local.run is Local's, not Outer's
+
+
+TWINS = '''\
+def total_a(items, factor):
+    total = 0
+    for item in items:
+        total += item.value * factor
+    return total
+
+
+def total_b(items, factor):
+    total = 0
+    for item in items:
+        total += item.value * factor
+    return round(total)
+
+
+class Runner:
+    def run(self, items, factor):
+        total = 0
+        for item in items:
+            total += item.value * factor
+        return self._run(items, total)
+
+    def _run(self, items, factor):
+        total = 0
+        for item in items:
+            total -= item.value * factor
+        return total
+
+    def outer(self, items):
+        def inner(value):
+            total = 0
+            for item in items:
+                total += item.value * value
+            return total
+        return inner(2)
+'''
+
+
+def twins_program(tmp_path):
+    (tmp_path / "twins.py").write_text(TWINS)
+    cfg = Config.load(tmp_path)
+    cfg.thresholds.semantic_similarity = 0.6
+    prog = build_program(tmp_path, config=cfg)
+    run_pass("entry-points", prog)
+    return prog, run_pass("semantic-duplicates", prog)
+
+
+def test_a_function_and_the_function_it_calls_are_not_a_semantic_pair(tmp_path):
+    prog, diags = twins_program(tmp_path)
+    pairs = [set(d.data["members"]) for d in diags]
+    assert {"total_a", "total_b"} in pairs
+    assert {"Runner.run", "Runner._run"} not in pairs
+
+
+def test_a_closure_inside_a_method_is_not_embedded(tmp_path):
+    prog, _ = twins_program(tmp_path)
+    embedded = {n.qualname for n in prog.metrics["_semantic"]["nodes"]}
+    assert "Runner.outer" in embedded and "Runner.outer.inner" not in embedded
+
+
+def test_the_reported_cap_is_counted_not_silent(tmp_path):
+    prog, diags = twins_program(tmp_path)
+    m = prog.metrics["semantic_duplicates"]
+    assert m["found"] >= m["pairs"] == len(diags)

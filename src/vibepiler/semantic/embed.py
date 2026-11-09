@@ -350,7 +350,7 @@ def symbol_vectors(program: Program, min_loc: int = 2):
         and program.symbol_def(n) is not None
         and not g.node(n.module).attrs.get("is_test")  # tests are repetitive by design
         and not g.node(n.module).attrs.get("is_migration")  # each migration repeats the last one's shape on purpose
-        and (g.parent(n.id) is None or g.parent(n.id).kind.value != "function")  # nested closures/wrappers
+        and (g.parent(n.id) is None or g.parent(n.id).kind not in CALLABLE_KINDS)  # closures/wrappers nested in a function or a method
     ]
     nodes.sort(key=lambda n: (n.file or "", n.start_line or 0))
     log.debug("embedding {} functions ({} lines in all)", len(nodes), sum(n.loc for n in nodes))
