@@ -116,11 +116,24 @@ def _successors(g, node: Node, used_names) -> list[str]:  # noqa: ANN001
     """What a live node keeps alive: its flow edges' targets, plus three rules the edges do not carry."""
     out = [e.dst for e in g.out_edges(node.id, FLOW_EDGES)]
     if node.kind is NodeKind.METHOD and (owner := g.parent(node.id)) is not None and owner.kind is NodeKind.CLASS:
-        # a call resolved to a base-class method reaches every override: virtual dispatch
-        out += [c.id for e in g.in_edges(owner.id, EdgeKind.INHERITS) for c in g.children(e.src) if c.kind is NodeKind.METHOD and c.name == node.name]
+        # a call resolved to a base-class method reaches every override, at any depth below: virtual dispatch
+        out += [c.id for sub in _descendants(g, owner.id) for c in g.children(sub) if c.kind is NodeKind.METHOD and c.name == node.name]
     elif node.kind is NodeKind.CLASS:
         # a live class keeps alive the methods that are called by name anywhere
         out += [c.id for c in g.children(node.id) if is_dunder(c.name) or c.name in used_names or c.attrs.get("is_root")]
     elif node.kind is NodeKind.MODULE and node.attrs.get("is_test"):
         out += [c.id for c in g.children(node.id)]  # a test module runs everything in it
     return out
+
+
+def _descendants(g, cls_id: str) -> list[str]:  # noqa: ANN001
+    """Every class that inherits from `cls_id`, directly or not."""
+    seen = {cls_id}
+    stack = [cls_id]
+    while stack:
+        for e in g.in_edges(stack.pop(), EdgeKind.INHERITS):
+            if e.src not in seen:
+                seen.add(e.src)
+                stack.append(e.src)
+    seen.discard(cls_id)
+    return list(seen)

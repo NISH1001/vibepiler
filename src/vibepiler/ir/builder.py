@@ -68,6 +68,7 @@ Binding = Union[ModuleBinding, MemberBinding, DefBinding, PackageBinding]
 class Resolution:
     node_id: str
     rest: tuple[str, ...] = ()
+    via: str | None = None  # the class a member was looked up on when an ancestor defines it: `Sub.as_view` uses Sub
 
     @property
     def exact(self) -> bool:
@@ -115,6 +116,8 @@ class _Builder:
         self.facts: dict[str, FileFacts] = {}
         self.specs: dict[str, LanguageSpec] = {}
         self.module_index: dict[str, str] = {}  # module name / alias -> module id
+        self.canonical_index: dict[str, str] = {}  # module name -> module id, aliases left out
+        self.fallbacks: set[tuple[str, str]] = set()  # (module id, name) both defined and imported at top level
         self.symbols: dict[str, dict[str, str]] = {}  # module id -> qualname -> symbol id
         self.bindings: dict[str, dict[str, Binding]] = {}  # module id -> local name -> binding
         self.scoped_bindings: dict[tuple[str, str], dict[str, Binding]] = {}
@@ -185,6 +188,7 @@ class _Builder:
         # canonical names first so aliases never shadow them
         for mid, facts in self.facts.items():
             self.module_index.setdefault(facts.module_name, mid)
+            self.canonical_index.setdefault(facts.module_name, mid)
         for mid, facts in self.facts.items():
             for alias in facts.aliases:
                 self.module_index.setdefault(alias, mid)
@@ -256,22 +260,33 @@ class _Builder:
                     self._link_import(mid, spec, imp, target)
                 if binding is not None:
                     self._bind_import(mid, table, imp, binding, target)
+        for mid, facts in self.facts.items():
             self._mark_public_api(mid, facts)
+            self._mark_reexports(mid)
 
     def _mark_public_api(self, mid: str, facts: FileFacts) -> None:
-        """What a top-level Python package re-exports (`pkg/__init__.py`, narrowed by `__all__`) is its public API:
-        `import pkg; pkg.name` reaches it from outside the project, so it is an entry point."""
+        """What a top-level Python package re-exports (`pkg/__init__.py`, narrowed by `__all__`, through any chain of
+        imports and `*`) is its public API: `import pkg; pkg.name` reaches it from outside the project, so it is an entry point."""
         if facts.file.language != "python" or "." in facts.module_name or Path(facts.rel).name != "__init__.py":
             return
         public = facts.attrs.get("__all__")
-        for rec in self.import_records[mid]:
-            name, target = rec["local_name"], rec["resolved"]
-            if rec["name"] is None or target not in self.symbols or name.startswith("_") or (public is not None and name not in public):
+        for name, b in self.bindings[mid].items():
+            if isinstance(b, DefBinding) or name.startswith("_") or (public is not None and name not in public):
                 continue
-            if (sid := self.symbols[target].get(rec["name"])) is not None:
-                entry = self.graph.node(sid).attrs.setdefault("entry", [])
-                if "public_api" not in entry:
-                    entry.append("public_api")
+            res = self._resolve_binding(b, (), 0)
+            if res is None or not res.exact or self.graph.node(res.node_id).kind in (NodeKind.MODULE, NodeKind.PACKAGE):
+                continue
+            entry = self.graph.node(res.node_id).attrs.setdefault("entry", [])
+            if "public_api" not in entry:
+                entry.append("public_api")
+
+    def _mark_reexports(self, mid: str) -> None:
+        """`from .compat import quote` uses compat's own import of `quote`: compat passes the name on, so it is not unused."""
+        for rec in self.import_records[mid]:
+            target, name = rec["resolved"], rec["name"]
+            if name is None or target not in self.facts or target == mid or name in self.symbols[target]:
+                continue
+            self._mark_used(target, name, None)
 
     def _link_import(self, mid: str, spec: LanguageSpec, imp: ImportDef, target: str) -> None:
         """The imports edge, labelled with what it imports, plus the packages Python runs on the way (`a/__init__`).
@@ -296,25 +311,57 @@ class _Builder:
     def _bind_import(self, mid: str, table: dict, imp: ImportDef, binding: Binding, target: str | None) -> None:
         """The names an import puts in scope: every exported top-level name for `*`, else its local name."""
         if imp.kind == "wildcard":
+            if target in self.facts and self.facts[target].language == "python":
+                for name in self._star_names(target, set()):
+                    table.setdefault(name, MemberBinding(self.facts[target].module_name, name))
+                return
             for qual, sid in self.symbols.get(target, {}).items() if target is not None else ():
                 if "." not in qual and self.graph.node(sid).attrs.get("exported", True):
                     table.setdefault(qual, MemberBinding(self.facts[target].module_name, qual))
+        elif imp.scope is None and isinstance(table.get(imp.local_name), DefBinding):
+            # `try: from fast import f / except ImportError: def f`: the def is the fallback, both are live; keep the def,
+            # which is the one we can see into, and count the import used whenever the name is
+            self.fallbacks.add((mid, imp.local_name))
         elif imp.local_name is not None:
             scope = self.scoped_bindings.setdefault((mid, imp.scope), {}) if imp.scope else table
             scope[imp.local_name] = binding
 
-    def _resolve_one_import(self, imp: ImportDef, facts: FileFacts, spec: LanguageSpec) -> tuple[Binding | None, str | None]:
+    def _star_names(self, mid: str, seen: set[str]) -> list[str]:
+        """The names `from m import *` binds: m's `__all__`, else its public top-level names, its imports and what its own
+        `*` imports bind, followed down the chain."""
+        facts = self.facts[mid]
+        if (public := facts.attrs.get("__all__")) is not None:
+            return list(public)
+        seen.add(mid)
+        names = [q for q, sid in self.symbols[mid].items() if "." not in q and self.graph.node(sid).attrs.get("exported", True)]
+        for imp in facts.imports:
+            if imp.scope is not None:
+                continue
+            if imp.kind == "wildcard":
+                _, sub = self._resolve_one_import(imp, facts, self.specs[mid], count=False)
+                if sub in self.facts and sub not in seen:
+                    names += self._star_names(sub, seen)
+            elif imp.local_name and not imp.local_name.startswith("_") and imp.kind != "side_effect":
+                names.append(imp.local_name)
+        return names
+
+    def _resolve_one_import(self, imp: ImportDef, facts: FileFacts, spec: LanguageSpec, count: bool = True) -> tuple[Binding | None, str | None]:
+        own = module_id(facts.rel)
+        # `import json` means the standard library unless a project module is named exactly `json`: not `pkg/json/` by
+        # an alias, and never the importing module itself
+        stdlib = imp.level == 0 and imp.module.split(".")[0] in spec.stdlib_modules
+        index = self.canonical_index if stdlib else self.module_index
         for option in spec.import_targets(imp, facts):
             for cand in option.candidates:
-                target = self.module_index.get(cand)
-                if target is None:
+                target = index.get(cand)
+                if target is None or (stdlib and target == own):
                     continue
                 if option.member is None:
                     return ModuleBinding(option.binding_path or cand), target
                 return MemberBinding(cand, option.member), target
         pkg = spec.package_target(imp)
         if pkg is None:
-            self.stats["imports_unresolved"] += 1
+            self.stats["imports_unresolved"] += count
             return None, None
         name, prefix = pkg
         pid = self._ensure_package(name)
@@ -363,6 +410,7 @@ class _Builder:
         if res is None:
             self._unresolved_call(spec, call.chain)
             return
+        self._reference_via(mid, call.scope, src, res, call.line)
         target = self.graph.node(res.node_id)
         if target.kind is NodeKind.PACKAGE:
             self.stats["calls_external"] += 1
@@ -399,6 +447,7 @@ class _Builder:
                 self.used_member_names[ref.chain[-1]] += 1
             return
         self.stats["refs_resolved"] += 1
+        self._reference_via(mid, ref.scope, src, res, ref.line)
         is_pkg = self.graph.node(res.node_id).kind is NodeKind.PACKAGE
         if res.rest and not is_pkg:
             self.used_member_names[res.rest[-1]] += 1
@@ -410,6 +459,13 @@ class _Builder:
             ctxs.append(ref.context)
         if is_pkg and res.rest:
             _add_member(e, ".".join(res.rest))
+
+    def _reference_via(self, mid: str, scope: str | None, src: str, res: Resolution, line: int) -> None:
+        """`Sub.as_view()` resolves to `View.as_view`, but it names Sub: that is a use of Sub (unless Sub is the caller's own class)."""
+        if res.via is not None and res.via != src and res.via != self._enclosing_class(mid, scope):
+            e = self.graph.add_edge(Edge(src=src, dst=res.via, kind=EdgeKind.REFERENCES, line=line))
+            if "name" not in (ctxs := e.attrs.setdefault("contexts", [])):
+                ctxs.append("name")
 
     def _is_own_class(self, mid: str, scope: str | None, chain: tuple[str, ...], node_id: str) -> bool:
         """True for `self.attr` style partial resolutions that land on the enclosing class."""
@@ -446,7 +502,7 @@ class _Builder:
                     self._mark_used(mid, name, ".".join(parts[:i]))
                     return b
         b = self.bindings.get(mid, {}).get(name)
-        if not isinstance(b, DefBinding):  # an import we could not resolve still counts as used when its name is
+        if not isinstance(b, DefBinding) or (mid, name) in self.fallbacks:  # an unresolved import is still used by its name
             self._mark_used(mid, name, None)
         return b
 
@@ -545,7 +601,7 @@ class _Builder:
                 if self.graph.node(e.dst).kind is NodeKind.CLASS:
                     res = self._resolve_member(e.dst, rest, depth + 1)
                     if res is not None and res.exact:
-                        return res
+                        return Resolution(res.node_id, via=node_id)
             return Resolution(node_id, rest)
         if node.kind is NodeKind.PACKAGE:
             return Resolution(node_id, rest)
