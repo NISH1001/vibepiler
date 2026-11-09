@@ -105,7 +105,7 @@ class EntryPointsPass(Pass):
         kept = [
             n
             for n in symbols
-            if n.id in reachable and not n.attrs.get("is_root") and not is_dunder(n.name) and n.name in used_names
+            if n.id in reachable and not n.attrs.get("is_root") and not is_dunder(n.name) and (n.name in used_names or n.attrs.get("escaped"))
             and not any(e.src in reachable for e in g.in_edges(n.id, FLOW_EDGES))
             and not (n.module and g.node(n.module).attrs.get("is_test"))
         ]
@@ -123,7 +123,26 @@ def _successors(g, node: Node, used_names) -> list[str]:  # noqa: ANN001
     elif node.kind is NodeKind.CLASS:
         # a live class keeps alive the methods that are called by name anywhere
         out += [c.id for c in g.children(node.id) if is_dunder(c.name) or c.name in used_names or c.attrs.get("is_root")]
+        out += escaped_methods(g, node)
     elif node.kind is NodeKind.MODULE and node.attrs.get("is_test"):
         out += [c.id for c in g.children(node.id)]  # a test module runs everything in it
     return out
 
+
+
+def escaped_methods(g, cls: Node) -> list[str]:  # noqa: ANN001
+    """The public methods code we cannot see may call on an instance of `cls` handed to it: its own and its ancestors'."""
+    if not cls.attrs.get("escapes") or g.has_external_base(cls.id):
+        return []  # a framework base already keeps every method of the class (dead-code's rule for overrides)
+    out, stack, seen = [], [cls.id], set()
+    while stack:
+        cid = stack.pop()
+        if cid in seen:
+            continue
+        seen.add(cid)
+        for m in g.children(cid):
+            if m.kind is NodeKind.METHOD and not m.name.startswith("_"):
+                m.attrs["escaped"] = True
+                out.append(m.id)
+        stack += [e.dst for e in g.out_edges(cid, EdgeKind.INHERITS) if g.node(e.dst).kind is NodeKind.CLASS]
+    return out
