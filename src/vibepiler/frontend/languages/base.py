@@ -109,6 +109,8 @@ class LanguageSpec(ABC):
     builtins: frozenset[str] = frozenset()
     #: receiver names meaning "the enclosing class instance"
     self_names: frozenset[str] = frozenset()
+    #: top-level names an absolute import means the standard library by, unless a project module has that exact name
+    stdlib_modules: frozenset[str] = frozenset()
 
     def is_test_file(self, rel: str) -> bool:
         return False

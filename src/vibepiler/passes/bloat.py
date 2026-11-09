@@ -15,6 +15,7 @@ from vibepiler.passes.manifests import (
     is_py_stdlib,
     js_package_for_specifier,
     normalize_py,
+    same_py_package,
     PY_IMPORT_TO_DIST,
     PY_TOOL_PACKAGES,
     governing,
@@ -58,11 +59,17 @@ class BloatPass(Pass):
         local_roots = {x.name.split(".")[0] for x in g.nodes(NodeKind.MODULE)} | {a.split(".")[0] for x in g.nodes(NodeKind.MODULE) for a in x.attrs.get("aliases", [])}
         owners = {(lang, f): governing(manifests, lang, f) for lang, by_key in imported.items() for fs in by_key.values() for f in fs}
         diags: list[Diagnostic] = []
+        reported: set[tuple[str, str]] = set()
         for m in manifests:
             # only the imports of files this manifest governs: a frontend/ package.json answers for frontend/ alone
             used = {k: own for k, fs in imported[m.language].items() if (own := {f for f in fs if any(o is m for o in owners[(m.language, f)])})}
             diags += self._unused(m, used)
-            diags += self._undeclared(m, used, inline, local_roots)
+            if (m.language, m.dir) in reported:
+                continue  # pyproject.toml, requirements.txt and test_requirements.txt in one folder declare together
+            reported.add((m.language, m.dir))
+            siblings = [o for o in manifests if o.language == m.language and o.dir == m.dir]
+            declared = {k for o in siblings for k in self._declared(o)}
+            diags += self._undeclared(m, used, declared, inline, local_roots)
         return diags
 
     @staticmethod
@@ -74,6 +81,8 @@ class BloatPass(Pass):
             if dst.kind is not NodeKind.PACKAGE:
                 continue
             lang = "python" if src.language == "python" else "javascript"
+            if lang == "python" and is_py_stdlib(dst.name.split(".")[0]):
+                continue  # before the name is lowercased: `cProfile` is the standard library, `cprofile` is not
             key = normalize_py(PY_IMPORT_TO_DIST.get(dst.name, dst.name)) if lang == "python" else (js_package_for_specifier(dst.name) or dst.name)
             imported[lang].setdefault(key, set()).add(src.file or "")
         return imported
@@ -89,7 +98,7 @@ class BloatPass(Pass):
             return is_js_tool_package(name)
         if key in PY_TOOL_PACKAGES or key.startswith(("pytest-", "types-", "sphinx-", "mkdocs-", "flake8-", "django-", "pre-commit")):
             return True
-        return any(normalize_py(u).replace("-", "") == key.replace("-", "") for u in used)
+        return any(same_py_package(key, normalize_py(u)) for u in used)
 
     def _unused(self, m, used) -> list[Diagnostic]:  # noqa: ANN001
         out = []
@@ -119,11 +128,11 @@ class BloatPass(Pass):
             return key not in declared and not key.startswith("node:")
         if is_py_stdlib(key) or key in local_roots:  # local: a module name we could not resolve (`import utils` from a script dir)
             return False
-        return key not in declared and not any(k.replace("-", "") == key.replace("-", "") for k in declared)
+        return key not in declared and not any(same_py_package(k, key) for k in declared)
 
-    def _undeclared(self, m, used, inline: dict[str, set[str]], local_roots: set[str]) -> list[Diagnostic]:  # noqa: ANN001
+    def _undeclared(self, m, used, declared: set[str], inline: dict[str, set[str]], local_roots: set[str]) -> list[Diagnostic]:  # noqa: ANN001
+        """Imports no manifest in m's folder declares; `declared` is what they declare together."""
         out = []
-        declared = set(self._declared(m))
         for key, importers in sorted(used.items()):
             importers = {f for f in importers if key not in inline.get(f, ())}
             if not importers or not self._owes(m, key, declared, local_roots):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 from tree_sitter import Node
@@ -60,8 +61,7 @@ _SKIP_IDENT_PARENTS = {
     "as_pattern_target": None,
     "global_statement": None,
     "nonlocal_statement": None,
-    "except_clause": None,  # `except E as e` -> `e`; the E is an identifier child too but we handle below
-}
+}  # `except E as e`: the `e` sits under as_pattern_target, skipped above; the `E` is a reference
 
 
 class PythonSpec(PythonFlow, LanguageSpec):
@@ -164,6 +164,7 @@ class PythonSpec(PythonFlow, LanguageSpec):
         {"print", "len", "range", "str", "int", "float", "list", "dict", "set", "tuple", "open", "super", "isinstance", "type", "Exception"}
     )
     self_names = frozenset({"self", "cls"})
+    stdlib_modules = frozenset(sys.stdlib_module_names)
 
     def _absolute_base(self, imp: ImportDef, facts: FileFacts) -> str:
         if imp.level == 0:
@@ -484,6 +485,10 @@ class _Extractor(DecoratorWalk):
             for arg in sup.named_children:
                 if arg.type == "keyword_argument":
                     continue  # metaclass=...
+                if arg.type == "subscript":  # `Base[T]`: the base is the subscripted value, its arguments are references
+                    for sub in arg.children_by_field_name("subscript"):
+                        self.visit(sub, scope, None)
+                    arg = arg.child_by_field_name("value") or arg
                 chain = self.loose_chain_of(arg)
                 if chain is not None:
                     bases.append(".".join(chain))

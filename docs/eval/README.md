@@ -26,6 +26,7 @@ Machine: Apple M3 Max, 14 cores, 36 GB, CPU only. The JS/TS timings ran while ot
 ## What does not, yet
 
 - **Dead code where the tools disagree.** All 15 Python findings only vibepiler reported were wrong, and 14 of 15 JS/TS ones were. vulture was right on 4 of 15 of its own disagreements, and knip on 12 of 15. Most of vibepiler's misses are linker gaps: stdlib imports resolved to same-named project modules, exceptions used only in an `except` clause, re-exports through `export *` or chained `import *`, tsconfig path aliases, workspace packages, package.json `bin` entries. Both reports list each bug with file:line evidence; the Python ones also have a minimal reproduction in [scripts/eval/python/repro/](../../scripts/eval/python/repro/).
+- *Since then:* the Python bugs A to N are fixed (see the note under the bug table in [python/RESULTS.md](python/RESULTS.md)); 8 of the 15 Python false positives are gone and the 7 left are dynamic dispatch. The JS/TS gaps are not fixed yet.
 - **Large repos.** On django (410k lines), vibepiler takes 36.7 s with a 2.6 GB peak, where the toolchain takes 23.2 s. The time goes to parsing in one process, two walks over every function body (complexity, liveness) and a 129 MB `ir.json`.
 - **Kinds no compared tool reports** (wrappers, single-implementation interfaces, class-as-function, single-use helpers, test-only code; about 1,800 in Python and 770 in JS/TS) have not been hand-checked yet.
 

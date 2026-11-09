@@ -193,6 +193,8 @@ Where the tools disagree on dead code, **neither side is reliable, and vibepiler
 | M | The stdlib check runs on the lowercased name, so `cProfile` becomes the undeclared dependency `cprofile` | gpython `scripts/bench.py:12`; cause at `passes/bloat.py:120` + `manifests.py:84,200` |
 | N | `test_requirements.txt` is not recognized as a manifest (the glob is `requirements*.txt`) | black: pytest "undeclared" |
 
+**Since this evaluation:** A to N are fixed on `feature/linker-fixes`, each with a test in `tests/test_eval_fixes.py`. Rerun on the same pinned corpus against the same vulture 2.16 and ruff 0.17.4: 8 of the 15 hand-labelled vibepiler-only dead definitions are no longer reported, and the 7 left are the dynamic cases (getattr visitors, `import_module` plus getattr, a template-tag library, a duck-typed stdlib protocol, the celery CLI, example scripts without a `__main__` guard). Across the corpus, vibepiler-only dead definitions go from 985 to 870, unused imports ruff does not report from 232 to 102, undeclared dependencies from 281 to 94, and unused dependencies from 103 to 32; django's false 161-module cycle is gone, and its time is unchanged (34 s). Shared dead definitions with vulture drop from 512 to 451 because Textual hooks and black's `visit_*` methods, which both tools reported, are now linked. The other tables in this report are still the 0.4.5 numbers.
+
 Smaller or design-level issues:
 - Example scripts with top-level code and no `__main__` guard are `unreachable-module` (rich `examples/`: 38 modules).
 - Methods of any class with an external base are never reported. This hides a genuinely dead `RequestsCookieJar._find` that vulture finds.
