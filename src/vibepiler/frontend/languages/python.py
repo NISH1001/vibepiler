@@ -36,9 +36,21 @@ def is_migration_file(rel: str) -> bool:
 
 
 def is_framework_loaded(rel: str) -> bool:
-    """Django loads `templatetags/*.py` for `{% load name %}` and `management/commands/*.py` for `manage.py name`."""
-    dirs = Path(rel).parts[:-1]
+    """Django loads `templatetags/*.py` for `{% load name %}`, `management/commands/*.py` for `manage.py name`, and
+    `<ENGINE>.base` for a database backend its settings name (`backends/mysql/base.py`)."""
+    p = Path(rel)
+    dirs = p.parts[:-1]
+    if p.name == "base.py" and len(dirs) >= 2 and dirs[-2] == "backends":
+        return True
     return "templatetags" in dirs or any(a == "management" and b == "commands" for a, b in zip(dirs, dirs[1:]))
+
+
+ASV_PREFIXES = ("time_", "timeraw_", "mem_", "peakmem_", "track_")  # what airspeed velocity runs in `benchmarks/`
+ASV_HOOKS = {"setup", "teardown", "setup_cache"}
+
+
+def is_benchmark_file(rel: str) -> bool:
+    return "benchmarks" in Path(rel).parts[:-1]
 
 
 DYNAMIC_IMPORTS = {"import_module", "__import__", "importorskip"}  # importlib.import_module("a.b"), __import__("a.b"), pytest.importorskip("a")
@@ -841,6 +853,8 @@ class _Extractor(DecoratorWalk):
                 self.facts.entry_hints.append(EntryHint("hook", d.qualname, line, dec))
         if self.facts.is_test and (d.name.startswith("test") or d.name.startswith("Test")):
             self.facts.entry_hints.append(EntryHint("test", d.qualname, line))
+        elif d.kind is NodeKind.CLASS and any(b.split(".")[-1].endswith("TestCase") for b in d.bases):
+            self.facts.entry_hints.append(EntryHint("test", d.qualname, line))  # unittest runs it whatever the file is called
         if d.parent_qualname is None and d.name in ENTRY_FUNCTION_NAMES and d.kind is NodeKind.FUNCTION:
             self.facts.entry_hints.append(EntryHint("main", d.qualname, line))
         if d.name.startswith("__") and d.name.endswith("__"):
@@ -848,12 +862,22 @@ class _Extractor(DecoratorWalk):
 
     def runs_code(self) -> bool:
         """Does importing or running this file call something at the top level (`print(...)`, `app = create_app()`)?
-        A docstring, constants and definitions do not count; nor does anything under `if`, `__main__` guard included."""
-        for stmt in self.sf.tree.root_node.named_children:
+        A docstring, constants and definitions do not count; nor does anything under `if`, `__main__` guard included.
+        A `try` around the top level (`try: import x / except ImportError: ... / else: main()`) does not hide it."""
+        for stmt in _top_level(self.sf.tree.root_node):
             # the grammar gives a top-level call or assignment bare or wrapped in an expression_statement
             if stmt.type in ("expression_statement", "call", "assignment", "await") and (stmt.type == "call" or any(n.type == "call" for n in _descendants(stmt))):
                 return True
         return False
+
+    def note_benchmarks(self) -> None:
+        """asv runs `time_*`, `mem_*`, ... functions and methods in `benchmarks/`, with their class's `setup`/`teardown`."""
+        runs = {d.qualname for d in self.facts.defs if d.kind is not NodeKind.CLASS and d.name.startswith(ASV_PREFIXES)}
+        classes = {d.parent_qualname for d in self.facts.defs if d.qualname in runs and d.parent_qualname}
+        for d in self.facts.defs:
+            hook = d.name in ASV_HOOKS and (d.parent_qualname in classes or d.parent_qualname is None)
+            if d.qualname in runs or d.qualname in classes or hook:
+                self.facts.entry_hints.append(EntryHint("benchmark", d.qualname, d.start_line))
 
     def finish(self) -> None:
         if self.runs_code():
@@ -862,6 +886,8 @@ class _Extractor(DecoratorWalk):
             for d in self.facts.defs:
                 if d.parent_qualname is None and not d.name.startswith("_"):
                     self.facts.entry_hints.append(EntryHint("framework", d.qualname, d.start_line))
+        if is_benchmark_file(self.facts.rel):
+            self.note_benchmarks()
         if is_migration_file(self.facts.rel):
             self.facts.attrs["is_migration"] = True
             for d in self.facts.defs:
@@ -873,6 +899,20 @@ class _Extractor(DecoratorWalk):
             for d in self.facts.defs:
                 if d.parent_qualname is None:
                     d.exported = d.name in allowed or d.name == "__all__"
+
+
+def _top_level(root: Node):
+    """The module's statements, with those inside a top-level `try` (its body, handlers, `else` and `finally`)."""
+    stack = list(reversed(root.named_children))
+    while stack:
+        stmt = stack.pop()
+        if stmt.type != "try_statement":
+            yield stmt
+            continue
+        for part in reversed(stmt.named_children):
+            block = part if part.type == "block" else next((c for c in part.named_children if c.type == "block"), None)
+            if block is not None:
+                stack += reversed(block.named_children)
 
 
 def _string_type(text: str) -> tuple[str, ...] | None:

@@ -147,6 +147,7 @@ class _Builder:
             self._resolve_imports()
             self._resolve_inheritance()
             self._index_types()
+            self._mark_registered()
         with timed("link: calls and references resolved"):
             self._resolve_calls_and_refs()
         self._finalize_meta()
@@ -265,8 +266,10 @@ class _Builder:
             self.import_records[mid] = records
             for imp in facts.imports:
                 binding, target = self._resolve_one_import(imp, facts, spec)
-                if imp.kind == "by_name" and target is None:
-                    continue  # a dotted string that names none of our modules is just text
+                if imp.kind == "by_name":
+                    self._link_named_symbol(mid, imp)
+                    if target is None:
+                        continue  # a dotted string that names none of our modules is just text
                 records.append({"local_name": imp.local_name, "module": imp.module, "name": imp.name, "alias": imp.alias, "line": imp.line, "kind": imp.kind, "scope": imp.scope, "resolved": target, "used": False})
                 if target is not None:
                     self._link_import(mid, spec, imp, target)
@@ -289,6 +292,38 @@ class _Builder:
                     entry = self.graph.node(sid).attrs.setdefault("entry", [])
                     if "loaded_by_name" not in entry:
                         entry.append("loaded_by_name")
+
+    def _link_named_symbol(self, mid: str, imp: ImportDef) -> None:
+        """`"django.template.context_processors.debug"` in settings: a dotted string ending in a top-level function or
+        class of ours names it for a framework that imports it by that name, so it is a use."""
+        module, _, name = imp.module.rpartition(".")
+        target = self.module_index.get(module)
+        sid = self.symbols.get(target, {}).get(name) if target is not None else None
+        if sid is None:
+            return
+        e = self.graph.add_edge(Edge(src=self._scope_node(mid, imp.scope), dst=sid, kind=EdgeKind.REFERENCES, line=imp.line))
+        if "string" not in (ctxs := e.attrs.setdefault("contexts", [])):
+            ctxs.append("string")
+
+    def _mark_registered(self) -> None:
+        """`@app.template_filter("x")`, `@handlers.append`: a decorator reached through an object (an instance, a
+        parameter, a local) hands the function to it, which keeps it to call later. One reached through a module
+        (`@functools.cache`, `@utils.timed`) is taken to wrap it, as before."""
+        for mid, facts in self.facts.items():
+            if facts.language != "python":
+                continue
+            for d in facts.defs:
+                for dec in d.decorators:
+                    chain = tuple(dec.split("."))
+                    if len(chain) < 2 or not all(part.isidentifier() for part in chain):
+                        continue
+                    head = self._resolve_chain(mid, d.parent_qualname, chain[:1])
+                    if head is not None and self.graph.node(head.node_id).kind in (NodeKind.MODULE, NodeKind.PACKAGE):
+                        continue
+                    entry = self.graph.node(self.symbols[mid][d.qualname]).attrs.setdefault("entry", [])
+                    if "registered" not in entry:
+                        entry.append("registered")
+                    break
 
     def _mark_public_api(self, mid: str, facts: FileFacts) -> None:
         """What a top-level Python package re-exports (`pkg/__init__.py`, narrowed by `__all__`, through any chain of

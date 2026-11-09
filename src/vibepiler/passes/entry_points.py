@@ -114,15 +114,22 @@ class EntryPointsPass(Pass):
         return kept
 
 
+MEMBER_KINDS = (NodeKind.METHOD, NodeKind.VARIABLE)
+
+
 def _successors(g, node: Node, used_names) -> list[str]:  # noqa: ANN001
-    """What a live node keeps alive: its flow edges' targets, plus three rules the edges do not carry."""
+    """What a live node keeps alive: its flow edges' targets, plus the rules the edges do not carry."""
     out = [e.dst for e in g.out_edges(node.id, FLOW_EDGES)]
-    if node.kind is NodeKind.METHOD and (owner := g.parent(node.id)) is not None and owner.kind is NodeKind.CLASS:
-        # a call resolved to a base-class method reaches every override, at any depth below: virtual dispatch
-        out += [c.id for sub in g.subclasses(owner.id) for c in g.children(sub) if c.kind is NodeKind.METHOD and c.name == node.name]
+    if node.kind in MEMBER_KINDS and (owner := g.parent(node.id)) is not None and owner.kind is NodeKind.CLASS:
+        # a use resolved to a base-class member reaches every override, at any depth below: virtual dispatch.
+        # An override may change kind: `from_text = False` in the base, a `@cached_property from_text` below.
+        out += [c.id for sub in g.subclasses(owner.id) for c in g.children(sub) if c.kind in MEMBER_KINDS and c.name == node.name]
     elif node.kind is NodeKind.CLASS:
         # a live class keeps alive the methods that are called by name anywhere
         out += [c.id for c in g.children(node.id) if is_dunder(c.name) or c.name in used_names or c.attrs.get("is_root")]
+        if g.has_external_base(node.id):
+            # the framework it extends calls its methods (Textual's `on_mount`): what they call is live too
+            out += [c.id for c in g.children(node.id) if c.kind is NodeKind.METHOD]
         out += escaped_methods(g, node)
     elif node.kind is NodeKind.MODULE and node.attrs.get("is_test"):
         out += [c.id for c in g.children(node.id)]  # a test module runs everything in it
@@ -131,9 +138,11 @@ def _successors(g, node: Node, used_names) -> list[str]:  # noqa: ANN001
 
 
 def escaped_methods(g, cls: Node) -> list[str]:  # noqa: ANN001
-    """The public methods code we cannot see may call on an instance of `cls` handed to it: its own and its ancestors'."""
-    if not cls.attrs.get("escapes") or g.has_external_base(cls.id):
-        return []  # a framework base already keeps every method of the class (dead-code's rule for overrides)
+    """The public methods code we cannot see may call on an instance of `cls` handed to it: its own and its ancestors'.
+    A class the package exports as public API (`requests.Session`) is handed to every user of the library."""
+    public = "public_api" in cls.attrs.get("entry", ())
+    if not (public or cls.attrs.get("escapes")) or g.has_external_base(cls.id):
+        return []  # a framework base already keeps every method of the class
     out, stack, seen = [], [cls.id], set()
     while stack:
         cid = stack.pop()
@@ -142,7 +151,8 @@ def escaped_methods(g, cls: Node) -> list[str]:  # noqa: ANN001
         seen.add(cid)
         for m in g.children(cid):
             if m.kind is NodeKind.METHOD and not m.name.startswith("_"):
-                m.attrs["escaped"] = True
+                if not public:
+                    m.attrs["escaped"] = True  # a guess about unseen code: the unverified band; public API is not a guess
                 out.append(m.id)
         stack += [e.dst for e in g.out_edges(cid, EdgeKind.INHERITS) if g.node(e.dst).kind is NodeKind.CLASS]
     return out
