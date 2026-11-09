@@ -54,15 +54,12 @@ class BloatPass(Pass):
         if not manifests:
             return []
         imported = self._imported_packages(g)
-        # a standalone script may declare its own dependencies (PEP 723); those imports owe the manifest nothing
-        inline = {f.file.rel: deps for f in program.facts.values() if f.file.language == "python" and (deps := script_dependencies(f.file.source.decode("utf-8", "replace")))}
-        local_roots = {x.name.split(".")[0] for x in g.nodes(NodeKind.MODULE)} | {a.split(".")[0] for x in g.nodes(NodeKind.MODULE) for a in x.attrs.get("aliases", [])}
+        inline, local_roots = _inline_dependencies(program), _local_roots(g)
         owners = {(lang, f): governing(manifests, lang, f) for lang, by_key in imported.items() for fs in by_key.values() for f in fs}
         diags: list[Diagnostic] = []
         reported: set[tuple[str, str]] = set()
         for m in manifests:
-            # only the imports of files this manifest governs: a frontend/ package.json answers for frontend/ alone
-            used = {k: own for k, fs in imported[m.language].items() if (own := {f for f in fs if any(o is m for o in owners[(m.language, f)])})}
+            used = _governed_imports(m, imported[m.language], owners)
             diags += self._unused(m, used)
             if (m.language, m.dir) in reported:
                 continue  # pyproject.toml, requirements.txt and test_requirements.txt in one folder declare together
@@ -229,3 +226,27 @@ def _only_handler(clause) -> bool:  # noqa: ANN001
     """No other except, catch, else or finally beside this clause on its try."""
     try_node = clause.parent
     return try_node is None or sum(c.type in ("except_clause", "catch_clause", "finally_clause", "else_clause") for c in try_node.named_children) == 1
+
+
+def _inline_dependencies(program: Program) -> dict[str, set[str]]:
+    """File -> what its PEP 723 block declares: a standalone script's imports owe the project manifest nothing."""
+    out = {}
+    for f in program.facts.values():
+        if f.file.language == "python" and (deps := script_dependencies(f.file.source.decode("utf-8", "replace"))):
+            out[f.file.rel] = deps
+    return out
+
+
+def _local_roots(g) -> set[str]:  # noqa: ANN001
+    """Top-level names of the project's own modules, aliases included."""
+    modules = list(g.nodes(NodeKind.MODULE))
+    return {x.name.split(".")[0] for x in modules} | {a.split(".")[0] for x in modules for a in x.attrs.get("aliases", [])}
+
+
+def _governed_imports(m, imported: dict[str, set[str]], owners: dict) -> dict[str, set[str]]:  # noqa: ANN001
+    """Package -> the files importing it that manifest `m` answers for: a frontend/ package.json answers for frontend/ alone."""
+    used = {}
+    for key, files in imported.items():
+        if own := {f for f in files if any(o is m for o in owners[(m.language, f)])}:
+            used[key] = own
+    return used

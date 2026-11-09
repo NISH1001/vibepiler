@@ -780,37 +780,41 @@ class _Builder:
         return None
 
     def _resolve_member(self, node_id: str, rest: tuple[str, ...], depth: int) -> Resolution | None:
+        """`rest` looked up inside a module or class; on anything else (a package, a function) it stays unresolved."""
         if not rest:
             return Resolution(node_id)
         if depth > 8:
             return Resolution(node_id, rest)
-        node = self.graph.node(node_id)
-        if node.kind is NodeKind.MODULE:
-            sid = self.symbols.get(node_id, {}).get(rest[0])
-            if sid is None and rest[0] == "default":  # JS `import X from './m'` -> the module's default export
-                sid = next((s for s in self.symbols.get(node_id, {}).values() if self.graph.node(s).attrs.get("default_export")), None)
-            if sid is not None:
-                return self._resolve_member(sid, rest[1:], depth + 1)
-            # re-export through that module's own imports (package __init__ style)
-            b = self.bindings.get(node_id, {}).get(rest[0])
-            if b is not None and not isinstance(b, DefBinding):
-                res = self._resolve_binding(b, rest[1:], depth + 1)
-                if res is not None:
-                    return res
-            return Resolution(node_id, rest)
-        if node.kind is NodeKind.CLASS:
-            for child in self.graph.children(node_id):
-                if child.name == rest[0]:
-                    return self._resolve_member(child.id, rest[1:], depth + 1)
-            for e in self.graph.out_edges(node_id, EdgeKind.INHERITS):
-                if self.graph.node(e.dst).kind is NodeKind.CLASS:
-                    res = self._resolve_member(e.dst, rest, depth + 1)
-                    if res is not None and res.exact:
-                        return Resolution(res.node_id, via=node_id)
-            return Resolution(node_id, rest)
-        if node.kind is NodeKind.PACKAGE:
-            return Resolution(node_id, rest)
+        kind = self.graph.node(node_id).kind
+        if kind is NodeKind.MODULE:
+            return self._module_member(node_id, rest, depth)
+        if kind is NodeKind.CLASS:
+            return self._class_member(node_id, rest, depth)
         return Resolution(node_id, rest)
+
+    def _module_member(self, mid: str, rest: tuple[str, ...], depth: int) -> Resolution:
+        """A top-level definition (`default`: JS `import X from './m'` takes the default export), else a name the module
+        re-exports through its own imports (package `__init__` style)."""
+        table = self.symbols.get(mid, {})
+        sid = table.get(rest[0])
+        if sid is None and rest[0] == "default":
+            sid = next((s for s in table.values() if self.graph.node(s).attrs.get("default_export")), None)
+        if sid is not None:
+            return self._resolve_member(sid, rest[1:], depth + 1)
+        b = self.bindings.get(mid, {}).get(rest[0])
+        if b is not None and not isinstance(b, DefBinding) and (res := self._resolve_binding(b, rest[1:], depth + 1)) is not None:
+            return res
+        return Resolution(mid, rest)
+
+    def _class_member(self, cls: str, rest: tuple[str, ...], depth: int) -> Resolution:
+        """A member the class defines, else one an ancestor defines (`via` remembers it was looked up on `cls`)."""
+        for child in self.graph.children(cls):
+            if child.name == rest[0]:
+                return self._resolve_member(child.id, rest[1:], depth + 1)
+        for e in self.graph.out_edges(cls, EdgeKind.INHERITS):
+            if self.graph.node(e.dst).kind is NodeKind.CLASS and (res := self._resolve_member(e.dst, rest, depth + 1)) is not None and res.exact:
+                return Resolution(res.node_id, via=cls)
+        return Resolution(cls, rest)
 
     # ------------------------------------------------------------------ finish
     def _finalize_meta(self) -> None:
