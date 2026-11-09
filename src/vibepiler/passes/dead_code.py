@@ -111,6 +111,8 @@ class DeadCodePass(Pass):
             mod = g.node(n.module) if n.module else None
             if mod and any(tag in (mod.file or "") for tag in ("settings", "config", "constants", "__init__")):
                 return True
+            if mod and "script" in mod.attrs.get("entry", []) and g.parent(n.id) is mod:
+                return True  # `celery_app = ...` in a script: what `celery -A make_celery` or gunicorn reads from it
         if n.kind is NodeKind.METHOD and n.name in used_names:
             return True
         return parent is not None and parent.kind is NodeKind.CLASS and g.has_external_base(parent.id)

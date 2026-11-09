@@ -35,6 +35,12 @@ def is_migration_file(rel: str) -> bool:
     return bool(MIGRATION_DIRS & set(Path(rel).parts[:-1]))  # alembic/env.py and alembic/versions/*, */migrations/*
 
 
+def is_framework_loaded(rel: str) -> bool:
+    """Django loads `templatetags/*.py` for `{% load name %}` and `management/commands/*.py` for `manage.py name`."""
+    dirs = Path(rel).parts[:-1]
+    return "templatetags" in dirs or any(a == "management" and b == "commands" for a, b in zip(dirs, dirs[1:]))
+
+
 DYNAMIC_IMPORTS = {"import_module", "__import__", "importorskip"}  # importlib.import_module("a.b"), __import__("a.b"), pytest.importorskip("a")
 
 ENTRY_FUNCTION_NAMES = {"main", "handler", "lambda_handler", "run", "serve", "cli", "app", "application"}
@@ -203,7 +209,7 @@ class PythonSpec(PythonFlow, LanguageSpec):
 
     def is_entry_module(self, rel: str) -> bool:
         name = Path(rel).name
-        return is_migration_file(rel) or name in {"__init__.py", "__main__.py", "conftest.py", "setup.py", "manage.py", "wsgi.py", "asgi.py", "settings.py", "urls.py", "app.py", "main.py", "cli.py", "server.py"}
+        return is_migration_file(rel) or is_framework_loaded(rel) or name in {"__init__.py", "__main__.py", "conftest.py", "setup.py", "manage.py", "wsgi.py", "asgi.py", "settings.py", "urls.py", "app.py", "main.py", "cli.py", "server.py"}
 
     # ---------------------------------------------------------------- AST hooks
     def body_statements(self, def_node: Node, sf: SourceFile) -> list[Node]:
@@ -375,6 +381,9 @@ class _Extractor(DecoratorWalk):
         if t == "string" and self.in_annotation(node):
             self.visit_string_annotation(node, scope)
             return
+        if t == "string" and (name := self.module_string(node)):
+            # `compiler_module = "db.mysql"`, INSTALLED_APPS: a module the program may load by its name (kept only if it is ours)
+            self.facts.imports.append(ImportDef(module=name, line=self.spec.line(node), kind="by_name", scope=scope))
         if t == "if_statement" and self.is_type_checking_guard(node):
             self.visit_type_checking(node, scope, class_scope)
             return
@@ -585,6 +594,8 @@ class _Extractor(DecoratorWalk):
             chain = self.loose_chain_of(fn)
             if chain is not None:
                 self.facts.calls.append(CallSite(chain=chain, line=self.spec.line(node), scope=scope, args=nargs))
+                if chain == ("getattr",) and (prefix := self.dispatch_prefix(args)):
+                    self.facts.dispatches.append((scope, prefix))
                 if chain[-1] in DYNAMIC_IMPORTS and (target := self.literal_module(args)):
                     # import_module("a.b") / __import__("a.b") with a literal name is an import the program makes at run time
                     self.facts.imports.append(ImportDef(module=target, line=self.spec.line(node), kind="side_effect", scope=scope))
@@ -602,10 +613,39 @@ class _Extractor(DecoratorWalk):
         # generator/comprehension arguments etc. are handled by the generic visit above
 
     # --- helpers --------------------------------------------------------------
+    def dispatch_prefix(self, args: Node | None) -> str | None:
+        """`getattr(self, f"visit_{t}")` or `getattr(self, "do_" + cmd)`: the literal prefix of a method name looked up
+        on the instance itself; None for anything else."""
+        named = [a for a in args.named_children if a.type != "comment"] if args is not None else []
+        if len(named) < 2 or named[0].type != "identifier" or self.text(named[0]) not in self.spec.self_names:
+            return None
+        name = named[1]
+        if name.type == "binary_operator" and name.child_by_field_name("operator") is not None and self.text(name.child_by_field_name("operator")) == "+":
+            name = name.child_by_field_name("left")
+            if name is None or name.type != "string" or any(c.type == "interpolation" for c in name.children):
+                return None
+            prefix = "".join(self.text(c) for c in name.children if c.type == "string_content")
+        elif name.type == "string" and any(c.type == "interpolation" for c in name.children):
+            first = next((c for c in name.children if c.type in ("string_content", "interpolation")), None)
+            prefix = self.text(first) if first is not None and first.type == "string_content" else ""
+        else:
+            return None
+        return prefix if len(prefix) >= 2 and prefix.isidentifier() else None
+
     def literal_module(self, args: Node | None) -> str | None:
         """The first argument when it is a plain absolute module name in a string literal (no f-string, no relative dots)."""
         first = args.named_children[0] if args is not None and args.named_children else None
-        if first is None or first.type != "string" or any(c.type == "interpolation" for c in first.children):
+        return self.module_literal(first) if first is not None else None
+
+    def module_string(self, node: Node) -> str | None:
+        """A dotted module name (`"a.b"`, at least one dot) as a whole string literal, not a docstring."""
+        if node.parent is not None and node.parent.type in ("expression_statement", "module", "block"):
+            return None  # a docstring, or a bare string statement
+        name = self.module_literal(node)
+        return name if name is not None and "." in name else None
+
+    def module_literal(self, first: Node) -> str | None:
+        if first.type != "string" or any(c.type == "interpolation" for c in first.children):
             return None
         text = self.text(first)
         if not text[:1] in ("'", '"'):
@@ -663,7 +703,22 @@ class _Extractor(DecoratorWalk):
         if d.name.startswith("__") and d.name.endswith("__"):
             self.facts.entry_hints.append(EntryHint("dunder", d.qualname, line))
 
+    def runs_code(self) -> bool:
+        """Does importing or running this file call something at the top level (`print(...)`, `app = create_app()`)?
+        A docstring, constants and definitions do not count; nor does anything under `if`, `__main__` guard included."""
+        for stmt in self.sf.tree.root_node.named_children:
+            # the grammar gives a top-level call or assignment bare or wrapped in an expression_statement
+            if stmt.type in ("expression_statement", "call", "assignment", "await") and (stmt.type == "call" or any(n.type == "call" for n in _descendants(stmt))):
+                return True
+        return False
+
     def finish(self) -> None:
+        if self.runs_code():
+            self.facts.attrs["runs_code"] = True
+        if is_framework_loaded(self.facts.rel):  # Django reads `register`, the tags it registers and `Command` by name
+            for d in self.facts.defs:
+                if d.parent_qualname is None and not d.name.startswith("_"):
+                    self.facts.entry_hints.append(EntryHint("framework", d.qualname, d.start_line))
         if is_migration_file(self.facts.rel):
             self.facts.attrs["is_migration"] = True
             for d in self.facts.defs:
@@ -684,6 +739,14 @@ def _ancestors(node: Node, depth: int):
             return
         yield cur
         cur = cur.parent
+
+
+def _descendants(node: Node):
+    stack = list(node.named_children)
+    while stack:
+        n = stack.pop()
+        yield n
+        stack.extend(n.named_children)
 
 
 def _starts_with_string(block: Node | None) -> bool:

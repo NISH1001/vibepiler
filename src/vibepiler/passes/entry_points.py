@@ -71,6 +71,8 @@ class EntryPointsPass(Pass):
                 kinds.append("test_module")
             if n.attrs.get("is_entry_module"):
                 kinds.append("entry_module")
+            if n.attrs.get("runs_code") and "." not in (n.name or "") and n.language == "python":
+                kinds.append("script")  # outside any package and it calls things at the top level: run as `python x.py`
         if n.kind is not NodeKind.MODULE and n.kind is not NodeKind.PACKAGE:
             mod = g.node(n.module) if n.module else None
             exports_are_roots = cfg.treat_exports_as_roots
@@ -117,7 +119,7 @@ def _successors(g, node: Node, used_names) -> list[str]:  # noqa: ANN001
     out = [e.dst for e in g.out_edges(node.id, FLOW_EDGES)]
     if node.kind is NodeKind.METHOD and (owner := g.parent(node.id)) is not None and owner.kind is NodeKind.CLASS:
         # a call resolved to a base-class method reaches every override, at any depth below: virtual dispatch
-        out += [c.id for sub in _descendants(g, owner.id) for c in g.children(sub) if c.kind is NodeKind.METHOD and c.name == node.name]
+        out += [c.id for sub in g.subclasses(owner.id) for c in g.children(sub) if c.kind is NodeKind.METHOD and c.name == node.name]
     elif node.kind is NodeKind.CLASS:
         # a live class keeps alive the methods that are called by name anywhere
         out += [c.id for c in g.children(node.id) if is_dunder(c.name) or c.name in used_names or c.attrs.get("is_root")]
@@ -125,15 +127,3 @@ def _successors(g, node: Node, used_names) -> list[str]:  # noqa: ANN001
         out += [c.id for c in g.children(node.id)]  # a test module runs everything in it
     return out
 
-
-def _descendants(g, cls_id: str) -> list[str]:  # noqa: ANN001
-    """Every class that inherits from `cls_id`, directly or not."""
-    seen = {cls_id}
-    stack = [cls_id]
-    while stack:
-        for e in g.in_edges(stack.pop(), EdgeKind.INHERITS):
-            if e.src not in seen:
-                seen.add(e.src)
-                stack.append(e.src)
-    seen.discard(cls_id)
-    return list(seen)

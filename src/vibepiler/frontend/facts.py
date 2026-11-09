@@ -34,7 +34,7 @@ class SymbolDef:
     attrs: dict[str, Any] = field(default_factory=dict)
 
 
-ImportKind = Literal["module", "member", "namespace", "default", "side_effect", "wildcard"]
+ImportKind = Literal["module", "member", "namespace", "default", "side_effect", "wildcard", "by_name"]  # by_name: "a.b" in a string
 
 
 @dataclass(slots=True)
@@ -51,7 +51,7 @@ class ImportDef:
     @property
     def local_name(self) -> str | None:
         """Identifier bound in the importing module's namespace."""
-        if self.kind == "wildcard" or self.kind == "side_effect":
+        if self.kind in ("wildcard", "side_effect", "by_name"):
             return None
         if self.alias:
             return self.alias
@@ -98,6 +98,7 @@ class FileFacts:
     calls: list[CallSite] = field(default_factory=list)
     refs: list[RefSite] = field(default_factory=list)
     entry_hints: list[EntryHint] = field(default_factory=list)
+    dispatches: list[tuple[str | None, str]] = field(default_factory=list)  # (scope, prefix): `getattr(self, f"visit_{x}")`
     has_main_guard: bool = False
     is_test: bool = False
     attrs: dict[str, Any] = field(default_factory=dict)

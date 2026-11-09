@@ -255,6 +255,8 @@ class _Builder:
             self.import_records[mid] = records
             for imp in facts.imports:
                 binding, target = self._resolve_one_import(imp, facts, spec)
+                if imp.kind == "by_name" and target is None:
+                    continue  # a dotted string that names none of our modules is just text
                 records.append({"local_name": imp.local_name, "module": imp.module, "name": imp.name, "alias": imp.alias, "line": imp.line, "kind": imp.kind, "scope": imp.scope, "resolved": target, "used": False})
                 if target is not None:
                     self._link_import(mid, spec, imp, target)
@@ -263,6 +265,20 @@ class _Builder:
         for mid, facts in self.facts.items():
             self._mark_public_api(mid, facts)
             self._mark_reexports(mid)
+        self._mark_loaded_by_name()
+
+    def _mark_loaded_by_name(self) -> None:
+        """A module only ever named in a string (`import_module(self.compiler_module)`) is loaded to look names up in it
+        (`getattr(module, name)`): its public top-level names are entry points. One that is also imported is linked as usual."""
+        for mid in self.facts:
+            into = self.graph.in_edges(mid, EdgeKind.IMPORTS)
+            if not into or not all(e.attrs.get("by_name") for e in into):
+                continue
+            for qual, sid in self.symbols[mid].items():
+                if "." not in qual and not qual.startswith("_"):
+                    entry = self.graph.node(sid).attrs.setdefault("entry", [])
+                    if "loaded_by_name" not in entry:
+                        entry.append("loaded_by_name")
 
     def _mark_public_api(self, mid: str, facts: FileFacts) -> None:
         """What a top-level Python package re-exports (`pkg/__init__.py`, narrowed by `__all__`, through any chain of
@@ -293,10 +309,15 @@ class _Builder:
         An edge is `deferred` while every import behind it runs late or never (inside a function, under TYPE_CHECKING)."""
         fresh = not self.graph.has_edge_kind(mid, target, EdgeKind.IMPORTS)
         edge = self.graph.add_edge(Edge(src=mid, dst=target, kind=EdgeKind.IMPORTS, line=imp.line))
-        if (imp.scope is not None or imp.type_only) and (fresh or edge.attrs.get("deferred")):
+        late = imp.scope is not None or imp.type_only or imp.kind == "by_name"
+        if late and (fresh or edge.attrs.get("deferred")):
             edge.attrs["deferred"] = True
         else:
             edge.attrs.pop("deferred", None)
+        if imp.kind == "by_name" and (fresh or edge.attrs.get("by_name")):
+            edge.attrs["by_name"] = True
+        else:
+            edge.attrs.pop("by_name", None)
         names = edge.attrs.setdefault("names", [])
         label = imp.name or imp.module
         if label and label not in names:
@@ -359,7 +380,9 @@ class _Builder:
                 if option.member is None:
                     return ModuleBinding(option.binding_path or cand), target
                 return MemberBinding(cand, option.member), target
-        pkg = spec.package_target(imp)
+        pkg = spec.package_target(imp) if imp.kind != "by_name" else None
+        if pkg is None and imp.kind == "by_name":
+            return None, None
         if pkg is None:
             self.stats["imports_unresolved"] += count
             return None, None
@@ -398,6 +421,8 @@ class _Builder:
             self.read_member_names.update(spec.attribute_reads(facts.file))
             for call in facts.calls:
                 self._link_call(mid, spec, call)
+            for scope, prefix in facts.dispatches:
+                self._link_dispatch(mid, scope, prefix)
             for ref in facts.refs:
                 if ref.context != "base":  # covered by inherits edges
                     self._link_ref(mid, ref)
@@ -428,6 +453,17 @@ class _Builder:
                 self.used_member_names[res.rest[-1]] += 1
             if res.node_id != src and not self._is_own_class(mid, call.scope, call.chain, res.node_id):
                 self.graph.add_edge(Edge(src=src, dst=res.node_id, kind=EdgeKind.REFERENCES, line=call.line))
+
+    def _link_dispatch(self, mid: str, scope: str | None, prefix: str) -> None:
+        """`getattr(self, f"visit_{t}")()` calls, by name, every method starting with `visit_` on the class and below it."""
+        cls = self._enclosing_class(mid, scope)
+        if cls is None:
+            return
+        src = self._scope_node(mid, scope)
+        for owner in [cls, *self.graph.subclasses(cls)]:
+            for m in self.graph.children(owner):
+                if m.kind is NodeKind.METHOD and m.name.startswith(prefix) and m.id != src:
+                    self.graph.add_edge(Edge(src=src, dst=m.id, kind=EdgeKind.CALLS, attrs={"dispatch": prefix}))
 
     def _unresolved_call(self, spec: LanguageSpec, chain: tuple[str, ...]) -> None:
         head = chain[0]

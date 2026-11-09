@@ -95,6 +95,18 @@ class ProgramGraph:
                 return True
         return False
 
+    def subclasses(self, cls_id: str) -> list[str]:
+        """Every class that inherits from `cls_id`, directly or not."""
+        seen = {cls_id}
+        stack = [cls_id]
+        while stack:
+            for e in self.in_edges(stack.pop(), EdgeKind.INHERITS):
+                if e.src not in seen:
+                    seen.add(e.src)
+                    stack.append(e.src)
+        seen.discard(cls_id)
+        return sorted(seen)
+
     @staticmethod
     def _kinds(kind: EdgeKind | Iterable[EdgeKind] | None) -> set[str] | None:
         if kind is None:
