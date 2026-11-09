@@ -8,11 +8,14 @@ Takes per-file facts from the language adapters and produces one
    and produce a *binding table* per module (local name -> what it refers to);
 3. class bases are resolved (inherits edges);
 4. every call site / reference is resolved through the binding table, the
-   enclosing class, and module/class member lookup (calls / references edges).
+   enclosing class, and module/class member lookup (calls / references edges);
+   a receiver whose class the source states (`db: Database`, `db = Database()`,
+   `self.db: Database`, `db = connect()` with `def connect() -> Database`) is
+   typed, so `db.query()` links to `Database.query`.
 
-Resolution is name-based and conservative: when a receiver's type is unknown
-(e.g. `obj.run()` where `obj` is a local), the call is not guessed; the member
-name is recorded in `graph.meta["used_member_names"]` so later passes can stay
+Resolution is conservative: when a receiver's type is unknown (e.g. `obj.run()`
+where nothing says what `obj` holds), the call is not guessed; the member name
+is recorded in `graph.meta["used_member_names"]` so later passes can stay
 conservative too.
 """
 
@@ -26,7 +29,7 @@ from pathlib import Path
 from typing import Union
 
 from vibepiler.config import Config
-from vibepiler.frontend.facts import CallSite, FileFacts, ImportDef, RefSite
+from vibepiler.frontend.facts import CallSite, FileFacts, ImportDef, RefSite, TypeHint
 from vibepiler.frontend.languages import get_language
 from vibepiler.frontend.languages.base import LanguageSpec
 from vibepiler.frontend.loader import STRING_ROOT, SourceFile, check_includes, discover, in_scope
@@ -72,6 +75,7 @@ class Resolution:
     node_id: str
     rest: tuple[str, ...] = ()
     via: str | None = None  # the class a member was looked up on when an ancestor defines it: `Sub.as_view` uses Sub
+    receiver: str | None = None  # the class of the instance a member was looked up on: `db.query()` with `db: Database`
 
     @property
     def exact(self) -> bool:
@@ -128,6 +132,8 @@ class _Builder:
         self.used_member_names: Counter[str] = Counter()
         self.read_member_names: Counter[str] = Counter()  # attribute names read anywhere, never counting a store
         self.stats: Counter[str] = Counter()
+        self.hints: dict[tuple[str, str, str | None, str], list[tuple[str, TypeHint]]] = {}  # ("local", module id, scope, name) / ("field", class id, None, name) -> (module id, hint)
+        self.classes: dict[tuple, str | None] = {}  # the class a name, field or return type holds, once worked out
         self.parse_errors: list[str] = []
 
     # ------------------------------------------------------------------ driver
@@ -140,11 +146,12 @@ class _Builder:
         with timed("link: imports and bases resolved"):
             self._resolve_imports()
             self._resolve_inheritance()
+            self._index_types()
         with timed("link: calls and references resolved"):
             self._resolve_calls_and_refs()
         self._finalize_meta()
         st = self.stats
-        log.debug("link: {} call sites: {} to project code, {} to packages, {} to builtins, {} unresolved or partial; {} parse errors", st["calls_total"], st["calls_resolved"], st["calls_external"], st["calls_builtin"], st["calls_total"] - st["calls_resolved"] - st["calls_external"] - st["calls_builtin"], len(self.parse_errors))
+        log.debug("link: {} call sites: {} to project code ({} through a typed receiver), {} to packages, {} to builtins, {} unresolved or partial; {} parse errors", st["calls_total"], st["calls_resolved"], st["calls_typed"], st["calls_external"], st["calls_builtin"], st["calls_total"] - st["calls_resolved"] - st["calls_external"] - st["calls_builtin"], len(self.parse_errors))
         return Program(root=self.root, graph=self.graph, files=self.files, facts=self.facts, config=self.cfg)
 
     # ------------------------------------------------------------------ phase 1
@@ -417,6 +424,123 @@ class _Builder:
                     else:
                         self.graph.node(sid).attrs.setdefault("unresolved_bases", []).append(base)
 
+    # ------------------------------------------------------------------ types
+    def _index_types(self) -> None:
+        for mid, facts in self.facts.items():
+            for h in facts.types:
+                if h.of_class is None:
+                    self.hints.setdefault(("local", mid, h.scope, h.name), []).append((mid, h))
+                elif (cls := self.symbols[mid].get(h.of_class)) is not None:
+                    self.hints.setdefault(("field", cls, None, h.name), []).append((mid, h))
+
+    def _class_of(self, key: tuple) -> str | None:
+        """The one class every hint for a name agrees on; None when they disagree, or one says nothing we can type."""
+        if key in self.classes:
+            return self.classes[key]
+        self.classes[key] = None  # a hint that leads back to its own name types nothing
+        found = {self._hint_class(mid, h) for mid, h in self.hints[key]}
+        cls = found.pop() if len(found) == 1 else None
+        self.classes[key] = cls
+        return cls
+
+    def _hint_class(self, mid: str, h: TypeHint) -> str | None:
+        if not h.chain:
+            return None
+        if h.source == "name":
+            return self._value_class(mid, h.scope, h.chain)
+        res = self._resolve_chain(mid, h.scope, h.chain)
+        if res is None or not res.exact:
+            return None
+        node = self.graph.node(res.node_id)
+        if node.kind is NodeKind.CLASS:
+            return node.id  # `x: Foo`, or `x = Foo()`
+        return self._returns(node) if h.source == "call" and node.kind in CALLABLE_KINDS else None
+
+    def _returns(self, fn: Node) -> str | None:
+        """The class a function's return annotation names: `-> Database`, `-> "Database | None"`, `-> Self`."""
+        ret = fn.attrs.get("returns")
+        if not ret or fn.module is None:
+            return None
+        key = ("returns", fn.id)
+        if key not in self.classes:
+            parent = self.graph.parent(fn.id)
+            if ret.split(".")[-1] == "Self":
+                self.classes[key] = parent.id if parent is not None and parent.kind is NodeKind.CLASS else None
+            else:
+                self.classes[key] = None
+                res = self._resolve_chain(fn.module, fn.qualname.rpartition(".")[0] or None, tuple(ret.split(".")))
+                self.classes[key] = res.node_id if res is not None and res.exact and self.graph.node(res.node_id).kind is NodeKind.CLASS else None
+        return self.classes[key]
+
+    def _local_key(self, mid: str, scope: str | None, head: str) -> tuple | None:
+        """The local `head` names in `scope`, or in an enclosing def (a closure sees its function's names)."""
+        parts = scope.split(".") if scope else []
+        while parts:
+            name = ".".join(parts)
+            if ("local", mid, name, head) in self.hints:
+                return ("local", mid, name, head)
+            enclosing = self.symbols[mid].get(name)
+            if enclosing is None or self.graph.node(enclosing).kind not in CALLABLE_KINDS:
+                return None
+            parts.pop()
+        return None
+
+    def _value_class(self, mid: str, scope: str | None, chain: tuple[str, ...]) -> str | None:
+        """The class of the object `x`, `self` or `self.db.conn` holds."""
+        head, rest = chain[0], chain[1:]
+        if head in self.specs[mid].self_names:
+            cls = self._enclosing_class(mid, scope)
+        elif (key := self._local_key(mid, scope, head)) is not None:
+            cls = self._class_of(key)
+        else:
+            res = self._resolve_chain(mid, scope, (head,))
+            cls = self._variable_class(res.node_id) if res is not None and res.exact else None
+        for name in rest:
+            if cls is None:
+                return None
+            cls = self._field_class(cls, name)
+        return cls
+
+    def _variable_class(self, node_id: str) -> str | None:
+        """`client = Client()` at module level: what the variable holds."""
+        node = self.graph.node(node_id)
+        if node.kind is not NodeKind.VARIABLE or node.module is None or "." in node.qualname:
+            return None
+        key = ("local", node.module, None, node.name)
+        return self._class_of(key) if key in self.hints else None
+
+    def _field_class(self, cls: str, name: str) -> str | None:
+        """What `obj.name` holds on an instance of `cls`: a field set on it or an ancestor, or a property's return type."""
+        for c in [cls, *self._ancestors(cls)]:
+            if ("field", c, None, name) in self.hints:
+                return self._class_of(("field", c, None, name))
+            for child in self.graph.children(c):
+                if child.name == name:
+                    return self._returns(child) if child.kind in CALLABLE_KINDS and _is_property(child) else None
+        return None
+
+    def _ancestors(self, cls: str) -> list[str]:
+        out, stack = [], [cls]
+        while stack:
+            for e in self.graph.out_edges(stack.pop(), EdgeKind.INHERITS):
+                if e.dst not in out and self.graph.node(e.dst).kind is NodeKind.CLASS:
+                    out.append(e.dst)
+                    stack.append(e.dst)
+        return out
+
+    def _instance_member(self, cls: str, rest: tuple[str, ...], depth: int) -> Resolution | None:
+        """`rest` looked up on an instance of `cls`: its methods and its ancestors', then its typed fields."""
+        if len(rest) > 1 and (field := self._field_class(cls, rest[0])) is not None and not self._defines(cls, rest[0]):
+            return self._instance_member(field, rest[1:], depth + 1)
+        res = self._resolve_member(cls, rest, depth)
+        if res is not None and res.exact and len(rest) == 1:
+            return Resolution(res.node_id, receiver=cls)
+        return res
+
+    def _defines(self, cls: str, name: str) -> bool:
+        """Does the class or an ancestor have a method or nested class called `name` (a property counts as a field)?"""
+        return any(c.name == name and not _is_property(c) for k in [cls, *self._ancestors(cls)] for c in self.graph.children(k))
+
     # ------------------------------------------------------------------ phase 4
     def _resolve_calls_and_refs(self) -> None:
         for mid, facts in self.facts.items():
@@ -448,6 +572,7 @@ class _Builder:
             _add_member(e, ".".join(res.rest))
         elif res.exact and target.kind in CALLABLE_KINDS | {NodeKind.CLASS}:
             self.stats["calls_resolved"] += 1
+            self.stats["calls_typed"] += self._typed_use(mid, call.chain, res, target)
             if res.node_id == src:
                 self.graph.node(src).attrs["recursive"] = True
             else:
@@ -458,6 +583,16 @@ class _Builder:
                 self.used_member_names[res.rest[-1]] += 1
             if res.node_id != src and not self._is_own_class(mid, call.scope, call.chain, res.node_id):
                 self.graph.add_edge(Edge(src=src, dst=res.node_id, kind=EdgeKind.REFERENCES, line=call.line))
+
+    def _typed_use(self, mid: str, chain: tuple[str, ...], res: Resolution, target: Node) -> bool:
+        """Was a member found through what a receiver was typed as (not plain `self.m()`)? Through a class with a base
+        we cannot see (a Protocol, an ABC, a framework class), code that never inherits from it may stand in for it, so
+        the name still counts as used, as for an untyped receiver."""
+        if res.receiver is None or (len(chain) == 2 and chain[0] in self.specs[mid].self_names):
+            return False
+        if self.graph.has_external_base(res.receiver):
+            self.used_member_names[target.name] += 1
+        return True
 
     def _link_dispatch(self, mid: str, scope: str | None, prefix: str) -> None:
         """`getattr(self, f"visit_{t}")()` calls, by name, every method starting with `visit_` on the class and below it."""
@@ -513,6 +648,7 @@ class _Builder:
         self.stats["refs_resolved"] += 1
         self._reference_via(mid, ref.scope, src, res, ref.line)
         is_pkg = self.graph.node(res.node_id).kind is NodeKind.PACKAGE
+        self._typed_use(mid, ref.chain, res, self.graph.node(res.node_id))
         if res.rest and not is_pkg:
             self.used_member_names[res.rest[-1]] += 1
         if res.node_id == src or self._is_own_class(mid, ref.scope, ref.chain, res.node_id):
@@ -585,15 +721,25 @@ class _Builder:
             cls = self._enclosing_class(mid, scope)
             if cls is None:
                 return None
-            return self._resolve_member(cls, rest, depth + 1)
+            return self._instance_member(cls, rest, depth + 1) if rest else Resolution(cls)
         # nested scopes: a function defined inside the current def/class, then inside each enclosing def (closures see
         # their enclosing function's names; a class body is not a scope its methods see)
         if (sid := self._local(mid, scope, head)) is not None:
             return self._resolve_member(sid, rest, depth + 1)
+        if rest and (key := self._local_key(mid, scope, head)) is not None:
+            # a name the function assigns is its own local, whatever the module binds under that name
+            cls = self._class_of(key)
+            return self._instance_member(cls, rest, depth + 1) if cls is not None else None
         b = self._lookup(mid, scope, head)
         if b is None:
             return None
-        return self._resolve_binding(b, rest, depth + 1)
+        res = self._resolve_binding(b, rest, depth + 1)
+        if rest and res is not None and res.rest == rest and (cls := self._variable_class(res.node_id)) is not None:
+            typed = self._instance_member(cls, rest, depth + 1)  # `client.get()` with `client = Client()` at module level
+            if typed is not None:
+                typed.via = res.node_id  # it still reads `client`
+                return typed
+        return res
 
     def _local(self, mid: str, scope: str | None, head: str) -> str | None:
         table = self.symbols[mid]
@@ -690,6 +836,10 @@ class _Builder:
                 "symbols": sum(len(t) for t in self.symbols.values()),
             }
         )
+
+
+def _is_property(node: Node) -> bool:
+    return any(d.split(".")[-1] in ("property", "cached_property") for d in node.attrs.get("decorators", ()))
 
 
 def _add_member(e: Edge, member: str) -> None:

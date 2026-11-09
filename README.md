@@ -240,13 +240,15 @@ so rather than guessing.
    - *imports* in every form (`import a.b`, `from .x import y as z`, `import x from './y'`, `require()`, re-exports, `import_module("a.b")` and `pytest.importorskip("a")` with a literal name), each marked when it is type-only (under `if TYPE_CHECKING:`);
    - *call sites* as attribute chains (`requests.get`, `self.run`, `utils.helper`) with the **enclosing scope** (which function they live in; module-level code is attributed to the module itself, which is how `if __name__ == "__main__":` and `app.listen()` show up);
    - *references* (non-call uses: decorators, arguments, JSX elements, base classes, type annotations, including names inside string annotations like `"Path | None"`);
-   - *entry hints* (main guards, `@app.get`, `@click.command`, `test_*`, Next.js route files, ...).
+   - *entry hints* (main guards, `@app.get`, `@click.command`, `test_*`, Next.js route files, ...);
+   - *type hints* (Python): what a name holds when the source says so: a parameter annotation (`db: Database`, `Optional[Database]`, `"Database | None"`), an annotated or constructor assignment (`db = Database()`), a call to a function with a return annotation (`db = connect()` with `-> Database`, `-> Self`), a field (`self.db = db`, a class-body `db: Database`), a property's return type. A name given two different classes, or rebound by `for`/`with`, holds no known class.
 4. **Index modules**: each file gets a canonical module name (`app.core`, `src/utils/math`) plus aliases for the ways vibe-coded repos actually import things (`src.app.core`, `@/utils/math`).
 5. **Create nodes**: every definition becomes a node; `contains` edges nest module → class → method.
 6. **Resolve imports**: each import is tried against the module index (submodule first, then member of a package); on failure it becomes an external `package` node. This produces the per-module **binding table**: `helper → symbol app.utils.helper`, `utils → module app.utils`, `requests → package requests`, `impl_alias → symbol app.utils._impl`. Function-local imports get their own scope. Python parent packages are added as implicit imports (importing `app.utils` executes `app/__init__.py`).
 7. **Resolve inheritance**: base-class chains go through the same binding table → `inherits` edges.
 8. **Resolve calls and references**: for a chain like `a.b.c(...)` inside scope `S` of module `M`:
    - `self`/`cls`/`this` → the enclosing class, then member lookup through the class and its resolved bases;
+   - a **typed receiver** (`db.query()` with `db: Database`, `self.db.query()` with `self.db = Database()`, `client.get()` with `client = Client()` at module level) → the member of that class. Static types are enough because reachability already does virtual dispatch: reaching `Base.run` reaches every override below it (class hierarchy analysis). Through a class with a base we cannot see (a `Protocol`, an ABC, a framework class) the method name also counts as used, since code that never inherits from it may stand in for it;
    - a name defined in `S` or in `M` → that symbol;
    - a module binding → extend the dotted path, take the longest prefix that is a real module, then look the rest up as symbols (following package `__init__` re-exports);
    - a member binding → first as a submodule, then as a symbol of the target module;
@@ -256,7 +258,7 @@ so rather than guessing.
 
 The whole thing is one `networkx.MultiDiGraph` with `contains`, `imports`, `calls`, `inherits`, `references` edges; `graph.module_graph()` and `graph.call_graph()` give you the views the passes (and you) work on.
 
-What it does **not** do: type inference. Method calls on local variables, dynamic dispatch, `getattr`, string-based imports and framework magic stay unresolved. The report prints the resolution rate so you know how much of the call graph is proven; on typical Python code it is 50–80 % of call sites, with most of the rest being method calls on locals.
+What it does **not** do: type *inference*. It reads the types the source states (annotations, constructors, return annotations) and goes no further: an untyped parameter, a container's elements (`list[Foo]`), a choice (`Foo | Bar`), a call on a call (`Q().where().all()`), `getattr`, string-based imports and framework magic stay unresolved. The report prints the resolution rate so you know how much of the call graph is proven. On the [evaluation corpus](docs/eval/python/RESULTS.md) the typed linker moved it from 46–68 % to 50–84 % of call sites (rich 68 → 84 %, httpx 63 → 74 %, requests 62 → 69 %, flask 51 → 57 %, django 46 → 50 %), and the dead code it newly found there (3 symbols, each checked by hand) was all real.
 
 ## How it "optimizes"
 

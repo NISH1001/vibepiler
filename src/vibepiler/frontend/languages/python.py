@@ -8,7 +8,7 @@ from pathlib import Path
 
 from tree_sitter import Node
 
-from vibepiler.frontend.facts import CallSite, EntryHint, FileFacts, ImportDef, RefSite, SymbolDef
+from vibepiler.frontend.facts import CallSite, EntryHint, FileFacts, ImportDef, RefSite, SymbolDef, TypeHint
 from vibepiler.frontend.languages.base import DecoratorWalk, ImportOption, LanguageSpec
 from vibepiler.frontend.languages.python_flow import PythonFlow
 from vibepiler.frontend.loader import SourceFile
@@ -49,6 +49,7 @@ ENTRY_FUNCTION_NAMES = {"main", "handler", "lambda_handler", "run", "serve", "cl
 # a string annotation is a type expression the parser saw as a string: lex its dotted names, nested quotes left out
 _ANNOTATION_NAME = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*")
 _NESTED_STRING = re.compile(r"'[^']*'|\"[^\"]*\"")
+_UNWRAP = {"Optional", "Annotated", "Final", "ClassVar"}  # `Optional[X]`, `Annotated[X, ...]`: still an X (or None)
 
 _SKIP_IDENT_PARENTS = {
     "keyword_argument": "name",
@@ -391,8 +392,12 @@ class _Extractor(DecoratorWalk):
         if t == "if_statement" and scope is None and self.is_main_guard(node):
             self.facts.has_main_guard = True
             self.facts.entry_hints.append(EntryHint(kind="main_guard", qualname=None, line=self.spec.line(node)))
-        if t == "assignment" and scope is not None:
-            self.note_built(node, scope)
+        if t == "assignment":
+            self.note_types(node, scope, class_scope)
+            if scope is not None:
+                self.note_built(node, scope)
+        if t in ("for_statement", "with_statement") and scope is not None and scope != class_scope:
+            self.note_rebound(node, scope)
         if t in ("assignment", "augmented_assignment") and scope is None:
             self.visit_module_assignment(node)
             right = node.child_by_field_name("right")
@@ -469,8 +474,13 @@ class _Extractor(DecoratorWalk):
             exported=not name.startswith("_") and scope is None,
             is_async=is_async,
         )
+        ret = node.child_by_field_name("return_type")
+        if ret is not None and (returns := self.type_chain(ret)) is not None:
+            d.attrs["returns"] = ".".join(returns)
         self.facts.defs.append(d)
         self.add_entry_hints(d)
+        if params_node is not None:
+            self.note_param_types(params_node, qualname, kind)
         # defaults & annotations in params are references (only the parameter's own name is not)
         if params_node is not None:
             for p in params_node.named_children:
@@ -478,7 +488,6 @@ class _Extractor(DecoratorWalk):
                 for c in p.named_children:
                     if c is not own:
                         self.visit(c, scope, class_scope)
-        ret = node.child_by_field_name("return_type")
         if ret is not None:
             self.visit(ret, scope, class_scope)
         body = node.child_by_field_name("body")
@@ -616,6 +625,87 @@ class _Extractor(DecoratorWalk):
                 self.note_escapes(fn, args, scope, node)
             self.visit(args, scope, class_scope)
         # generator/comprehension arguments etc. are handled by the generic visit above
+
+    # --- types ----------------------------------------------------------------
+    def type_chain(self, node: Node) -> tuple[str, ...] | None:
+        """The one class an annotation names: `Foo`, `m.Foo`, `Foo | None`, `Optional[Foo]`, `"Foo"`. None for
+        anything else (`list[Foo]`, `A | B`, `Callable[...]`): a container or a choice is not an instance of one class."""
+        if node.type == "type":
+            node = node.named_children[0] if node.named_children else node
+        if node.type in ("identifier", "attribute"):
+            return self.chain_of(node)
+        if node.type == "generic_type":
+            head = node.named_children[0] if node.named_children else None
+            params = next((c for c in node.named_children if c.type == "type_parameter"), None)
+            if head is None or params is None or self.text(head) not in _UNWRAP or not params.named_children:
+                return None
+            return self.type_chain(params.named_children[0])
+        if node.type == "binary_operator":
+            parts = [p for p in self._union_parts(node) if not (p.type == "none" or (p.type == "identifier" and self.text(p) == "None"))]
+            return self.type_chain(parts[0]) if len(parts) == 1 else None
+        if node.type == "string":
+            return _string_type("".join(self.text(c) for c in node.children if c.type == "string_content"))
+        return None
+
+    def _union_parts(self, node: Node) -> list[Node]:
+        if node.type == "binary_operator" and (op := node.child_by_field_name("operator")) is not None and self.text(op) == "|":
+            return self._union_parts(node.child_by_field_name("left")) + self._union_parts(node.child_by_field_name("right"))
+        return [node]
+
+    def note_param_types(self, params: Node, qualname: str, kind: NodeKind) -> None:
+        """`def f(db: Database)`: inside f, `db` holds a Database. A method's first parameter is `self`/`cls`, typed already."""
+        for i, p in enumerate(params.named_children):
+            if p.type not in ("typed_parameter", "typed_default_parameter"):
+                continue
+            name = p.child_by_field_name("name") or (p.named_children[0] if p.named_children else None)
+            typ = p.child_by_field_name("type")
+            if name is None or name.type != "identifier" or typ is None:
+                continue  # `*args: T` is a tuple of T, `**kw: T` a dict
+            if i == 0 and kind is NodeKind.METHOD and self.text(name) in self.spec.self_names:
+                continue
+            self.facts.types.append(TypeHint(scope=qualname, name=self.text(name), chain=self.type_chain(typ) or ()))
+
+    def note_types(self, node: Node, scope: str | None, class_scope: str | None) -> None:
+        """What an assignment tells about the name it binds: its annotation, else the call it holds the result of.
+        A value we cannot type is recorded too (an empty chain), so the name is not trusted; `= None` says nothing."""
+        left, typ, right = node.child_by_field_name("left"), node.child_by_field_name("type"), node.child_by_field_name("right")
+        if left is None:
+            return
+        if right is not None and right.type == "await":
+            right = right.named_children[0] if right.named_children else right
+        if typ is not None:
+            chain, source = self.type_chain(typ) or (), "annotation"
+        elif right is not None and right.type == "none":
+            return
+        elif right is not None and right.type == "call" and (fn := self.chain_of(right.child_by_field_name("function"))) is not None:
+            chain, source = fn, "call"
+        elif right is not None and (copied := self.chain_of(right)) is not None:
+            chain, source = copied, "name"  # `self.db = db`
+        else:
+            chain, source = (), "annotation"
+        if left.type == "identifier":
+            in_class_body = class_scope is not None and scope == class_scope
+            self.facts.types.append(TypeHint(scope=scope, name=self.text(left), chain=chain, source=source, of_class=class_scope if in_class_body else None))
+        elif left.type == "attribute" and class_scope is not None and scope != class_scope:
+            obj, attr = left.child_by_field_name("object"), left.child_by_field_name("attribute")
+            if obj is not None and attr is not None and obj.type == "identifier" and self.text(obj) in self.spec.self_names:
+                self.facts.types.append(TypeHint(scope=scope, name=self.text(attr), chain=chain, source=source, of_class=class_scope))
+        elif left.type in ("pattern_list", "tuple_pattern", "list_pattern") and scope is not None:
+            for c in left.named_children:
+                if c.type == "identifier":
+                    self.facts.types.append(TypeHint(scope=scope, name=self.text(c), chain=()))
+
+    def note_rebound(self, node: Node, scope: str) -> None:
+        """`for x in ...` and `with ... as x` bind x to something we do not type: x holds no one known class."""
+        if node.type == "for_statement":
+            targets = [node.child_by_field_name("left")]
+        else:
+            targets = [n for n in _descendants(node, frozenset({"block"})) if n.type == "as_pattern_target"]
+        for t in targets:
+            if t is None:
+                continue
+            for ident in [t] if t.type == "identifier" else [c for c in _descendants(t) if c.type == "identifier"]:
+                self.facts.types.append(TypeHint(scope=scope, name=self.text(ident), chain=()))
 
     # --- escape analysis ------------------------------------------------------
     def note_built(self, node: Node, scope: str) -> None:
@@ -764,6 +854,17 @@ class _Extractor(DecoratorWalk):
             for d in self.facts.defs:
                 if d.parent_qualname is None:
                     d.exported = d.name in allowed or d.name == "__all__"
+
+
+def _string_type(text: str) -> tuple[str, ...] | None:
+    """A string annotation's one class: `"Foo"`, `"m.Foo | None"`, `"Optional[Foo]"`."""
+    parts = [p.strip() for p in text.split("|") if p.strip() != "None"]
+    if len(parts) != 1:
+        return None
+    t = parts[0]
+    if (m := re.fullmatch(r"(?:typing\.)?(?:Optional|Annotated|Final)\[([^,\]]+)[^\]]*\]", t)) is not None:
+        t = m.group(1).strip()
+    return tuple(t.split(".")) if _ANNOTATION_NAME.fullmatch(t) else None
 
 
 def _ancestors(node: Node, depth: int):
