@@ -203,6 +203,26 @@ class _Builder:
         for mid, facts in self.facts.items():
             for alias in facts.aliases:
                 self.module_index.setdefault(alias, mid)
+        self._mark_project_entries()
+
+    def _mark_project_entries(self) -> None:
+        """Modules the project's config names: what a package exposes (`main`, `exports`, its `./*` subpaths), whose
+        exports are then its API, and the files `bin`, `scripts` and CI run. The first candidate we have is the one."""
+        specs = {id(s): s for s in self.specs.values()}.values()
+        for spec in specs:
+            for kind, cands, prefix in spec.project_entries(self.root):
+                if prefix:
+                    cand = next((c for c in cands if any(f.module_name.startswith(f"{c}/") for f in self.facts.values())), None)
+                    hits = [mid for mid, f in self.facts.items() if cand is not None and f.module_name.startswith(f"{cand}/") and not f.is_test]
+                else:
+                    hits = [self.canonical_index[c] for c in cands if c in self.canonical_index][:1]
+                for mid in hits:
+                    node = self.graph.node(mid)
+                    if kind == "package_entry":
+                        node.attrs["is_entry_module"] = True
+                    entry = node.attrs.setdefault("entry", [])
+                    if kind not in entry:
+                        entry.append(kind)
 
     def _create_symbols(self) -> None:
         for mid, facts in self.facts.items():
@@ -277,6 +297,7 @@ class _Builder:
                     self._bind_import(mid, table, imp, binding, target)
         for mid, facts in self.facts.items():
             self._mark_public_api(mid, facts)
+            self._mark_reexported_api(mid)
             self._mark_reexports(mid)
         self._mark_loaded_by_name()
 
@@ -341,6 +362,37 @@ class _Builder:
             if "public_api" not in entry:
                 entry.append("public_api")
 
+    def _mark_reexported_api(self, mid: str) -> None:
+        """`export * from './react'`, `export { combine } from './middleware/combine'` in the module a package exposes
+        (its `main` or `exports`): what it passes on is the package's API too, through any chain of re-exports. A
+        barrel inside an app (`utils/index.ts`) is not: a name it passes on that nobody imports is still unused."""
+        node = self.graph.node(mid)
+        if node.language == "python" or "package_entry" not in node.attrs.get("entry", ()) or self.cfg.treat_exports_as_roots is False:
+            return
+        for sid in self._reexported(mid, set()):
+            entry = self.graph.node(sid).attrs.setdefault("entry", [])
+            if "public_api" not in entry:
+                entry.append("public_api")
+
+    def _reexported(self, mid: str, seen: set[str]) -> list[str]:
+        seen.add(mid)
+        out: list[str] = []
+        facts = self.facts[mid]
+        for imp in facts.imports:
+            if not imp.reexport or imp.scope is not None:
+                continue
+            _, target = self._resolve_one_import(imp, facts, self.specs[mid], count=False)
+            if target not in self.facts:
+                continue
+            if imp.kind == "member" and imp.name:
+                res = self._resolve_binding(MemberBinding(self.facts[target].module_name, imp.name), (), 0)
+                if res is not None and res.exact and self.graph.node(res.node_id).kind not in (NodeKind.MODULE, NodeKind.PACKAGE):
+                    out.append(res.node_id)
+            elif target not in seen:  # `export *` and `export * as ns`: everything the target exports, its own re-exports too
+                out += [sid for q, sid in self.symbols[target].items() if "." not in q and self.graph.node(sid).attrs.get("exported")]
+                out += self._reexported(target, seen)
+        return out
+
     def _mark_reexports(self, mid: str) -> None:
         """`from .compat import quote` uses compat's own import of `quote`: compat passes the name on, so it is not unused."""
         for rec in self.import_records[mid]:
@@ -363,6 +415,8 @@ class _Builder:
             edge.attrs["by_name"] = True
         else:
             edge.attrs.pop("by_name", None)
+        if (pkg := spec.sibling_package(self.root, imp.module, self.facts[mid].rel)) is not None and pkg not in edge.attrs.setdefault("packages", []):
+            edge.attrs["packages"].append(pkg)  # `@scope/shared` from a sibling: our source, and still a declared dependency
         names = edge.attrs.setdefault("names", [])
         label = imp.name or imp.module
         if label and label not in names:

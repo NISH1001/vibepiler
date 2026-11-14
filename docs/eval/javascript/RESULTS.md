@@ -146,6 +146,8 @@ their own file, and never-imported names in a trailing `export { … }` list.
     lives in the returned closure. vibepiler then flags 190 functions where ESLint flags 74. This may be intended,
     but it does not match SonarJS's per-function scores, and the README says vibepiler follows the Sonar paper.
 
+**Fixed since** (branch `feature/js-linker-gaps`, `tests/test_js_project.py`): bugs 1–4. On the same corpus, all 11 labelled vibepiler-only false positives from them are gone (`create`, `src/react/shallow.ts`, `src/vanilla/shallow.ts`, `getPolygonShape`, `lineSegmentRotate`, `parseLibraryTokensFromUrl`, `bin/release-it.js`, `woff2-esbuild-plugins.js`, `isScuttlePayError`, `ScuttlePayError`, `ProductSearchResult`), the one labelled true positive (`ProductSearchParams`) is still reported, and zustand's false `undeclared-dependency zustand` is gone. Findings (dead, unreachable, unused export, test-only, dependencies): excalidraw 552 → 283, zustand 76 → 30, scuttlepay 63 → 26, release-it 9 → 6, tower-of-time 56 → 53, taxonomy unchanged at 159. Dependency findings are otherwise unchanged. The 5 new findings are excalidraw `test-only` symbols that were a whole `test-only` module or an `unused-export` before. Still open: bugs 5–10, and zustand's type-level helpers (`StoreMutators` declared through module augmentation, `*Impl` types) read as dead.
+
 ### 6. Novelty: what no compared tool reports
 770 findings (of 2,528) fall in 16 kinds no compared tool covers: per repo zustand 53, release-it 39, taxonomy 141,
 excalidraw 458, scuttlepay 58, tower-of-time 21. The largest kinds are `unreachable-symbol` 382 (transitively dead),

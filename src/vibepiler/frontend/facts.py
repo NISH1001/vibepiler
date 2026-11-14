@@ -47,6 +47,7 @@ class ImportDef:
     kind: ImportKind = "module"
     scope: str | None = None  # qualname of enclosing def for local imports
     type_only: bool = False  # under `if TYPE_CHECKING:`: read by type checkers, never run
+    reexport: bool = False  # `export ... from`: the names are passed on, not used here
 
     @property
     def local_name(self) -> str | None:
