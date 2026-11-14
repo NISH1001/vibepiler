@@ -8,6 +8,7 @@ cross-file linking happens in the IR builder, which is language-agnostic.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Callable
 
 from tree_sitter import Node
@@ -111,6 +112,14 @@ class LanguageSpec(ABC):
     self_names: frozenset[str] = frozenset()
     #: top-level names an absolute import means the standard library by, unless a project module has that exact name
     stdlib_modules: frozenset[str] = frozenset()
+
+    def sibling_package(self, root: Path, spec: str, rel: str) -> str | None:
+        """The project package (a workspace sibling) an import names, which its importer declares as a dependency."""
+        return None
+
+    def project_entries(self, root: Path) -> list[tuple[str, list[str], bool]]:
+        """Entry points the project's config names (package.json, CI): (kind, candidate module paths, prefix?)."""
+        return []
 
     def is_test_file(self, rel: str) -> bool:
         return False
