@@ -75,8 +75,6 @@ class BloatPass(Pass):
         imported: dict[str, dict[str, set[str]]] = {"python": {}, "javascript": {}}
         for e in g.edges(EdgeKind.IMPORTS):
             dst, src = g.node(e.dst), g.node(e.src)
-            for pkg in e.attrs.get("packages", ()):  # a workspace sibling, linked to its source
-                imported["javascript"].setdefault(pkg, set()).add(src.file or "")
             if dst.kind is not NodeKind.PACKAGE:
                 continue
             lang = "python" if src.language == "python" else "javascript"
@@ -84,6 +82,9 @@ class BloatPass(Pass):
                 continue  # before the name is lowercased: `cProfile` is the standard library, `cprofile` is not
             key = normalize_py(PY_IMPORT_TO_DIST.get(dst.name, dst.name)) if lang == "python" else (js_package_for_specifier(dst.name) or dst.name)
             imported[lang].setdefault(key, set()).add(src.file or "")
+        for e in g.edges(EdgeKind.IMPORTS):
+            for pkg in e.attrs.get("packages", ()):  # a workspace sibling: linked to its source, still a dependency
+                imported["javascript"].setdefault(pkg, set()).add(g.node(e.src).file or "")
         return imported
 
     @staticmethod
