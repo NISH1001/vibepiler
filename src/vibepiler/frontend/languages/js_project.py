@@ -38,41 +38,18 @@ class JsPackage:
 
 
 # --------------------------------------------------------------------------- reading
-def _jsonc(text: str) -> dict:
-    """tsconfig is JSON with comments and trailing commas."""
-    out, i, n, in_str = [], 0, len(text), False
-    while i < n:
-        c = text[i]
-        if in_str:
-            out.append(c)
-            if c == "\\" and i + 1 < n:
-                out.append(text[i + 1])
-                i += 1
-            elif c == '"':
-                in_str = False
-        elif c == '"':
-            in_str = True
-            out.append(c)
-        elif text.startswith("//", i):
-            while i < n and text[i] != "\n":
-                i += 1
-            continue
-        elif text.startswith("/*", i):
-            end = text.find("*/", i + 2)
-            i = n if end < 0 else end + 2
-            continue
-        else:
-            out.append(c)
-        i += 1
-    data = json.loads(re.sub(r",(\s*[}\]])", r"\1", "".join(out)))
-    return data if isinstance(data, dict) else {}
+_STRING_OR_COMMENT = re.compile(r'"(?:\\.|[^"\\])*"|//[^\n]*|/\*.*?(?:\*/|$)', re.S)
 
 
 def _read(path: Path) -> dict:
+    """A package.json or a tsconfig, which is JSON with comments and trailing commas: drop the comments (never inside a
+    string), then the commas. {} when it is missing or broken."""
     try:
-        return _jsonc(path.read_text(encoding="utf-8"))
+        text = _STRING_OR_COMMENT.sub(lambda m: m.group(0) if m.group(0).startswith('"') else "", path.read_text(encoding="utf-8"))
+        data = json.loads(re.sub(r",(\s*[}\]])", r"\1", text))
     except (OSError, ValueError, UnicodeDecodeError):
         return {}
+    return data if isinstance(data, dict) else {}
 
 
 @cache
@@ -93,21 +70,27 @@ def _config_paths(root: Path, config: str, depth: int = 0) -> tuple[tuple[str, t
     """`paths` of one tsconfig, its targets made relative to the root, merged over what it `extends`."""
     data = _read(root / config)
     here = posixpath.dirname(config)
-    inherited: dict[str, tuple[str, ...]] = {}
-    extends = data.get("extends")
-    for ext in [extends] if isinstance(extends, str) else extends if isinstance(extends, list) else []:
-        if isinstance(ext, str) and ext.startswith(".") and depth < 5:
-            parent = posixpath.normpath(posixpath.join(here, ext))
-            parent = parent if parent.endswith(".json") else f"{parent}.json"
-            inherited.update(dict(_config_paths(root, parent, depth + 1)))
-    opts = data.get("compilerOptions") or {}
+    merged: dict[str, tuple[str, ...]] = {}
+    if depth < 5:
+        for parent in _extended(here, data.get("extends")):
+            merged.update(dict(_config_paths(root, parent, depth + 1)))
+    merged.update(_own_paths(here, data.get("compilerOptions") or {}))
+    return tuple(merged.items())
+
+
+def _extended(here: str, extends) -> list[str]:  # noqa: ANN001 - a string or a list of them
+    """The project configs a tsconfig `extends` (`./tsconfig.base`); a package's preset (`@tsconfig/node20`) is not ours."""
+    names = [extends] if isinstance(extends, str) else extends if isinstance(extends, list) else []
+    out = [posixpath.normpath(posixpath.join(here, e)) for e in names if isinstance(e, str) and e.startswith(".")]
+    return [p if p.endswith(".json") else f"{p}.json" for p in out]
+
+
+def _own_paths(here: str, opts: dict) -> dict[str, tuple[str, ...]]:
     paths = opts.get("paths")
-    if isinstance(paths, dict):
-        base = posixpath.normpath(posixpath.join(here, opts.get("baseUrl") or "."))
-        for pattern, targets in paths.items():
-            if isinstance(targets, list):
-                inherited[pattern] = tuple(posixpath.normpath(posixpath.join(base, t)) for t in targets if isinstance(t, str))
-    return tuple(inherited.items())
+    if not isinstance(paths, dict):
+        return {}
+    base = posixpath.normpath(posixpath.join(here, opts.get("baseUrl") or "."))
+    return {pattern: tuple(posixpath.normpath(posixpath.join(base, t)) for t in targets if isinstance(t, str)) for pattern, targets in paths.items() if isinstance(targets, list)}
 
 
 @cache
@@ -129,16 +112,19 @@ def paths_candidates(root: Path, rel_dir: str, spec: str) -> list[str]:
         return []
     out: list[str] = []
     for pattern, targets in _config_paths(root, config):
-        star = pattern.find("*")
-        if star < 0:
-            if spec == pattern:
-                out += targets
-            continue
-        prefix, suffix = pattern[:star], pattern[star + 1 :]
-        if spec.startswith(prefix) and spec.endswith(suffix) and len(spec) >= len(prefix) + len(suffix):
-            middle = spec[len(prefix) : len(spec) - len(suffix)]
+        if (middle := _match(pattern, spec)) is not None:
             out += [t.replace("*", middle, 1) for t in targets]
     return out
+
+
+def _match(pattern: str, spec: str) -> str | None:
+    """What `*` stands for when `spec` matches a `paths` pattern ("" for an exact pattern); None when it does not."""
+    if "*" not in pattern:
+        return "" if spec == pattern else None
+    prefix, suffix = pattern.split("*", 1)
+    if spec.startswith(prefix) and spec.endswith(suffix) and len(spec) >= len(prefix) + len(suffix):
+        return spec[len(prefix) : len(spec) - len(suffix)]
+    return None
 
 
 # --------------------------------------------------------------------------- packages
@@ -150,12 +136,7 @@ def _to_source(pkg_dir: str, target: str) -> list[str]:
     stripped = list(parts)
     while len(stripped) > 1 and stripped[0] in BUILD_DIRS:
         stripped.pop(0)
-    out = []
-    for cand in ("/".join(parts), "/".join(stripped), f"src/{'/'.join(stripped)}"):
-        full = posixpath.join(pkg_dir, cand) if pkg_dir else cand
-        if full not in out:
-            out.append(full)
-    return out
+    return list(dict.fromkeys(posixpath.join(pkg_dir, c) for c in ("/".join(parts), "/".join(stripped), f"src/{'/'.join(stripped)}")))
 
 
 def _leaves(value) -> list[str]:  # noqa: ANN001 - an `exports` condition tree
@@ -182,44 +163,51 @@ def _script_files(root: Path, pkg_dir: str, commands: list[str]) -> list[str]:
 
 @cache
 def packages(root: Path) -> tuple[JsPackage, ...]:
-    found = []
-    for d in _package_dirs(root):
-        data = _read(root / d / "package.json")
-        if not data:
-            continue
-        name = data.get("name") if isinstance(data.get("name"), str) else None
-        pkg = JsPackage(dir=d, name=name, internal=bool(d) and data.get("private") is True)
-        exports = data.get("exports")
-        main_paths = [data.get(k) for k in ("source", "module", "main", "types", "typings") if isinstance(data.get(k), str)]
-        if isinstance(exports, str):
-            main_paths.append(exports)
-        elif isinstance(exports, dict):
-            keyed = any(k.startswith(".") for k in exports)
-            for key, value in exports.items() if keyed else [(".", exports)]:
-                if key == "./package.json":
-                    continue
-                if "*" in key:
-                    for leaf in _leaves(value):
-                        if "*" not in leaf or ".." in leaf:
-                            continue
-                        folder = posixpath.dirname(leaf.split("*", 1)[0].removeprefix("./"))
-                        # the package folder itself would make every module public: only a folder below it counts
-                        folders = [f for f in dict.fromkeys(posixpath.dirname(x) for x in _to_source(d, f"{folder}/x.js" if folder else "x.js")) if f != d]
-                        if folders and folders not in pkg.subpaths:
-                            pkg.subpaths.append(folders)
-                else:
-                    main_paths += _leaves(value)
-        for p in dict.fromkeys(main_paths):
-            if ".." not in p:
-                pkg.entries.append(_to_source(d, p))
-        bins = data.get("bin")
-        bin_paths = [bins] if isinstance(bins, str) else [v for v in bins.values() if isinstance(v, str)] if isinstance(bins, dict) else []
-        scripts = data.get("scripts")
-        commands = [v for v in scripts.values() if isinstance(v, str)] if isinstance(scripts, dict) else []
-        pkg.runs = [_to_source(d, b) for b in bin_paths if ".." not in b]  # a bin may point at the build, like `main`
-        pkg.runs += [[posixpath.splitext(f)[0]] for f in _script_files(root, d, commands)]
-        found.append(pkg)
-    return tuple(found)
+    return tuple(pkg for d in _package_dirs(root) if (pkg := _read_package(root, d)) is not None)
+
+
+def _read_package(root: Path, d: str) -> JsPackage | None:
+    """One package.json: its name, what it exposes (mapped back to source) and the files it runs."""
+    data = _read(root / d / "package.json")
+    if not data:
+        return None
+    name = data.get("name")
+    pkg = JsPackage(dir=d, name=name if isinstance(name, str) else None, internal=bool(d) and data.get("private") is True)
+    main_paths = [v for k in ("source", "module", "main", "types", "typings") if isinstance(v := data.get(k), str)]
+    exported, patterns = _split_exports(data.get("exports"))
+    pkg.entries = [_to_source(d, p) for p in dict.fromkeys(main_paths + exported) if ".." not in p]
+    for leaf in patterns:
+        if (folders := _subpath_folders(d, leaf)) and folders not in pkg.subpaths:
+            pkg.subpaths.append(folders)
+    pkg.runs = [_to_source(d, b) for b in _strings(data.get("bin")) if ".." not in b]  # a bin may point at the build, like `main`
+    pkg.runs += [[posixpath.splitext(f)[0]] for f in _script_files(root, d, _strings(data.get("scripts")))]
+    return pkg
+
+
+def _strings(value) -> list[str]:  # noqa: ANN001 - `bin`/`scripts`: a string or a map of them
+    if isinstance(value, str):
+        return [value]
+    return [v for v in value.values() if isinstance(v, str)] if isinstance(value, dict) else []
+
+
+def _split_exports(exports) -> tuple[list[str], list[str]]:  # noqa: ANN001 - the `exports` field, any shape
+    """(paths it exposes, `*` patterns of its subpath keys like `"./*": "./dist/*.js"`)."""
+    if isinstance(exports, str):
+        return [exports], []
+    if not isinstance(exports, dict):
+        return [], []
+    keyed = exports.items() if any(k.startswith(".") for k in exports) else [(".", exports)]  # `{import, require}` alone means "."
+    paths = [leaf for key, value in keyed if "*" not in key and key != "./package.json" for leaf in _leaves(value)]
+    patterns = [leaf for key, value in keyed if "*" in key for leaf in _leaves(value) if "*" in leaf and ".." not in leaf]
+    return paths, patterns
+
+
+def _subpath_folders(d: str, leaf: str) -> list[str]:
+    """Where the modules of a `"./*"` subpath pattern live, build folder mapped to source. The package folder itself
+    would make every module public, so only a folder below it counts."""
+    folder = posixpath.dirname(leaf.split("*", 1)[0].removeprefix("./"))
+    candidates = _to_source(d, posixpath.join(folder, "x.js"))
+    return [f for f in dict.fromkeys(posixpath.dirname(c) for c in candidates) if f != d]
 
 
 @cache
@@ -237,9 +225,8 @@ def package_candidates(root: Path, spec: str) -> list[str]:
         return []
     sub = "/".join(parts[n:])
     if not sub:
-        return [c for cands in pkg.entries for c in cands] + [posixpath.join(pkg.dir, "src/index") if pkg.dir else "src/index", posixpath.join(pkg.dir, "index") if pkg.dir else "index"]
-    base = pkg.dir
-    return [posixpath.join(base, sub) if base else sub, posixpath.join(base, "src", sub) if base else f"src/{sub}"] + [posixpath.join(f, sub) for folders in pkg.subpaths for f in folders]
+        return [c for cands in pkg.entries for c in cands] + [posixpath.join(pkg.dir, "src/index"), posixpath.join(pkg.dir, "index")]
+    return [posixpath.join(pkg.dir, sub), posixpath.join(pkg.dir, "src", sub)] + [posixpath.join(f, sub) for folders in pkg.subpaths for f in folders]
 
 
 def sibling_package(root: Path, spec: str, rel: str) -> str | None:

@@ -152,11 +152,7 @@ class JavaScriptSpec(JavaScriptFlow, LanguageSpec):
         elif spec.startswith(("#", "node:")):
             return []
         else:
-            # what the project says first (tsconfig `paths`, a package of the workspace or the project itself), then
-            # the conventions: `@/x` and `~/x` from the project folder, baseUrl-style bare paths
-            root = facts.file.root if facts.file.root.is_dir() else None
-            roots = js_project.paths_candidates(root, posixpath.dirname(facts.rel), spec) + js_project.package_candidates(root, spec) if root else []
-            roots += self._anchored(spec[2:] if spec.startswith(("@/", "~/")) else spec, facts)
+            roots = self._bare_roots(spec, facts)
         out: list[str] = []
         for r in roots:
             r = self._strip_ext(r)
@@ -164,6 +160,13 @@ class JavaScriptSpec(JavaScriptFlow, LanguageSpec):
                 out.append(r)
             out.append(f"{r}/index" if r else "index")
         return out
+
+    def _bare_roots(self, spec: str, facts: FileFacts) -> list[str]:
+        """What the project says first (tsconfig `paths`, a package of the workspace or the project itself), then the
+        conventions: `@/x` and `~/x` from the project folder, baseUrl-style bare paths."""
+        root = facts.file.root
+        said = js_project.paths_candidates(root, posixpath.dirname(facts.rel), spec) + js_project.package_candidates(root, spec) if root.is_dir() else []
+        return said + self._anchored(spec[2:] if spec.startswith(("@/", "~/")) else spec, facts)
 
     @staticmethod
     def _anchored(path: str, facts: FileFacts) -> list[str]:
