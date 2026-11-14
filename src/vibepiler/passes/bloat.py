@@ -75,6 +75,8 @@ class BloatPass(Pass):
         imported: dict[str, dict[str, set[str]]] = {"python": {}, "javascript": {}}
         for e in g.edges(EdgeKind.IMPORTS):
             dst, src = g.node(e.dst), g.node(e.src)
+            for pkg in e.attrs.get("packages", ()):  # a workspace sibling, linked to its source
+                imported["javascript"].setdefault(pkg, set()).add(src.file or "")
             if dst.kind is not NodeKind.PACKAGE:
                 continue
             lang = "python" if src.language == "python" else "javascript"

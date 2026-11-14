@@ -8,6 +8,7 @@ declarations (interfaces, abstract classes, enums, type aliases).
 from __future__ import annotations
 
 import posixpath
+import re
 from functools import cache
 from pathlib import Path
 
@@ -26,6 +27,7 @@ from vibepiler.frontend.languages.base import (
     ImportOption,
     LanguageSpec,
 )
+from vibepiler.frontend.languages import js_project
 from vibepiler.frontend.languages.javascript_flow import JavaScriptFlow
 from vibepiler.frontend.loader import SourceFile
 from vibepiler.ir.model import NodeKind
@@ -145,14 +147,16 @@ class JavaScriptSpec(JavaScriptFlow, LanguageSpec):
             base_dir = posixpath.dirname(facts.rel)
             path = posixpath.normpath(posixpath.join(base_dir, spec))
             roots = ["" if path == "." else path]
-        elif spec.startswith(("@/", "~/")):
-            roots = self._anchored(spec[2:], facts)
         elif spec.startswith("/"):
             roots = [spec.lstrip("/")]
         elif spec.startswith(("#", "node:")):
             return []
         else:
-            roots = self._anchored(spec, facts)  # tsconfig baseUrl-style bare paths
+            # what the project says first (tsconfig `paths`, a package of the workspace or the project itself), then
+            # the conventions: `@/x` and `~/x` from the project folder, baseUrl-style bare paths
+            root = facts.file.root if facts.file.root.is_dir() else None
+            roots = js_project.paths_candidates(root, posixpath.dirname(facts.rel), spec) + js_project.package_candidates(root, spec) if root else []
+            roots += self._anchored(spec[2:] if spec.startswith(("@/", "~/")) else spec, facts)
         out: list[str] = []
         for r in roots:
             r = self._strip_ext(r)
@@ -166,6 +170,14 @@ class JavaScriptSpec(JavaScriptFlow, LanguageSpec):
         base = project_dir(facts.file.root, posixpath.dirname(facts.rel)) if facts.file.root.is_dir() else ""
         roots = [f"src/{path}", path]
         return [posixpath.join(base, r) for r in roots] + (roots if base else [])
+
+    def project_entries(self, root: Path) -> list[tuple[str, list[str], bool]]:
+        return js_project.project_entries(root) if root.is_dir() else []
+
+    def sibling_package(self, root: Path, spec: str, rel: str) -> str | None:
+        if spec.startswith((".", "/", "#", "node:")) or not root.is_dir():
+            return None
+        return js_project.sibling_package(root, spec, rel)
 
     def import_targets(self, imp: ImportDef, facts: FileFacts) -> list[ImportOption]:
         cands = self._module_candidates(imp.module, facts)
@@ -540,14 +552,14 @@ class _Extractor(DecoratorWalk):
         if clause is not None:
             for nm, al in self._specifiers(clause):
                 name = self.text(nm)
-                self.facts.imports.append(ImportDef(module=spec, name=name, alias=self.text(al) if al else name, line=line, kind="member", scope=scope))
+                self.facts.imports.append(ImportDef(module=spec, name=name, alias=self.text(al) if al else name, line=line, kind="member", scope=scope, reexport=True))
             return
         ns = next((c for c in node.named_children if c.type == "namespace_export"), None)
         if ns is None:
-            self.facts.imports.append(ImportDef(module=spec, line=line, kind="wildcard", scope=scope))
+            self.facts.imports.append(ImportDef(module=spec, line=line, kind="wildcard", scope=scope, reexport=True))
             return
         ident = next((c for c in ns.named_children if c.type == "identifier"), None)
-        self.facts.imports.append(ImportDef(module=spec, alias=self.text(ident) if ident else None, line=line, kind="namespace", scope=scope))
+        self.facts.imports.append(ImportDef(module=spec, alias=self.text(ident) if ident else None, line=line, kind="namespace", scope=scope, reexport=True))
 
     def _export_default(self, v: Node, line: int, scope: str | None, class_scope: str | None, decorators: list[Node]) -> None:
         """`export default <expression>`: a name, a function or class defined in place, or anything else."""
@@ -926,6 +938,10 @@ class _Extractor(DecoratorWalk):
             self.facts.entry_hints.append(EntryHint("hook", d.qualname, line, "framework export"))
 
     def finish(self) -> None:
+        if ".config." in Path(self.facts.rel).name:
+            # `setupFiles: ['./setupTests.ts']`: a tool config names files the tool loads; they are used, by path
+            for m in _CONFIG_PATH.finditer(self.sf.text(self.sf.tree.root_node)):
+                self.facts.imports.append(ImportDef(module=m.group(1), line=1, kind="by_name"))
         for d in self.facts.defs:
             if d.parent_qualname is not None:
                 continue
@@ -934,6 +950,9 @@ class _Extractor(DecoratorWalk):
             if self.default_name is not None and d.name == self.default_name:
                 d.exported = True
                 d.attrs["default_export"] = True
+
+
+_CONFIG_PATH = re.compile(r"""["'](\.\.?/[\w@./-]+?)(?:\.(?:[cm]?[jt]sx?))?["']""")
 
 
 def _is_commonjs_export(chain: tuple[str, ...]) -> bool:
