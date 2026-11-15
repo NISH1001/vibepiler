@@ -31,17 +31,22 @@ def main() -> None:
         "axes.spines.top": False, "axes.spines.right": False, "svg.fonttype": "none", "pdf.fonttype": 42,
     })
 
-    fig, (ax, bx) = plt.subplots(1, 2, figsize=(9.8, 2.9), dpi=300, gridspec_kw={"wspace": 0.42})
+    fig, (ax, bx) = plt.subplots(1, 2, figsize=(11.6, 3.1), dpi=300, gridspec_kw={"wspace": 0.30, "width_ratios": [1.2, 1]})
     fig.patch.set_facecolor("white")
     x = range(len(ROUNDS))
 
     # A. two unitless scores on one axis: solid vs dashed and circle vs square, so colour is never the only cue
-    ax.plot(x, BLOAT, color=BLUE, lw=2, marker="o", ms=5, label="bloat", zorder=3)
-    ax.plot(x, TANGLE, color=ORANGE, lw=2, ls="--", marker="s", ms=4.5, label="tangle", zorder=3)
-    ax.annotate(f"bloat {BLOAT[-1]:.0%}", (len(ROUNDS) - 1, BLOAT[-1]), xytext=(6, 6), textcoords="offset points", color=INK, fontsize=8)
-    ax.annotate(f"tangle {TANGLE[-1]:.2f}", (len(ROUNDS) - 1, TANGLE[-1]), xytext=(6, -11), textcoords="offset points", color=INK, fontsize=8)
-    ax.annotate(f"{BLOAT[0]:.0%}", (0, BLOAT[0]), xytext=(-4, 7), textcoords="offset points", color=INK, fontsize=8, ha="center")
-    ax.set_xlim(-0.35, len(ROUNDS) + 0.45)  # room for the end labels inside the panel
+    # with waste near zero the two coincide: tangle is a hollow square drawn larger, so the bloat dot shows inside it
+    ax.plot(x, TANGLE, color=ORANGE, lw=2, ls="--", marker="s", ms=7.5, mfc="white", mew=1.6, label="tangle", zorder=2)
+    ax.plot(x, BLOAT, color=BLUE, lw=1.6, marker="o", ms=4, label="bloat", zorder=3)
+    end = len(ROUNDS) - 1
+    if abs(BLOAT[-1] - TANGLE[-1]) < 0.01:  # one point: one label
+        ax.annotate(f"bloat {BLOAT[-1]:.0%}\ntangle {TANGLE[-1]:.2f}", (end, BLOAT[-1]), xytext=(9, 0), textcoords="offset points", color=INK, fontsize=8, va="center")
+    else:
+        ax.annotate(f"bloat {BLOAT[-1]:.0%}", (end, BLOAT[-1]), xytext=(9, 4), textcoords="offset points", color=INK, fontsize=8)
+        ax.annotate(f"tangle {TANGLE[-1]:.2f}", (end, TANGLE[-1]), xytext=(9, -9), textcoords="offset points", color=INK, fontsize=8)
+    ax.annotate(f"{BLOAT[0]:.0%}", (0, BLOAT[0]), xytext=(2, 8), textcoords="offset points", color=INK, fontsize=8, ha="left")
+    ax.set_xlim(-0.5, len(ROUNDS) + 0.9)  # room for the end label inside the panel
     ax.set_ylim(0.17, 0.34)
     ax.set_yticks([0.20, 0.25, 0.30])
     ax.set_yticklabels(["0.20", "0.25", "0.30"])
@@ -49,11 +54,12 @@ def main() -> None:
         axis.axvline(COGNITIVE_FROM - 0.5, color=INK2, lw=0.8, ls=":", zorder=1)
     ax.annotate("tangle by\ncognitive", (COGNITIVE_FROM - 0.45, 0.335), color=INK2, fontsize=6.5, va="top")
     ax.set_xticks(list(x))
-    ax.set_xticklabels(ROUNDS, fontsize=7)
+    ax.set_xticklabels(ROUNDS, fontsize=6.5)
     ax.set_title("Bloat and tangle, vibepiler on itself")
     ax.set_ylabel("share of the code")
     ax.grid(axis="y", color=GRID, lw=0.6, zorder=0)
-    ax.legend(frameon=False, loc="lower left", fontsize=8)
+    handles, labels = ax.get_legend_handles_labels()
+    ax.legend(handles[::-1], labels[::-1], frameon=False, loc="lower left", fontsize=8, handlelength=2.6)  # bloat first, as in the text
 
     # B. the lines that could go, in lines: one series, hatched so it survives print and colour vision deficiency
     bars = bx.bar(x, WASTE_LINES, width=0.62, color=AQUA, edgecolor="white", linewidth=0, hatch="///", zorder=3)
@@ -64,7 +70,7 @@ def main() -> None:
     bx.set_ylim(0, 84)
     bx.set_yticks([0, 20, 40, 60, 80])
     bx.set_xticks(list(x))
-    bx.set_xticklabels(ROUNDS, fontsize=7)
+    bx.set_xticklabels(ROUNDS, fontsize=6.5)
     bx.set_title("Removable lines shown by analysis")
     bx.set_ylabel("lines (of ~6,400 to ~10,900)", labelpad=4)
     bx.grid(axis="y", color=GRID, lw=0.6, zorder=0)
