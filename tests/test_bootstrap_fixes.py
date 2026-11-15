@@ -49,6 +49,38 @@ def test_a_function_made_of_named_steps_is_not_indirection(tmp_path):
     assert helpers == {"_lonely"}  # the three steps of build() are decomposition, not indirection
 
 
+def test_a_helper_that_keeps_its_caller_under_the_cognitive_limit_is_a_split(tmp_path):
+    # `_pick` decides (cognitive 3); folded into `run` (cognitive 13) it would take run past the limit of 15
+    pick = "def _pick(x):\n    if x > 1:\n        if x > 5:\n            return 2\n    return 0\n\n\n"
+    run = (
+        "def run(items, flag):\n    if flag:\n        for i in items:\n            if i:\n                for j in i:\n                    print(j)\n"
+        "    if flag and items:\n        print(1)\n    if items:\n        print(2)\n    return _pick(len(items))\n\n\n"
+    )
+    lone = "def _plain(x):\n    return x + 1\n\n\ndef simple(x):\n    return _plain(x)\n\n\n"
+    (tmp_path / "main.py").write_text(f"{pick}{run}{lone}if __name__ == '__main__':\n    run([[2]], True)\n    simple(1)\n")
+    prog = build_program(tmp_path)
+    run_passes(prog, opt_level=2)
+    cog = {q: prog.graph.node(f"sym:main.py::{q}").attrs["cognitive_complexity"] for q in ("_pick", "run")}
+    assert cog == {"_pick": 3, "run": 13}
+    helpers = {d.data["qualname"] for d in prog.diagnostics if d.code == "single-use-helper"}
+    assert helpers == {"_plain"}  # deciding nothing, it would cost `simple` nothing to fold back
+
+
+def test_helpers_split_from_one_caller_are_judged_together(tmp_path):
+    # each `_a`/`_b` decides (cognitive 2); either alone back in `run` (12) stays at 14, both together reach 16
+    helper = "def _{n}(x):\n    if x > 1 and x < 9:\n        return 2\n    return 0\n\n\n"
+    run = (
+        "def run(items, flag):\n    if flag:\n        for i in items:\n            if i:\n                for j in i:\n                    print(j)\n"
+        "    if flag and items:\n        print(1)\n    return _a(len(items)) + _b(len(items))\n\n\n"
+    )
+    (tmp_path / "main.py").write_text(f"{helper.format(n='a')}{helper.format(n='b')}{run}if __name__ == '__main__':\n    run([[2]], True)\n")
+    prog = build_program(tmp_path)
+    run_passes(prog, opt_level=2)
+    cog = {q: prog.graph.node(f"sym:main.py::{q}").attrs["cognitive_complexity"] for q in ("_a", "_b", "run")}
+    assert cog == {"_a": 2, "_b": 2, "run": 12}
+    assert not [d for d in prog.diagnostics if d.code == "single-use-helper"]
+
+
 def test_a_method_called_through_its_base_keeps_its_overrides_alive(tmp_path):
     (tmp_path / "shapes.py").write_text("class Shape:\n    def area(self):\n        return 0\n\n\nclass Square(Shape):\n    def area(self):\n        return 4\n\n    def perimeter(self):\n        return 8\n")
     (tmp_path / "main.py").write_text("from shapes import Shape, Square\n\n\ndef total(shapes):\n    return sum(Shape.area(s) for s in shapes)\n\n\nif __name__ == '__main__':\n    total([Square()])\n")

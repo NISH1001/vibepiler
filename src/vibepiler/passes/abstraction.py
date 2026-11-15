@@ -122,28 +122,22 @@ class AbstractionPass(Pass):
         return diags
 
     def _single_use_helpers(self, program: Program) -> list[Diagnostic]:
-        """A helper called exactly once is indirection, unless its caller is composed of such steps on purpose."""
-        g = program.graph
+        """A helper called exactly once is indirection, unless it is a split: its caller is composed of such steps
+        (three or more), or folding the helpers back would take the caller over the cognitive limit, since their
+        decisions would move into it (nested deeper, so at least their own complexity). A helper that decides nothing
+        (complexity 0) is never kept that way."""
         th = program.config.thresholds
         diags: list[Diagnostic] = []
-        cands: list[tuple[Node, Node]] = []
-        for fn in g.nodes(NodeKind.FUNCTION):
-            if fn.attrs.get("is_root") or fn.attrs.get("decorators") or fn.attrs.get("recursive") or not fn.attrs.get("reachable"):
-                continue
-            if g.parent(fn.id) is not None and g.parent(fn.id).kind is not NodeKind.MODULE:  # type: ignore[union-attr]
-                continue
-            calls = g.in_edges(fn.id, EdgeKind.CALLS)
-            refs = g.in_edges(fn.id, EdgeKind.REFERENCES)
-            if len(calls) != 1 or refs or calls[0].count != 1:
-                continue
-            caller = g.node(calls[0].src)
-            if caller.module != fn.module or fn.loc > th.single_use_helper_max_loc:
-                continue
-            cands.append((fn, caller))
+        cands = [(fn, caller) for fn in program.graph.nodes(NodeKind.FUNCTION) if (caller := _sole_caller(program.graph, fn, th.single_use_helper_max_loc))]
         per_caller = Counter(c.id for _, c in cands)
+        folded = Counter()  # the cognitive complexity each caller takes back if all its single-use helpers fold in
+        for fn, caller in cands:
+            folded[caller.id] += fn.attrs.get("cognitive_complexity", 0)
         for fn, caller in cands:
             if per_caller[caller.id] >= COMPOSED_STEPS:
                 continue  # a function made of named steps: decomposition, not indirection
+            if fn.attrs.get("cognitive_complexity", 0) > 0 and caller.attrs.get("cognitive_complexity", 0) + folded[caller.id] > th.cognitive:
+                continue  # folding its helpers back would take the caller over the limit: they are a split, not indirection
             diags.append(
                 self.diag(
                     "single-use-helper",
@@ -213,3 +207,15 @@ class AbstractionPass(Pass):
             if t.kind is NodeKind.CLASS:
                 best = max(best, AbstractionPass._inheritance_depth(program, t, depth + 1))
         return best
+
+
+def _sole_caller(g, fn: Node, max_loc: int) -> Node | None:  # noqa: ANN001
+    """The one function that calls `fn`, once, from its own module, when `fn` is a short, plain, top-level helper."""
+    if fn.attrs.get("is_root") or fn.attrs.get("decorators") or fn.attrs.get("recursive") or not fn.attrs.get("reachable") or fn.loc > max_loc:
+        return None
+    parent = g.parent(fn.id)
+    calls = g.in_edges(fn.id, EdgeKind.CALLS)
+    if (parent is not None and parent.kind is not NodeKind.MODULE) or len(calls) != 1 or calls[0].count != 1 or g.in_edges(fn.id, EdgeKind.REFERENCES):
+        return None
+    caller = g.node(calls[0].src)
+    return caller if caller.module == fn.module else None
