@@ -332,9 +332,6 @@ class _Extractor(DecoratorWalk):
         self.export_names: set[str] = set()
         self.default_name: str | None = None
 
-    def text(self, node: Node) -> str:
-        return self.sf.text(node)
-
     def line(self, node: Node) -> int:
         return node.start_point[0] + 1
 

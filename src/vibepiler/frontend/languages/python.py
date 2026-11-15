@@ -49,10 +49,6 @@ ASV_PREFIXES = ("time_", "timeraw_", "mem_", "peakmem_", "track_")  # what airsp
 ASV_HOOKS = {"setup", "teardown", "setup_cache"}
 
 
-def is_benchmark_file(rel: str) -> bool:
-    return "benchmarks" in Path(rel).parts[:-1]
-
-
 DYNAMIC_IMPORTS = {"import_module", "__import__", "importorskip"}  # importlib.import_module("a.b"), __import__("a.b"), pytest.importorskip("a")
 
 ENTRY_FUNCTION_NAMES = {"main", "handler", "lambda_handler", "run", "serve", "cli", "app", "application"}
@@ -312,9 +308,6 @@ class _Extractor(DecoratorWalk):
         self.facts = facts
         self.all_names: list[str] | None = None
         self.built: dict[tuple[str, str], tuple[str, ...]] = {}  # (scope, local) -> constructor chain it was last assigned from
-
-    def text(self, node: Node) -> str:
-        return self.sf.text(node)
 
     # --- chains ---------------------------------------------------------------
     def chain_of(self, node: Node) -> tuple[str, ...] | None:
@@ -886,7 +879,7 @@ class _Extractor(DecoratorWalk):
             for d in self.facts.defs:
                 if d.parent_qualname is None and not d.name.startswith("_"):
                     self.facts.entry_hints.append(EntryHint("framework", d.qualname, d.start_line))
-        if is_benchmark_file(self.facts.rel):
+        if "benchmarks" in Path(self.facts.rel).parts[:-1]:
             self.note_benchmarks()
         if is_migration_file(self.facts.rel):
             self.facts.attrs["is_migration"] = True

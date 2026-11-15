@@ -37,9 +37,14 @@ def decorator_parts(dec: Node, call_type: str) -> tuple[Node | None, Node | None
 
 
 class DecoratorWalk:
-    """What both extractors do with a decorator, written once: `call_type` is the grammar's name for a call."""
+    """What both extractors share, written once: a node's source text and what to do with a decorator. `call_type` is
+    the grammar's name for a call."""
 
     call_type: str
+    sf: SourceFile
+
+    def text(self, node: Node) -> str:
+        return self.sf.text(node)
 
     def visit_decorator(self, node: Node, scope: str | None) -> None:
         expr, target = decorator_parts(node, self.call_type)

@@ -83,13 +83,9 @@ def _communities(vectors) -> list[list[int]]:  # noqa: ANN001
         for j, s in zip(idx[i].tolist(), sims[i].tolist()):
             if s >= MIN_SIM:
                 G.add_edge(i, j, weight=max(s, G[i][j]["weight"] if G.has_edge(i, j) else 0.0))
-    comms = [sorted(c) for c in louvain_communities(G, weight="weight", resolution=_resolution(n), seed=0) if len(c) >= MIN_CONCEPT]
-    return sorted(comms, key=lambda c: (-len(c), c[0]))
-
-
-def _resolution(n: int) -> float:
     lo, hi, per = RESOLUTION
-    return max(lo, min(hi, n / per))
+    comms = [sorted(c) for c in louvain_communities(G, weight="weight", resolution=max(lo, min(hi, n / per)), seed=0) if len(c) >= MIN_CONCEPT]
+    return sorted(comms, key=lambda c: (-len(c), c[0]))
 
 
 def _describe(ci: int, members: list[int], nodes, vectors, docs, idf):  # noqa: ANN001
