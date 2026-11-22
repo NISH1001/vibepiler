@@ -27,23 +27,23 @@ structure can be recovered mechanically and analyzed like a program.
 
 Languages: **Python**, **JavaScript/TypeScript** (incl. JSX/TSX). Adding a language means adding one adapter file.
 
-![The program graph of vibepiler itself: modules as orbs sized by lines, a red wedge for the share of lines that could go, traffic moving along import and call edges, the size line in the header](docs/img/report-graph.png)
+![The program graph of vibepiler itself: modules as orbs sized by lines, a red wedge for the share of lines that could go, traffic moving along import and call edges, the size line in the header](https://raw.githubusercontent.com/NISH1001/vibepiler/main/docs/img/report-graph.png)
 
 *`report.html` on vibepiler itself. Orbs are modules sized by lines; a red wedge is the share of a module's lines that could go; dots are import and call traffic; the header carries the size line: waste, tangle, bloat.*
 
 ## Quick start
 
-You need [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`). Nothing else: no clone, no install step.
+You need [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`). Nothing else: no clone, no install step. vibepiler is on [PyPI](https://pypi.org/project/vibepiler/), so `pip install vibepiler` works too.
 
 ```bash
-# a project on disk (add @v0.4.12 after the URL to pin a release)
-uvx --from git+https://github.com/NISH1001/vibepiler vibepiler compile path/to/project
+# a project on disk (uvx vibepiler@0.4.12 pins a release)
+uvx vibepiler compile path/to/project
 
 # a repo on GitHub: owner/repo, owner/repo@branch, or any GitHub / git URL
-uvx --from git+https://github.com/NISH1001/vibepiler vibepiler compile igaurab/gpython
+uvx vibepiler compile igaurab/gpython
 
 # the project you are standing in
-cd my-vibe-coded-app && uvx --from git+https://github.com/NISH1001/vibepiler vibepiler compile .
+cd my-vibe-coded-app && uvx vibepiler compile .
 ```
 
 Using a coding agent? [Add vibepiler to your harness](#add-to-your-coding-agent-harness): `/plugin marketplace add NISH1001/vibepiler` in Claude Code, then `/vibepiler:compile`.
@@ -54,7 +54,7 @@ Name folders or files after the source to report on just those parts, and leave 
 
 ```bash
 # two folders of a GitHub repo, without its migrations
-uvx --from git+https://github.com/NISH1001/vibepiler vibepiler compile owner/repo api/ services/ --exclude alembic/
+uvx vibepiler compile owner/repo api/ services/ --exclude alembic/
 
 # a GitHub folder link compiles that folder
 vibepiler compile https://github.com/owner/repo/tree/main/frontend
@@ -68,7 +68,7 @@ By default the whole source is still read and only the named paths are scored an
 If you will run it more than once, install the command:
 
 ```bash
-uv tool install git+https://github.com/NISH1001/vibepiler   # or: pipx install git+https://github.com/NISH1001/vibepiler
+uv tool install vibepiler                                     # or: pipx install vibepiler, or pip install vibepiler
 vibepiler compile .                                           # then just this
 vibepiler compile owner/repo -Wall                            # -Wall also shows the info-level findings
 ```
@@ -100,7 +100,7 @@ Remote repos are shallow-cloned into `~/.cache/vibepiler/repos/` and reused on t
 1. **The size line** at the top of the terminal output and of `report.html`: `waste` is lines that could go, `tangle` is structure harder than its job, `bloat` combines them. `live` is the share of definitions (locals, parameters, attributes, symbols, imports) that something reads, with the dead ones counted by kind. Lead with the lines, not the percentage.
 2. **`report.html` → Overview**: the "what can go" tiles, the entry points, and "Biggest wins". Orbs with a red wedge are modules with removable lines; click one for its findings and its own bloat block. *Trace* follows execution outward from any node:
 
-   ![A trace from the CLI module: reached modules lit amber, dashed paths with moving particles, the rest dimmed](docs/img/report-trace.png)
+   ![A trace from the CLI module: reached modules lit amber, dashed paths with moving particles, the rest dimmed](https://raw.githubusercontent.com/NISH1001/vibepiler/main/docs/img/report-trace.png)
 3. **Findings tab** (or `report.md`): filter by pass and by finding type; the graph lights up the matches and "only flagged" isolates them. `dead-code`, `duplicates`, `wrappers` and `abstraction` remove the most lines per decision; `cycles`, `complexity` and `hotspots` tell you what is risky to touch.
 4. **Semantic tab** (`-O3`): every function on one map placed by meaning, coloured by health or by any measure with a live threshold, with calls flowing and copies tied together.
 5. **Link tab**: how much of the call graph was proven. A low "linked" percentage means dynamic dispatch; dead-code results stay safe (they are conservative), but there are fewer of them and the size line says how many lines are alive only by name.
@@ -110,7 +110,7 @@ Remote repos are shallow-cloned into `~/.cache/vibepiler/repos/` and reused on t
 **1. Audit a repo you did not write.** One command, no install, read the size line and the Findings tab.
 
 ```bash
-uvx --from git+https://github.com/NISH1001/vibepiler vibepiler compile owner/repo -O3
+uvx vibepiler compile owner/repo -O3
 ```
 
 **2. Shrink a codebase with the elimination loop.** `-R` prints the plan, one edit per line with the lines it frees and how sure the tool is. Apply the top one, re-run against the previous `ir.json`, repeat until nothing moves.
@@ -258,7 +258,7 @@ so rather than guessing.
 
 The whole thing is one `networkx.MultiDiGraph` with `contains`, `imports`, `calls`, `inherits`, `references` edges; `graph.module_graph()` and `graph.call_graph()` give you the views the passes (and you) work on.
 
-What it does **not** do: type *inference*. It reads the types the source states (annotations, constructors, return annotations) and goes no further: an untyped parameter, a container's elements (`list[Foo]`), a choice (`Foo | Bar`), a call on a call (`Q().where().all()`), `getattr`, string-based imports and framework magic stay unresolved. The report prints the resolution rate so you know how much of the call graph is proven. On the [evaluation corpus](docs/eval/python/RESULTS.md) the typed linker moved it from 46–68 % to 50–84 % of call sites (rich 68 → 84 %, httpx 63 → 74 %, requests 62 → 69 %, flask 51 → 57 %, django 46 → 50 %), and the dead code it newly found there (3 symbols, each checked by hand) was all real.
+What it does **not** do: type *inference*. It reads the types the source states (annotations, constructors, return annotations) and goes no further: an untyped parameter, a container's elements (`list[Foo]`), a choice (`Foo | Bar`), a call on a call (`Q().where().all()`), `getattr`, string-based imports and framework magic stay unresolved. The report prints the resolution rate so you know how much of the call graph is proven. On the [evaluation corpus](https://github.com/NISH1001/vibepiler/blob/main/docs/eval/python/RESULTS.md) the typed linker moved it from 46–68 % to 50–84 % of call sites (rich 68 → 84 %, httpx 63 → 74 %, requests 62 → 69 %, flask 51 → 57 %, django 46 → 50 %), and the dead code it newly found there (3 symbols, each checked by hand) was all real.
 
 ## How it "optimizes"
 
@@ -289,10 +289,10 @@ Everything up to `-O2` is exact: names, scopes, AST shapes. `-O3` adds the one t
 
 ```bash
 # one-off
-uvx --from "vibepiler[semantic] @ git+https://github.com/NISH1001/vibepiler" vibepiler compile . -O3
+uvx --from "vibepiler[semantic]" vibepiler compile . -O3
 
 # installed
-uv tool install "vibepiler[semantic] @ git+https://github.com/NISH1001/vibepiler"
+uv tool install "vibepiler[semantic]"
 vibepiler compile owner/repo -O3
 vibepiler similar . app.utils.sum_even      # the functions closest in meaning to one you point at
 vibepiler similar . LivenessPass            # a class: the classes closest in meaning
@@ -303,7 +303,7 @@ vibepiler similar . src/app/utils.py        # a module (by its file): the module
 - **Alternative**: `embedding_model = "jinaai/jina-embeddings-v2-base-code"` (161M, code-trained, official int8 ONNX, 160 MB) if you would rather not depend on a community-converted model. Same speed and quality, but 5.1 GB peak memory on django against 3.0 GB, and slightly weaker separation.
 - **Fast mode**: `embedding_model = "minishlab/potion-code-16M-v2"`, a 16M static code embedding model run with [model2vec](https://github.com/minishlab/model2vec) (pure numpy). Roughly 500x faster, weaker on "same job, different code"; use it on repos with tens of thousands of functions.
 - **Nothing is truncated**: each function or method is embedded whole (signature and body); the only limit is the model's 8,192-token context. Speed comes from sorting texts by length before batching, so a batch of short functions is never padded up to one long one. That beat truncating to 800 characters on every model measured. Tests and nested closures are skipped, since they are repetitive by design.
-- **Why these**: measured on labelled clones (CodeNet Python800: 2,000 programs, 20 solutions to each of 100 problems) and on three real repos (Apple M3 Max, CPU only, whole function bodies, length-sorted batches); full numbers in [docs/eval/semantic](docs/eval/semantic/RESULTS.md):
+- **Why these**: measured on labelled clones (CodeNet Python800: 2,000 programs, 20 solutions to each of 100 problems) and on three real repos (Apple M3 Max, CPU only, whole function bodies, length-sorted batches); full numbers in [docs/eval/semantic](https://github.com/NISH1001/vibepiler/blob/main/docs/eval/semantic/RESULTS.md):
 
   | model | code-trained | finds same-job code (MAP@R)* | functions/s (django, 8k fns) | peak memory (django) | notes |
   |---|---|---|---|---|---|
@@ -327,7 +327,7 @@ What the tier produces, concretely:
 
 **The Semantic tab** draws all of it as one map. Every function is a dot placed by its embedding, so *nearby means similar*, wherever the files live; concept and theme labels sit on the functions they name. It is a plain `<canvas>` inside the single HTML file (no GPU, no library) and stays smooth with thousands of functions: drag to pan, scroll or pinch to zoom at the cursor, hover for names, click for detail.
 
-![The Semantic tab on vibepiler itself, light theme: 542 functions placed by meaning, coloured by health: tangled functions amber, copies crimson, the rest grey; themes labelled in capitals](docs/img/report-semantic.png)
+![The Semantic tab on vibepiler itself, light theme: 542 functions placed by meaning, coloured by health: tangled functions amber, copies crimson, the rest grey; themes labelled in capitals](https://raw.githubusercontent.com/NISH1001/vibepiler/main/docs/img/report-semantic.png)
 
 *The Semantic tab on vibepiler itself, coloured by health, in the light theme. Tangled functions (cognitive complexity over 15) are amber and cluster in the pass code; crimson pairs are functions that do the same job.*
 
@@ -338,11 +338,11 @@ The map follows the page theme: a deep field on screen in the dark theme, paper 
 - **Classes and modules** get a meaning too: the line-weighted mean of their functions' embeddings, so a module means what all of its code does, not only the top of the file, at no extra embedding cost. A class's or module's panel lists its closest classes or modules, and `vibepiler similar` takes a class or a file.
 - **Click a function** to see what leads to it and what it sets off (its call cone, up to three hops), its copies, its numbers and the first lines of its code.
 
-![Flow on vibepiler itself: Compiler.run selected, its call cone drawn as dashed streams, the side panel with its metrics as 0–1 bars, its calls and code](docs/img/report-semantic-flow.png)
+![Flow on vibepiler itself: Compiler.run selected, its call cone drawn as dashed streams, the side panel with its metrics as 0–1 bars, its calls and code](https://raw.githubusercontent.com/NISH1001/vibepiler/main/docs/img/report-semantic-flow.png)
 
 *Flow with `Compiler.run` selected: the calls it sets off stream out to the passes and emitters. The panel shows every [metric](#metrics) as a value in [0, 1] with its raw number under it: cognitive 40% (25, limit 15), cyclomatic 44% (18, limit 10), maintainability 0% (MI 33.7, limit 20), typed 86% (6 of 7).*
 
-![The map coloured by cognitive complexity: the slider at 16, the 62 functions past SonarQube's limit of 15 lit from light amber to dark brown, the rest faded](docs/img/report-semantic-cognitive.png)
+![The map coloured by cognitive complexity: the slider at 16, the 62 functions past SonarQube's limit of 15 lit from light amber to dark brown, the rest faded](https://raw.githubusercontent.com/NISH1001/vibepiler/main/docs/img/report-semantic-cognitive.png)
 
 *Coloured by cognitive complexity, the slider starting just past the limit: 62 of 542 functions light up, darker the further past it they go.*
 
@@ -392,9 +392,9 @@ Every finding also carries an `action`, delete, fold or simplify, and the **elim
 
 The first thing it was run on was vibepiler. Nine rounds of the loop, each measured with `--baseline` by the vibepiler of its day:
 
-![Bloat and tangle over the ten bootstrap rounds, and the removable lines per round](docs/img/bootstrap.png)
+![Bloat and tangle over the ten bootstrap rounds, and the removable lines per round](https://raw.githubusercontent.com/NISH1001/vibepiler/main/docs/img/bootstrap.png)
 
-*Left: bloat and tangle, two unitless shares on one axis. Right: the lines the analysis could show removable. Vector versions for papers: [`docs/img/bootstrap.svg`](docs/img/bootstrap.svg), [`docs/img/bootstrap.pdf`](docs/img/bootstrap.pdf); regenerate with `uv run scripts/bootstrap_figure.py` (the script declares matplotlib itself, PEP 723).*
+*Left: bloat and tangle, two unitless shares on one axis. Right: the lines the analysis could show removable. Vector versions for papers: [`docs/img/bootstrap.svg`](https://github.com/NISH1001/vibepiler/blob/main/docs/img/bootstrap.svg), [`docs/img/bootstrap.pdf`](https://github.com/NISH1001/vibepiler/blob/main/docs/img/bootstrap.pdf); regenerate with `uv run scripts/bootstrap_figure.py` (the script declares matplotlib itself, PEP 723).*
 
 | | start | round 1 | round 2 | round 3 | round 4 | round 5 | round 6 | round 7 | round 8 | round 9 | round 10 |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -551,7 +551,7 @@ or, from a shell, `claude plugin marketplace add NISH1001/vibepiler && claude pl
 | `compile` | picks the run (`semantic` = `-O3`, `quick` = `-O1`, `graph` = `-O0`, folder names, any CLI flag), runs it with `uvx` when vibepiler is not installed, reads `report.md`, explains each number the way it is meant | never |
 | `cleanup` | takes the top `proven` or `inferred` item, checks it against the code (string uses, registries, exports), makes the edit, runs your tests, recompiles against the last run; stops on a failing test or a judgment call, and never commits | yes, in your working tree |
 
-**Other harnesses.** The skills are plain `SKILL.md` folders in the portable format, so any agent that reads Agent Skills can use them. Copy the ones you want from [`skills/`](skills/) to where your agent looks:
+**Other harnesses.** The skills are plain `SKILL.md` folders in the portable format, so any agent that reads Agent Skills can use them. Copy the ones you want from [`skills/`](https://github.com/NISH1001/vibepiler/tree/main/skills/) to where your agent looks:
 
 ```bash
 git clone --depth 1 https://github.com/NISH1001/vibepiler /tmp/vibepiler
@@ -559,7 +559,7 @@ cp -r /tmp/vibepiler/skills/compile /tmp/vibepiler/skills/cleanup .agents/skills
 cp -r /tmp/vibepiler/skills/compile /tmp/vibepiler/skills/cleanup .claude/skills/     # Claude Code without the plugin (or ~/.claude/skills/)
 ```
 
-Copied skills are called without the plugin prefix (`/compile`, `/cleanup`) and do not update themselves. The skills run vibepiler from `main`, the same place the plugin comes from, so the flags they use are the ones the CLI has.
+Copied skills are called without the plugin prefix (`/compile`, `/cleanup`) and do not update themselves. The skills run the latest vibepiler release from PyPI with `uvx`.
 
 ## Using it from Python
 
