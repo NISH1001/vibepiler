@@ -70,11 +70,12 @@ def test_every_vibepiler_flag_the_skills_name_exists():
                     assert flag in known, f"{doc.relative_to(ROOT)}: `{flag}` is not a vibepiler flag ({cmd.strip()})"
 
 
-def test_the_skills_run_vibepiler_from_main_like_the_plugin():
+def test_the_skills_run_the_latest_pypi_release():
     for doc in (ROOT / "skills").rglob("*.md"):
         text = doc.read_text(encoding="utf-8")
-        assert not re.search(r"github\.com/NISH1001/vibepiler@", text), f"{doc.relative_to(ROOT)} pins a ref; the skills follow main"
-    assert "git+https://github.com/NISH1001/vibepiler vibepiler compile" in (ROOT / "skills/compile/SKILL.md").read_text(encoding="utf-8")
+        assert "git+" not in text, f"{doc.relative_to(ROOT)} installs from git; the skills run the PyPI release"
+        assert not re.search(r"uvx[^\n]*vibepiler(\[\w+\])?\"?@", text), f"{doc.relative_to(ROOT)} pins a version; the skills follow the latest release"
+    assert "uvx vibepiler compile" in (ROOT / "skills/compile/SKILL.md").read_text(encoding="utf-8")
 
 
 def test_the_readme_says_how_to_add_vibepiler_to_a_harness():
