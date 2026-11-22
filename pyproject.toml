@@ -5,7 +5,7 @@ license = "MIT"
 license-files = ["LICENSE"]
 description = "A compiler for vibe-coded software: parse a whole project into a program graph, then run optimization passes that find dead code, duplicates, cycles, over-abstraction and bloat."
 readme = "README.md"
-authors = [{ name = "Nish", email = "nishanpantha@gmail.com" }]
+authors = [{ name = "Nish" }]
 keywords = ["static-analysis", "dead-code", "compiler", "code-quality", "refactoring", "llm"]
 classifiers = [
     "Development Status :: 4 - Beta",
