@@ -36,7 +36,7 @@ Languages: **Python**, **JavaScript/TypeScript** (incl. JSX/TSX). Adding a langu
 You need [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`). Nothing else: no clone, no install step. vibepiler is on [PyPI](https://pypi.org/project/vibepiler/), so `pip install vibepiler` works too.
 
 ```bash
-# a project on disk (uvx vibepiler@0.4.12 pins a release)
+# a project on disk (uvx vibepiler@0.4.13 pins a release)
 uvx vibepiler compile path/to/project
 
 # a repo on GitHub: owner/repo, owner/repo@branch, or any GitHub / git URL
